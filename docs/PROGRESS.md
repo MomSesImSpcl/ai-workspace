@@ -15,9 +15,15 @@ No feature set is selected for implementation. No implementation blockers have b
 
 ## Resume here
 
-Repository branch: `main`. The application is not implemented. Next product action: discuss titles in the [feature map](OVERVIEW.md) with the user, opening short summaries only as needed, and agree on a feature set before loading full specs; none has been chosen yet. For feature-definition requests, follow [the feature-writing guide](ADDING_FEATURES.md).
+Repository branch: `main`. The application is not implemented. Next product action: discuss titles in the [feature map](OVERVIEW.md) with the user, opening short summaries only as needed, and agree on a feature set before loading full specs; none has been chosen yet. Follow the [agreed direction](#agreed-direction): define the first core slice next. For feature-definition requests, follow [the feature-writing guide](ADDING_FEATURES.md).
 
 For active work, record the agreed goal and requirement references, completed/remaining work with file paths, actual checks and results, blockers/open decisions, branch/commit when available, and the next concrete action. Update this handoff before ending or transferring work.
+
+## Agreed direction
+
+- 2026-10-15: Personal tool first, multi-user later. Carry user and project identity through the core from the start so access checks can attach later; defer login servers and multi-tenant infrastructure until needed.
+- 2026-10-15: Build iteratively with thin end-to-end slices, usable before all features exist. Start with a minimal slice through the core features ([identity-projects](features/identity-projects/SUMMARY.md), [task-runtime](features/task-runtime/SUMMARY.md), [model-routing](features/model-routing/SUMMARY.md), [tool-broker](features/tool-broker/SUMMARY.md), with a local [runner](features/runners/SUMMARY.md) and [desktop-client](features/desktop-client/SUMMARY.md) as needed) before domain features. Later slices extend that core instead of working around it. Exact first-slice scope and acceptance checks are still to be agreed.
+- 2026-10-15: Technology is chosen per feature set when it is implemented, discussed together; see [open decisions](OPEN_DECISIONS.md).
 
 ## Planned
 
