@@ -9,6 +9,7 @@
 - 2026-10-15: Clarified the preferred collaboration workflow: review feature titles together, open only useful short summaries, agree on the next feature set, then load full specs and implement. Deeper analysis before selection happens only when requested.
 - 2026-10-15: Made the GitHub repository public at the user's request; verified visibility through GitHub.
 - 2026-10-15: Added the agreed direction, reuse-first principle 10, shared knowledge index (knowledge-001), proposed first slice and tentative order; `AGENTS.md` now requires automatic progress updates after each step, decision or commit.
+- 2026-10-15: Added the one-branch-per-feature-scope rule (working agreement step 11).
 
 ## Active / blocked
 
