@@ -4,11 +4,11 @@ A planned, project-agnostic workspace for interactive AI, durable background tas
 
 ## Start or continue with an agent
 
-Read [AGENTS.md](AGENTS.md), then the [feature map](docs/OVERVIEW.md), [shared principles](docs/PRINCIPLES.md) and [current progress](docs/PROGRESS.md). Load feature summaries first and detailed specs only for the selected work.
+Read [AGENTS.md](AGENTS.md), then the [feature map](docs/OVERVIEW.md), [shared principles](docs/PRINCIPLES.md) and [current progress](docs/PROGRESS.md). To choose new work, start with feature titles and discuss them with the user; open only useful short summaries. Load full specs after agreeing on the feature set, or when the user explicitly asks for deeper analysis.
 
 You can give an agent this instruction with the repository URL:
 
-> Read AGENTS.md and resume from docs/PROGRESS.md. Follow any scope I have already selected; otherwise review the feature map with me and help choose what to work on next.
+> Read AGENTS.md and resume from docs/PROGRESS.md. Follow any scope I have already selected; otherwise discuss feature titles with me, open short summaries only as needed, and help choose what to build next before loading full specs.
 
 There is no fixed build order. The user and agent choose each feature set together, agree on a bounded outcome and acceptance checks, then implement and verify it.
 

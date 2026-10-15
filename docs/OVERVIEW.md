@@ -4,7 +4,7 @@ One project-agnostic, multi-user workspace for interactive AI and durable autono
 
 ## Agent reading order
 
-Keep this map and [shared principles](PRINCIPLES.md) in context; check [progress](PROGRESS.md). Read selected summaries, then full specs and affected dependency/security sections for current work. Do not recursively load unrelated features. Summaries guide selection; full specs define behavior.
+Keep this map and [shared principles](PRINCIPLES.md) in context; check [progress](PROGRESS.md). To choose new work, discuss the feature titles with the user and open only useful short summaries. Keep selection context minimal; load full specs or implementation code after agreeing on a feature set, unless the user requests deeper analysis. Read affected dependency/security sections for the selected work. Do not recursively load unrelated features. Summaries guide selection; full specs define behavior.
 
 Choose the next feature or feature set together with the user from this map. Agree on a bounded outcome, relevant dependencies and acceptance checks, then complete that scope. Feature order is flexible; dependencies explain technical needs, not a prescribed build sequence. Discuss the next selection after reporting results.
 
