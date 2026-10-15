@@ -20,6 +20,7 @@ Binding across every feature. Detail lives in the linked feature specs and [arch
 7. Only administrator-approved infrastructure policy authorizes executables, sources, versions, privileges and tool permissions. Project content and model output cannot grant authority.
 8. Enforce least privilege, scoped tools, auditability, review and rollback. Protect current user work. Security/approval enforcement belongs in deterministic services.
 9. Deliver tested vertical slices incrementally. A UI or mock is not implemented behavior. Local-first is useful, but deployment must allow local and central services without coupling the product to either topology.
+10. Reuse before building. Prefer existing standards and maintained solutions (for example MCP for tools and the `SKILL.md` format for skills) over custom implementations; build only what no suitable option covers. Software, libraries and services the workspace depends on MUST be free to use. Paid model or provider usage remains an optional user choice, never a requirement.
 
 ## Cross-platform contract
 

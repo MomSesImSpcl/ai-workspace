@@ -13,6 +13,8 @@
 - The local AI acts as a cheap bulk processor/librarian/index assistant: summarizes Git changes, maintains project notes, processes large result sets, prepares context, documents APIs and identifies stale knowledge. It does not automatically replace deterministic indexing/Roslyn/Git queries.
 - Distinguish LLM context cost from local indexing/database reads: only information actually passed to a hosted model should incur hosted input-token usage; local processing still consumes hardware resources.
 
+- **knowledge-001:** Retrieval owns one shared, repository-scoped index and search layer. [Code indexing](../code-index/SPEC.md), the [documentation registry](../documentation/SPEC.md) and [memory](../memory/SPEC.md) MUST feed and query it rather than maintaining separate search pipelines; each keeps its own source-specific extraction (for example compiler-backed C# analysis or documentation sync) and its own records.
+
 ## 7.4 Source/knowledge precedence
 
 Default retrieval plan should prefer: (1) user's current project and its actual installed versions, (2) internal approved solutions and architectural decisions, (3) version-matched official docs, (4) relevant external solutions/current docs as needed. This order is configurable; do not force it when the question explicitly asks for something else.

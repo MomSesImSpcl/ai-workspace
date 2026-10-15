@@ -23,7 +23,14 @@ For active work, record the agreed goal and requirement references, completed/re
 
 - 2026-10-15: Personal tool first, multi-user later. Carry user and project identity through the core from the start so access checks can attach later; defer login servers and multi-tenant infrastructure until needed.
 - 2026-10-15: Build iteratively with thin end-to-end slices, usable before all features exist. Start with a minimal slice through the core features ([identity-projects](features/identity-projects/SUMMARY.md), [task-runtime](features/task-runtime/SUMMARY.md), [model-routing](features/model-routing/SUMMARY.md), [tool-broker](features/tool-broker/SUMMARY.md), with a local [runner](features/runners/SUMMARY.md) and [desktop-client](features/desktop-client/SUMMARY.md) as needed) before domain features. Later slices extend that core instead of working around it. Exact first-slice scope and acceptance checks are still to be agreed.
-- 2026-10-15: Technology is chosen per feature set when it is implemented, discussed together; see [open decisions](OPEN_DECISIONS.md).
+- 2026-10-15: Technology is chosen per feature set when it is implemented, discussed together; see [open decisions](OPEN_DECISIONS.md). Existing free solutions are preferred over building ([principle 10](PRINCIPLES.md#product-invariants)).
+- 2026-10-15: Knowledge features stay separate but share one index layer ([knowledge-001](features/knowledge-retrieval/SPEC.md)).
+
+## Proposed (not yet agreed)
+
+- **First core slice:** one local project; one task persisted locally that survives a restart; one model adapter; MCP-based file read/write tools limited to the project folder; a deterministic permission check before writes plus an audit log; per-task token/cost tracking; a minimal CLI or local web UI. Scope, technology and acceptance checks are confirmed together before implementation.
+- **After the core:** use the workspace on its own repository through [software-workflow](features/software-workflow/SUMMARY.md) and [code-index](features/code-index/SUMMARY.md).
+- **Tentative order, rearrangeable at any time (Unity is the primary use case):** core slice → software-workflow + code-index + knowledge-retrieval → [unity](features/unity/SUMMARY.md) + [documentation](features/documentation/SUMMARY.md) → [skills](features/skills/SUMMARY.md) + [ai-orchestrator](features/ai-orchestrator/SUMMARY.md) + [memory](features/memory/SUMMARY.md) → fuller [desktop-client](features/desktop-client/SUMMARY.md), [runners](features/runners/SUMMARY.md), [notifications](features/notifications/SUMMARY.md) → [creative-assets](features/creative-assets/SUMMARY.md), [animation](features/animation/SUMMARY.md), [provisioning](features/provisioning/SUMMARY.md), [technology-catalog](features/technology-catalog/SUMMARY.md), [evaluations](features/evaluations/SUMMARY.md), [mini-apps](features/mini-apps/SUMMARY.md) → [mobile-client](features/mobile-client/SUMMARY.md), [content-production](features/content-production/SUMMARY.md), [similarity-review](features/similarity-review/SUMMARY.md), [integrated-browser](features/integrated-browser/SUMMARY.md). Not an iteration agreement.
 
 ## Planned
 

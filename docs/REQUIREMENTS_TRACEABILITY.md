@@ -18,7 +18,7 @@ Original numbered sections remain valid references inside the destination specs.
 | 6.2 | [Typed tools, MCP and scoped execution](features/tool-broker/SPEC.md) | G5 |
 | 6.3 | [Architecture, implementation and review workflow](features/software-workflow/SPEC.md) | Local spec / agreed scope |
 | 6.4 | [Generated analysis tools and task dashboards](features/mini-apps/SPEC.md) | Local spec / agreed scope |
-| 7.1, 7.4 | [Authorized search and selective context assembly](features/knowledge-retrieval/SPEC.md) | G7 |
+| 7.1, 7.4, knowledge-001 | [Authorized search and selective context assembly](features/knowledge-retrieval/SPEC.md) | G7 |
 | 7.2 | [Semantic code indexing and change-aware knowledge](features/code-index/SPEC.md) | G7 |
 | 7.3 | [Version-matched local documentation registry](features/documentation/SPEC.md) | G7 |
 | 7.5 | [Automatic agent, effort and context delegation](features/ai-orchestrator/SPEC.md) | Local spec / agreed scope |

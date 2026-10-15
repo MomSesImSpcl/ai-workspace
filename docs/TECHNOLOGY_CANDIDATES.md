@@ -28,4 +28,4 @@
 | Media processing | FFmpeg, transcription/audio/video services | Replaceable service/tool adapters; rights and data policies apply. |
 | Creative/decision models | Fable, Opus, Astra, local LLM, Jev, other providers | **Role labels/current choices only**. Do not hard-code vendors into skills/tasks. |
 
-**Technology selection rubric:** Security & access controls → functional fit → maintainability and ecosystem → integration/tooling → performance/scale → operational overhead → portability/vendor lock-in → cost. Record trade-offs rather than assuming any candidate is perfect.
+**Technology selection rubric:** Only free-to-use options qualify, and existing solutions are preferred over custom builds ([principle 10](PRINCIPLES.md#product-invariants)). Then: Security & access controls → functional fit → maintainability and ecosystem → integration/tooling → performance/scale → operational overhead → portability/vendor lock-in → cost. Record trade-offs rather than assuming any candidate is perfect.
