@@ -15,7 +15,7 @@ No feature set is selected for implementation. No implementation blockers have b
 
 ## Resume here
 
-Repository branch: `main`. The application is not implemented. Next product action: discuss titles in the [feature map](OVERVIEW.md) with the user, opening short summaries only as needed, and agree on a feature set before loading full specs; none has been chosen yet. Follow the [agreed direction](#agreed-direction): define the first core slice next. For feature-definition requests, follow [the feature-writing guide](ADDING_FEATURES.md).
+Repository branch: `main`. The application is not implemented. Feature titles and all summaries were already reviewed with the user; see [agreed direction](#agreed-direction) and [proposed](#proposed-not-yet-agreed). Next product action: confirm the proposed first core slice with the user (scope, free technology choices, acceptance checks). Once agreed, record it under Active, then load the full specs of identity-projects, task-runtime, model-routing and tool-broker (plus runners/desktop-client only as needed) and the affected [architecture](ARCHITECTURE.md) contracts. For feature-definition requests, follow [the feature-writing guide](ADDING_FEATURES.md).
 
 For active work, record the agreed goal and requirement references, completed/remaining work with file paths, actual checks and results, blockers/open decisions, branch/commit when available, and the next concrete action. Update this handoff before ending or transferring work.
 
