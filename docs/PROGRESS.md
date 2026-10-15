@@ -11,6 +11,7 @@
 - 2026-10-15: Added the agreed direction, reuse-first principle 10, shared knowledge index (knowledge-001), proposed first slice and tentative order; `AGENTS.md` now requires automatic progress updates after each step, decision or commit.
 - 2026-10-15: Added the one-branch-per-feature-scope rule and inferred-commit rule (working agreement step 11).
 - 2026-10-15: Added the small-increment, low-token guideline (working agreement step 3).
+- 2026-10-15: Agents now suggest new or split features proactively ([feature-writing guide](ADDING_FEATURES.md)).
 
 ## Active / blocked
 

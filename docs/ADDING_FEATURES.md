@@ -2,6 +2,8 @@
 
 Use this guide when the user asks to define, expand, split or revise a feature. Documentation work does not authorize application implementation.
 
+When a discussion or implementation turns up a capability that is distinct from the current feature or would grow its scope, suggest it to the user as a new or split feature instead of silently folding it in. Write it up with this guide only after the user agrees.
+
 ## Find the owner
 
 Read the [feature map](OVERVIEW.md), relevant summaries and [shared principles](PRINCIPLES.md). Extend an existing spec when it owns the behavior. Create a new folder only for a distinct capability with a clear purpose. Split by responsibility, not document length alone.
