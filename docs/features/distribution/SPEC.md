@@ -4,7 +4,7 @@
 
 ## Purpose and status
 
-Let another person or machine install, configure and run the workspace without the original developer's context. Product behavior is **not-started**. The baseline is the README [Getting started](../../../README.md#getting-started-prototype-cli) section plus npm-pinned dependencies (`app/package.json`, `app/package-lock.json`); it MUST stay current with every change to requirements or setup steps until this feature replaces it.
+Let another person or machine install, configure and run the workspace without the original developer's context. Product behavior is **not-started**. The baseline is the README [Getting started](../../../README.md#getting-started-prototype-cli) section plus npm-pinned dependencies (`app/package.json`, `app/package-lock.json`) and the [dependency inventory](../../DEPENDENCIES.md), which records every prerequisite with its tested version and is the input for distribution-001/002; it MUST stay current with every change to requirements or setup steps until this feature replaces it.
 
 ## Ownership
 

@@ -41,7 +41,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 ## Shared references — load as needed
 
 - [Requirement locations and evidence](REQUIREMENTS_TRACEABILITY.md) · [Current work](PROGRESS.md) · [History on demand](history/)
-- [Architecture, security and quality contracts](ARCHITECTURE.md) · [Acceptance scenarios G1–G13](ACCEPTANCE.md)
+- [Architecture, security and quality contracts](ARCHITECTURE.md) · [Acceptance scenarios G1–G13](ACCEPTANCE.md) · [Dependency inventory](DEPENDENCIES.md)
 - [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
 - [Adding or changing features](ADDING_FEATURES.md)
 
