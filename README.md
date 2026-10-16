@@ -17,7 +17,7 @@ There is no fixed build order. The user and agent choose each feature set togeth
 - [Feature map](docs/OVERVIEW.md): descriptive titles and paths to all capabilities.
 - [Adding or changing features](docs/ADDING_FEATURES.md): concise specification rules and registration checklist.
 - [Working agreement](docs/WORKING_AGREEMENT.md): implementation, verification and handoff rules.
-- [Progress](docs/PROGRESS.md): compact current state and next action; [monthly history](docs/history/): completed work and detailed evidence, searched only as needed. [Requirement traceability](docs/REQUIREMENTS_TRACEABILITY.md) maps requirements to status and evidence.
+- [Progress](docs/PROGRESS.md): compact current state and next action; [history](docs/history/): one folder per completed work item with a short summary and details, searched only as needed. [Architecture decisions](docs/architecture/decisions/README.md): index of ADRs. [Requirement traceability](docs/REQUIREMENTS_TRACEABILITY.md) maps requirements to status and evidence.
 - [Architecture, security and quality](docs/ARCHITECTURE.md): shared contracts; [open decisions](docs/OPEN_DECISIONS.md): choices to resolve when relevant.
 
 Each `docs/features/<feature>/` folder contains exactly `SUMMARY.md` and `SPEC.md`.

@@ -49,7 +49,7 @@ Original numbered sections remain valid references inside the destination specs.
 
 | Original source | Current owner | Treatment |
 |---|---|---|
-| Header, development continuity | [Overview](OVERVIEW.md), [progress/history contract](WORKING_AGREEMENT.md#progress-and-history), [current progress](PROGRESS.md), [monthly history](history/) | Compact current handoff; completed work/evidence retained in searchable monthly archives, read only as needed. Repository documentation workflow is distinct from the not-started structured-history product feature; [documentation evidence](history/2026-10.md#2026-10-16--compact-progress-preserved-history-and-future-structured-storage). |
+| Header, development continuity | [Overview](OVERVIEW.md), [progress/history contract](WORKING_AGREEMENT.md#progress-and-history), [current progress](PROGRESS.md), [history](history/) | Compact current handoff; completed work/evidence retained as per-item summary/detail folders, read only as needed. Repository documentation workflow is distinct from the not-started structured-history product feature; [documentation evidence](history/2026-10-16-02-compact-progress-and-history/SUMMARY.md). |
 | 0: vocabulary, principles, cross-platform, exclusions | [Shared principles](PRINCIPLES.md) | Consolidated without changing product scope or platform obligations. |
 | 3.1, 3.3, 9.3, 13 | [Architecture/security/quality](ARCHITECTURE.md) | Shared implementation contracts, including all testing categories. |
 | 14 | [Working agreement](WORKING_AGREEMENT.md), feature specs and [quality contracts](ARCHITECTURE.md) | Fixed sequence removed at the user’s request; relevant technical proofs retained with their owners. |

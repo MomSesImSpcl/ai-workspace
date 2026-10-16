@@ -10,18 +10,18 @@ Choose the next feature or feature set together with the user from this map. Agr
 
 ## Feature map
 
-Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.md`.
+Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.md`. Marked entries are in progress; unmarked ones are not started. Each summary has a **Status** line.
 
-- [Identity, projects and repository access](features/identity-projects/SUMMARY.md)
+- [Identity, projects and repository access](features/identity-projects/SUMMARY.md) — in progress
 - [Desktop workspace and Task Center](features/desktop-client/SUMMARY.md)
 - [Mobile capture and cross-device task control](features/mobile-client/SUMMARY.md)
 - [Task notifications and privacy-safe previews](features/notifications/SUMMARY.md)
 - [Secure local and remote execution runners](features/runners/SUMMARY.md)
-- [Durable autonomous tasks and context continuation](features/task-runtime/SUMMARY.md)
-- [Model registry, role routing and provider adapters](features/model-routing/SUMMARY.md)
+- [Durable autonomous tasks and context continuation](features/task-runtime/SUMMARY.md) — in progress
+- [Model registry, role routing and provider adapters](features/model-routing/SUMMARY.md) — in progress
 - [Evidence-based model evaluations and shadow tests](features/evaluations/SUMMARY.md)
 - [Versioned skills and reusable capability workflows](features/skills/SUMMARY.md)
-- [Typed tools, MCP and scoped execution](features/tool-broker/SUMMARY.md)
+- [Typed tools, MCP and scoped execution](features/tool-broker/SUMMARY.md) — in progress
 - [Architecture, implementation and review workflow](features/software-workflow/SUMMARY.md)
 - [Generated analysis tools and task dashboards](features/mini-apps/SUMMARY.md)
 - [Authorized search and selective context assembly](features/knowledge-retrieval/SUMMARY.md)
@@ -29,7 +29,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Version-matched local documentation registry](features/documentation/SUMMARY.md)
 - [Project planning, wiki and public roadmap](features/project-planning/SUMMARY.md)
 - [Project history and selective progress retrieval](features/project-history/SUMMARY.md)
-- [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SUMMARY.md)
+- [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SUMMARY.md) — in progress
 - [Automatic long-term memory and project knowledge](features/memory/SUMMARY.md)
 - [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SUMMARY.md)
 - [Technology discovery and build-versus-buy research](features/technology-catalog/SUMMARY.md)

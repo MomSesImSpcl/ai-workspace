@@ -1,5 +1,7 @@
 # Optional browser and web-based AI interfaces
 
+**Status:** not-started
+
 Embed optional isolated Chromium browsing with project-associated tabs and persistent profiles. Support manual use of existing AI subscriptions and controlled context exchange, retain provenance, and offer external-browser fallback without exposing workspace privileges.
 
 [Full requirements](SPEC.md).

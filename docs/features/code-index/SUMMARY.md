@@ -1,5 +1,7 @@
 # Semantic code indexing and change-aware knowledge
 
+**Status:** not-started
+
 Index symbols, relationships, tests and Git changes, using compiler-backed analysis for C#. Find internal code and approved dependencies before proposing replacements; keep documentation grounded in current, authorized source.
 
 [Full requirements](SPEC.md).

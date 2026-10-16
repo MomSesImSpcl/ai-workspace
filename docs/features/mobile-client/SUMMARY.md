@@ -1,5 +1,7 @@
 # Mobile capture and cross-device task control
 
+**Status:** not-started
+
 Capture text, voice and media; start, monitor and review the same tasks used on desktop. Local application work waits for an authorized runner. Keep credentials and high-risk actions within the defined mobile security boundary.
 
 [Full requirements](SPEC.md).

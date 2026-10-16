@@ -1,5 +1,7 @@
 # Model registry, role routing and provider adapters
 
+**Status:** in-progress: role→agent config, Claude Code and Codex CLI adapters (core slice 1)
+
 Select approved models through configurable capability-based roles, fallbacks and user overrides. Normalize provider interactions while preserving useful provider-specific features, local inference support, privacy rules and usage reporting.
 
 [Full requirements](SPEC.md).

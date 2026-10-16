@@ -1,5 +1,7 @@
 # Automatic long-term memory and project knowledge
 
+**Status:** not-started
+
 Capture useful durable knowledge into scoped, versioned memories with provenance. Detect conflicts, consolidate incrementally and inject selectively across authorized agents. Users control retention; memory remains subordinate to current verified evidence.
 
 [Full requirements](SPEC.md).

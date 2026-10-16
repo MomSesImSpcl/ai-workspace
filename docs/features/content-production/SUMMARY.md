@@ -1,5 +1,7 @@
 # Video research, style guides and YouTube production
 
+**Status:** not-started
+
 Research authorized audiovisual sources, derive provenance-backed style guides, and prepare truthful scripts and optional production artifacts. Reuse workspace tasks and tools; editors receive only permitted sources and sanitized project knowledge.
 
 [Full requirements](SPEC.md).

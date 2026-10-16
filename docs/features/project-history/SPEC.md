@@ -4,7 +4,7 @@
 
 ## Purpose and status
 
-Keep recorded development work available without replaying the complete history into every model context. The repository's current baseline is [compact progress](../../PROGRESS.md) plus monthly Markdown history, maintained under the [working agreement](../../WORKING_AGREEMENT.md#progress-and-history). This feature defines a possible structured successor; product behavior is **not-started**. JSONL, SQLite and migration tooling are proposals, not adopted technologies or authorized implementation work.
+Keep recorded development work available without replaying the complete history into every model context. The repository's current baseline is [compact progress](../../PROGRESS.md) plus Markdown history with one folder per work item (`SUMMARY.md` + `DETAILS.md`), maintained under the [working agreement](../../WORKING_AGREEMENT.md#progress-and-history). This feature defines a possible structured successor; product behavior is **not-started**. JSONL, SQLite and migration tooling are proposals, not adopted technologies or authorized implementation work.
 
 ## Ownership
 
@@ -25,7 +25,7 @@ This feature owns development-history records and their current-state projection
 
 | Approach | Benefit | Useful switching signal | Cost or limit |
 |---|---|---|---|
-| Compact Markdown + monthly archives (current) | Human editing, readable Git diffs, plain search and no new runtime | Keep it while finding and maintaining relevant entries is reliable and cheap | Free-form records require manual consistency; loading every archive defeats the design |
+| Compact Markdown + per-item summary/detail folders (current) | Human editing, readable Git diffs, plain search and no new runtime | Keep it while finding and maintaining relevant entries is reliable and cheap | Free-form records require manual consistency; loading every archive defeats the design |
 | JSONL canonical events + generated current summary | One structured event per line, streaming filters, export and straightforward automation | Repeated parsing/reporting needs stable fields, or tools already produce structured outcomes | Needs schema/version validation, serialized writers and explicit partial-write recovery; arbitrary queries may scan many records |
 | SQLite as a rebuildable index over Markdown or JSONL | Date/feature/status filters, joins and optional full-text search without changing canonical records | Repeated scans or relationship queries are measurably costly | Index freshness and rebuilds need ownership; coordinate any search with knowledge-001 |
 | SQLite canonical records + generated summary/export | Transactions, constraints and structured relationships in an embedded store | Record relationships, coordinated edits or consistency checks are awkward in files | Binary Git diffs are poor; backup, migration and export tooling become necessary; SQLite coordinates a single writer at a time and is not a general distributed-write solution |

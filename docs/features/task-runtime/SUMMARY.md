@@ -1,5 +1,7 @@
 # Durable autonomous tasks and context continuation
 
+**Status:** in-progress: restart-safe tasks, token budget, child tasks (core slice 1)
+
 Run independent background tasks alongside responsive conversations. Persist work graphs, evidence, checkpoints, budgets and controls; support context rollover, safe recovery, child tasks, model handoffs and capacity-aware scheduling.
 
 [Full requirements](SPEC.md).

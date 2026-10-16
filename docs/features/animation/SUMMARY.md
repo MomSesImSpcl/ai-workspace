@@ -1,5 +1,7 @@
 # External animation, retargeting and cinematics
 
+**Status:** not-started
+
 Author motion with approved external tools and export compatible clips for the actual target rig and engine. Validate licensing, skeleton conventions, retargeting, root motion and quality; retain sources and support human cleanup.
 
 [Full requirements](SPEC.md).

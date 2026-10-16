@@ -1,5 +1,7 @@
 # Architecture, implementation and review workflow
 
+**Status:** not-started
+
 Use configurable roles to retrieve project evidence, specify a complex feature, implement and test it, then review the actual change independently. Escalate invalid plans; allow lighter handling for small changes.
 
 [Full requirements](SPEC.md).
