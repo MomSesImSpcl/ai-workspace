@@ -5,6 +5,7 @@
   "license": "MIT",
   "description": "AI Workspace core slice: restart-safe tasks, agent adapters, scoped MCP file tools.",
   "type": "module",
+  "main": "desktop/main.mjs",
   "bin": {
     "ws": "src/cli.ts"
   },
@@ -13,6 +14,7 @@
   },
   "scripts": {
     "ws": "node src/cli.ts",
+    "desktop": "electron .",
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "electron": "^44.8.0",
     "typescript": "^7.0.2"
   }
 }

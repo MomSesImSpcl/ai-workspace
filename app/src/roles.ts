@@ -7,6 +7,7 @@ import { codex } from './adapters/codex.ts';
 // Integrations the core can actually run. Assignments may name others (e.g. a manual
 // browser handoff), but running them fails explicitly until an adapter exists (routing-001).
 const adapters: Record<string, AgentAdapter> = { 'claude-code': claudeCode, codex };
+export const integrations = [...Object.keys(adapters), 'manual-browser'];
 
 export interface Assignment {
   integration: string;

@@ -3,8 +3,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PickerUnavailable, pickFolder } from './folder-picker.ts';
-import { getRoles, newRoleTask } from './roles.ts';
+import { getRoles, integrations, newRoleTask, setRole } from './roles.ts';
 import { cancelTask, listTasks, loadTask, markRunner, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { home, listProjects, registerProject } from './store.ts';
 
@@ -36,20 +35,6 @@ function events(id: string): unknown[] {
   const path = join(home(), 'audit.jsonl');
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.taskId === id || e.childId === id);
-}
-
-let picking = false;
-
-async function pickFolderOnce(): Promise<{ path: string | null }> {
-  if (picking) throw new HttpError(409, 'a folder dialog is already open');
-  picking = true;
-  try {
-    return { path: await pickFolder() };
-  } catch (e) {
-    throw e instanceof PickerUnavailable ? new HttpError(501, e.message) : e;
-  } finally {
-    picking = false;
-  }
 }
 
 class HttpError extends Error {
@@ -85,13 +70,19 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const [, api, kind, id, action] = url.pathname.split('/');
   if (api !== 'api') throw new HttpError(404, 'not found');
   if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad task id');
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles() };
+  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
   if (req.method === 'GET' && kind === 'tasks') {
     const task = loadTask(id);
     return { task: view(task), children: listTasks().filter((t) => t.parentId === id).map(view), events: events(id), log: tail(logPath(id)) };
   }
-  if (req.method === 'POST' && kind === 'pick-folder') return pickFolderOnce();
+  if (req.method === 'POST' && kind === 'roles') {
+    const b = await body(req);
+    if (typeof b.role !== 'string' || !b.role || typeof b.integration !== 'string' || !b.integration) throw new HttpError(400, 'role and integration are required');
+    if (b.model !== undefined && typeof b.model !== 'string') throw new HttpError(400, 'model must be a string');
+    setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
+    return getRoles();
+  }
   if (req.method === 'POST' && kind === 'projects') {
     const b = await body(req);
     if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');

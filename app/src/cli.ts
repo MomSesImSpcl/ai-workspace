@@ -69,7 +69,7 @@ try {
   } else if (cmd === 'ui') {
     const { serve } = await import('./ui.ts');
     const server = serve(Number(values.port));
-    server.on('listening', () => console.log(`Task Center: http://127.0.0.1:${values.port}/ (Ctrl+C stops the UI; tasks keep running)`));
+    server.on('listening', () => console.log(`Workspace UI: http://127.0.0.1:${(server.address() as { port: number }).port}/ (Ctrl+C stops the UI; tasks keep running)`));
   } else if (cmd === 'roles') {
     if (rest[0] && rest[1]) setRole(rest[0], { integration: rest[1], model: rest[2] });
     for (const [role, a] of Object.entries(getRoles())) console.log(`${role} -> ${a.integration}${a.model ? ` (${a.model})` : ''}`);

@@ -45,4 +45,4 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
 - [Adding or changing features](ADDING_FEATURES.md)
 
-Status: core slice 1 prototype (CLI) and Task Center slice 1 (local web UI) implemented and verified on Windows; see [progress](PROGRESS.md). Desktop client is in progress; other features are planned.
+Status: core slice 1 prototype (CLI) and the Electron workspace app (Task Center) implemented and verified on Windows; see [progress](PROGRESS.md). Desktop client is in progress; other features are planned.

@@ -243,6 +243,8 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
     assert.equal((await add({ path: 'relative/dir' })).status, 400);
     assert.equal((await add({ path: join(root, 'missing') })).status, 400);
+    const roles = await (await fetch(`${base}/api/roles`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ role: 'Implementation', integration: 'codex', model: ' ' }) })).json();
+    assert.deepEqual(roles.Implementation, { integration: 'codex' });
   } finally {
     server.close();
   }
