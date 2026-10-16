@@ -6,7 +6,7 @@ Read this file at startup. Search [monthly history](history/) only for relevant 
 
 **Active scope: core slice 1** on branch `feature/core-slice` ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
 
-Increments 1–3 done and verified: unit tests 9/9; real e2e for Claude Code (Implementation), Codex CLI (Orchestration, dedicated `CODEX_HOME` login), and Codex delegating a subtask to Claude Code with inherited scope, budget ceiling and usage charged to the parent. Budget pause and kill/resume verified with a fake adapter only. No blockers.
+Increments 1–3 done and verified: unit tests 9/9; real e2e for Claude Code (Implementation), Codex CLI (Orchestration, dedicated `CODEX_HOME` login), and Codex delegating a subtask to Claude Code with inherited scope, budget ceiling and usage charged to the parent. Budget pause and kill/resume also verified against real Claude Code; known gaps: a step can overshoot the budget, and a killed step re-runs so its side effects repeat ([evidence](history/2026-10.md#2026-10-16--core-slice-1-real-budget-pause-and-killresume-checks)). No blockers.
 
 ## Agreed direction
 
