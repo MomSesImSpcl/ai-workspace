@@ -7,9 +7,9 @@
 |---|---|---|
 | Desktop shell | **Tauri 2**, Rust; alternatively Electron or native UI | Tauri is attractive, not mandatory. Keep desktop OS glue thin. |
 | Web/mobile UI | **React + TypeScript**, Vite, responsive PWA | Component sharing is useful; other frameworks acceptable. |
-| Workspace/control-plane backend | **Go** or **ASP.NET Core/.NET (C#)** | Both discussed; neither is mandated. Prefer a modular monolith first if suitable. |
+| Workspace/control-plane backend | **Go** or **ASP.NET Core/.NET (C#)** | Both discussed; neither is mandated. Prefer a modular monolith first if suitable. *Core slice 1 chose:* TypeScript on Node 24 for the core CLI; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
 | Workstation agent/runner | Go worker, .NET Worker Service, Rust helpers | Cross-platform process supervision, secure IPC and straightforward deployment matter most. |
-| Durable workflows | **Temporal** or simpler DB-backed workflow engine | Evaluate operational overhead; Temporal is a candidate, not foundational requirement. |
+| Durable workflows | **Temporal** or simpler DB-backed workflow engine | Evaluate operational overhead; Temporal is a candidate, not foundational requirement. *Core slice 1 chose:* atomic JSON task files, no workflow engine; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
 | Agent orchestration integration | **Hermes Agent** | Concrete use case and adoption remain open; see the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
 | Long-term memory engine | **Hindsight** | Concrete use case and adoption remain open; resolve `knowledge-001` and source ACLs through the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
 | Persistent relational state | **PostgreSQL** | Solid default; alternative must provide migrations, durability and correct transactions. |
@@ -22,7 +22,7 @@
 | Project/skill policy files | Markdown, YAML, JSON, `SKILL.md` | Versioned, inspectable schemas; no executable authority from untrusted files. |
 | Code semantic index | Roslyn, MSBuild, compiler APIs | C# domain module; not a reason to force whole backend into C#. |
 | Local/ML workers | Python, PyTorch/Transformers, model servers | Python is useful for AI/CV/3D without being the whole platform backend. |
-| AI gateway | Custom interface/adapters, appropriate gateway libraries | Feature fidelity, data privacy, credentials and portability matter. |
+| AI gateway | Custom interface/adapters, appropriate gateway libraries | Feature fidelity, data privacy, credentials and portability matter. *Core slice 1 chose:* agent CLIs (Claude Code, Codex) behind a workspace adapter interface; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
 | App integrations | MCP, Unity Editor APIs, Blender Python, external service APIs | Semantic typed capabilities above tool-specific adapters. |
 | Provisioning | WinGet/PowerShell, apt/dnf/pacman, Homebrew, npm/pip/uv/NuGet/UPM | Registry-authorized installs only; versions and checksums pinned where appropriate. |
 | Import/render cache | Unity Accelerator or suitable artifact cache | Optional optimization for repeated worker worktrees; check current compatibility/licensing. |

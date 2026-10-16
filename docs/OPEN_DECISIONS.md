@@ -1,12 +1,11 @@
 # Open implementation decisions
 
-
 These are **not reasons to halt all work**, and the implementing agent should propose a recommendation with evidence when each becomes relevant to the selected feature work:
 
-1. Initial development and testing OS, supported CPU architectures, minimum workstation specifications, and the cross-platform build/test strategy for Windows, Linux, and macOS. Support for all three operating systems is mandatory; only their implementation order remains undecided.
-2. Initial local-only prototype versus centrally hosted control plane; hosting/availability/backup strategy when mobile or employees arrive.
+1. Initial development and testing OS, supported CPU architectures, minimum workstation specifications, and the cross-platform build/test strategy for Windows, Linux, and macOS. Support for all three operating systems is mandatory; only their implementation order remains undecided. *So far:* Windows leads (core slice 1 is tested only on Windows); not formally decided.
+2. Initial local-only prototype versus centrally hosted control plane; hosting/availability/backup strategy when mobile or employees arrive. *Decided for core slice 1:* local-only, state in the user workspace home ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)); hosting remains open.
 3. GitHub integration mechanics and precise authorization refresh semantics; behavior for non-Git projects.
-4. Modularity boundary: monolith versus separate worker services and whether/when Temporal is justified.
+4. Modularity boundary: monolith versus separate worker services and whether/when Temporal is justified. *Decided for core slice 1:* single CLI process plus a per-task MCP server process, JSON-file state, no workflow engine ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)); revisit with concurrency or remote workers.
 5. Exact primary persistence/search/index technologies and dataset retention policies. The [Hermes/Hindsight feature](features/hermes-hindsight/SPEC.md) must evaluate Hindsight's fit with `knowledge-001`; its separate feature definition does not authorize an independent memory search pipeline.
 6. Runner-to-control-plane protocol, secure provisioning lifecycle and job identity/sandbox details.
 7. Cloud-model privacy consent defaults, provider allowlists, data residency and cost budgets.
@@ -17,4 +16,3 @@ These are **not reasons to halt all work**, and the implementing agent should pr
 12. Whether task approval/notifications are available through mobile for each risk category.
 13. Data lifetimes for conversations, model traces, source cache, screenshots/video and completed task artifacts.
 
-**Final implementation principle:** Features and trust boundaries are the specification. The stack is a candidate implementation. A usable, secure, tested slice delivered iteratively is preferable to a grand but incomplete implementation.

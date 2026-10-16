@@ -1,62 +1,17 @@
 # Requirements traceability
 
-This maps requirements to their owning specs and acceptance references, not a delivery order. Every feature is **not-started**; source files and executable test evidence are **none**. The user and agent choose each feature scope together.
+Status and evidence per requirement that has implementation work. Each feature summary carries its overall **Status** line; acceptance references (G1–G13, local A-checks) live in the owning specs. During implementation, add one row per affected requirement with source files, tests/evidence and status (`in-progress`, `validated`, `deferred` with reason). Use section + numbered item or distinctive bullet for existing requirements and stable IDs from [the feature-writing guide](ADDING_FEATURES.md) for new ones.
 
-Original numbered sections remain valid references inside the destination specs. Use section + numbered requirement or distinctive bullet for existing items; use stable IDs from [the feature-writing guide](ADDING_FEATURES.md) for new requirements. During implementation, add one row per affected requirement with source files, tests/evidence and status (`not-started`, `in-progress`, `validated`, `deferred`). Record reasons for deferrals; keep untouched future features grouped here.
+## Requirements with implementation work
 
-| Requirement reference | Owning feature spec | Acceptance reference |
+| Requirement reference | Owning feature spec | Status and evidence |
 |---|---|---|
-| 1 | [Identity, projects and repository access](features/identity-projects/SPEC.md) | G1, G2 |
-| 2.1 | [Desktop workspace and Task Center](features/desktop-client/SPEC.md) | G3 |
-| 2.2 | [Mobile capture and cross-device task control](features/mobile-client/SPEC.md) | G11 |
-| 2.3 | [Task notifications and privacy-safe previews](features/notifications/SPEC.md) | Local spec / agreed scope |
-| 3.2 | [Secure local and remote execution runners](features/runners/SPEC.md) | G11 |
-| 4 | [Durable autonomous tasks and context continuation](features/task-runtime/SPEC.md) | G3, G4 |
-| 5.1, 5.2 | [Model registry, role routing and provider adapters](features/model-routing/SPEC.md) | G6 |
-| 5.3 | [Evidence-based model evaluations and shadow tests](features/evaluations/SPEC.md) | G6 |
-| 6.1 | [Versioned skills and reusable capability workflows](features/skills/SPEC.md) | Local spec / agreed scope |
-| 6.2 | [Typed tools, MCP and scoped execution](features/tool-broker/SPEC.md) | G5 |
-| 6.3 | [Architecture, implementation and review workflow](features/software-workflow/SPEC.md) | Local spec / agreed scope |
-| 6.4 | [Generated analysis tools and task dashboards](features/mini-apps/SPEC.md) | Local spec / agreed scope |
-| 7.1, 7.4, knowledge-001 | [Authorized search and selective context assembly](features/knowledge-retrieval/SPEC.md) | G7 |
-| 7.2 | [Semantic code indexing and change-aware knowledge](features/code-index/SPEC.md) | G7 |
-| 7.3 | [Version-matched local documentation registry](features/documentation/SPEC.md) | G7 |
-| planning-001–010 | [Project planning, wiki and public roadmap](features/project-planning/SPEC.md) | A1–A10 in owning spec; not-started; implementation/test evidence: none |
-| history-001–006 | [Project history and selective progress retrieval](features/project-history/SPEC.md) | A1–A6 in owning spec; not-started; implementation/test evidence: none |
-| 7.5 | [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SPEC.md) | Local spec / agreed scope |
-| orchestrator-001–003 | [Independent role selection, handoffs and compatibility](features/ai-orchestrator/SPEC.md#independently-selectable-roles) | A1–A3; not-started; implementation/test evidence: none |
-| routing-001 | [Role and agent assignments](features/model-routing/SPEC.md#role-and-agent-assignments) | Local acceptance evidence; **in-progress** (core slice 1): role→integration config in `app/src/roles.ts`, test `app/test/core.test.ts` (roles); Orchestration→codex runnable; delegation and planning handoff not built |
+| routing-001 | [Role and agent assignments](features/model-routing/SPEC.md#role-and-agent-assignments) | Local acceptance evidence; **in-progress** (core slice 1): role→integration config in `app/src/roles.ts`, test `app/test/core.test.ts` (roles); Orchestration→codex runnable; delegation built (see 4.4); planning handoff not built |
 | 4.2, 4.3 (restart resume), 4.6 (token budget) | [Durable tasks](features/task-runtime/SPEC.md) | **in-progress** (core slice 1): `app/src/runtime.ts`, tests in `app/test/core.test.ts`; unit tests plus real Claude Code budget pause and kill/resume (history 2026-10-16); effect ledger and per-call budget check in `app/src/broker.ts` (history increment 4); remaining: one model turn can overshoot |
 | 4.4 (child tasks: inherited least privilege, budget ceiling, depth bound) | [Durable tasks](features/task-runtime/SPEC.md#44-task-graph-and-child-tasks) | **in-progress** (core slice 1): `app/src/delegate.ts`, `delegate` tool in `app/src/mcp-server.ts`, test in `app/test/core.test.ts`; real Codex→Claude Code e2e (history increment 3); no parallel children |
 | 5.2 (agent CLI adapter) | [Provider adapters](features/model-routing/SPEC.md#52-provider-adapters) | **in-progress** (core slice 1): `app/src/adapters/claude-code.ts`, `app/src/adapters/codex.ts`; both real e2e verified |
 | 6.2 (scoped MCP tools, audit) | [Tool broker](features/tool-broker/SPEC.md) | **in-progress** (core slice 1): `app/src/broker.ts`, `app/src/mcp-server.ts`, tests in `app/test/core.test.ts` |
-| browser-001 | [Planning-role handoff](features/integrated-browser/SPEC.md#planning-role-handoff) | Local browser handoff acceptance; not-started; implementation/test evidence: none |
-| 7.6 | [Automatic long-term memory and project knowledge](features/memory/SPEC.md) | Local spec / agreed scope |
-| hermes-hindsight-001–006 | [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SPEC.md) | A1–A6 in owning spec; not-started; implementation/test evidence: none |
-| 8 | [Technology discovery and build-versus-buy research](features/technology-catalog/SPEC.md) | G10 |
-| 9.1, 9.2 | [Trusted infrastructure registry and dependency provisioning](features/provisioning/SPEC.md) | G5 |
-| distribution-001–005 | [Workspace installation, packaging and cross-platform setup](features/distribution/SPEC.md) | Acceptance evidence in owning spec; not-started; baseline: README Getting started (Windows only tested) |
-| 10 | [Unity indexing, scene authoring and background validation](features/unity/SPEC.md) | G8, G9 |
-| 11.1, 11.2 | [Visual concepts and editable 3D asset pipelines](features/creative-assets/SPEC.md) | G12 |
-| 11.3, 11.4 | [External animation, retargeting and cinematics](features/animation/SPEC.md) | G12 |
-| 11.5 | [Internal artwork and identity similarity screening](features/similarity-review/SPEC.md) | G13 |
-| 12 | [Video research, style guides and YouTube production](features/content-production/SPEC.md) | Local spec / agreed scope |
-| Integrated Browser | [Optional browser and web-based AI interfaces](features/integrated-browser/SPEC.md) | Local spec / agreed scope |
 
-## Shared and planning material
+## All other requirements: not-started
 
-2026-10-16: Hermes/Hindsight research is retained in the separate [evaluation and integration feature](features/hermes-hindsight/SPEC.md), alongside `hermes-hindsight-001–006`, acceptance A1–A6 and an ownership/overlap map. Existing memory, retrieval, orchestration, routing, task-runtime, tool, skill, catalog and provisioning requirements retain their owners. Concrete use case and adoption remain open; all affected product behavior is `not-started`, with no implementation/runtime acceptance evidence.
-
-| Original source | Current owner | Treatment |
-|---|---|---|
-| Header, development continuity | [Overview](OVERVIEW.md), [progress/history contract](WORKING_AGREEMENT.md#progress-and-history), [current progress](PROGRESS.md), [history](history/) | Compact current handoff; completed work/evidence retained as per-item summary/detail folders, read only as needed. Repository documentation workflow is distinct from the not-started structured-history product feature; [documentation evidence](history/2026-10-16-02-compact-progress-and-history/SUMMARY.md). |
-| 0: vocabulary, principles, cross-platform, exclusions | [Shared principles](PRINCIPLES.md) | Consolidated without changing product scope or platform obligations. |
-| 3.1, 3.3, 9.3, 13 | [Architecture/security/quality](ARCHITECTURE.md) | Shared implementation contracts, including all testing categories. |
-| 14 | [Working agreement](WORKING_AGREEMENT.md), feature specs and [quality contracts](ARCHITECTURE.md) | Fixed sequence removed at the user’s request; relevant technical proofs retained with their owners. |
-| 15 | [Acceptance](ACCEPTANCE.md) | All G1–G13 scenarios retained. |
-| 16 | [Working agreement](WORKING_AGREEMENT.md) | Process retained; reading policy and documentation paths updated. |
-| Appendix A | [Technology candidates](TECHNOLOGY_CANDIDATES.md) | Nonbinding status retained. |
-| Appendix B | [Projects](features/identity-projects/SPEC.md), [models](features/model-routing/SPEC.md), [Unity](features/unity/SPEC.md) | Three illustrative contracts moved to their owners; not production schemas. |
-| Appendix C | [Open decisions](OPEN_DECISIONS.md) | All 13 decisions retained; appended browser feature moved to its own folder. |
-
-Orchestrator and memory numbered requirements retain their original 1–20 and 1–23 identities with shorter wording. No application implementation or requirements validation is implied by this documentation split.
+Section and ID index (where each reference lives): 1 [identity-projects](features/identity-projects/SPEC.md) · 2.1 [desktop-client](features/desktop-client/SPEC.md) · 2.2 [mobile-client](features/mobile-client/SPEC.md) · 2.3 [notifications](features/notifications/SPEC.md) · 3.2 [runners](features/runners/SPEC.md) · 4 [task-runtime](features/task-runtime/SPEC.md) · 5.1, 5.2, routing-001 [model-routing](features/model-routing/SPEC.md) · 5.3 [evaluations](features/evaluations/SPEC.md) · 6.1 [skills](features/skills/SPEC.md) · 6.2 [tool-broker](features/tool-broker/SPEC.md) · 6.3 [software-workflow](features/software-workflow/SPEC.md) · 6.4 [mini-apps](features/mini-apps/SPEC.md) · 7.1, 7.4, knowledge-001 [knowledge-retrieval](features/knowledge-retrieval/SPEC.md) · 7.2 [code-index](features/code-index/SPEC.md) · 7.3 [documentation](features/documentation/SPEC.md) · 7.5, orchestrator-001–003 [ai-orchestrator](features/ai-orchestrator/SPEC.md) · 7.6 [memory](features/memory/SPEC.md) · 8 [technology-catalog](features/technology-catalog/SPEC.md) · 9.1, 9.2 [provisioning](features/provisioning/SPEC.md) · 10 [unity](features/unity/SPEC.md) · 11.1, 11.2 [creative-assets](features/creative-assets/SPEC.md) · 11.3, 11.4 [animation](features/animation/SPEC.md) · 11.5 [similarity-review](features/similarity-review/SPEC.md) · 12 [content-production](features/content-production/SPEC.md) · browser-001 [integrated-browser](features/integrated-browser/SPEC.md) · planning-001–010 [project-planning](features/project-planning/SPEC.md) · history-001–006 [project-history](features/project-history/SPEC.md) · hermes-hindsight-001–006 [hermes-hindsight](features/hermes-hindsight/SPEC.md) · distribution-001–005 [distribution](features/distribution/SPEC.md). Shared sections 3.1, 3.3, 9.3, 13 live in [architecture](ARCHITECTURE.md). How the original single spec was split: [spec split record](history/2026-10-16-00-imported-progress-snapshot/DETAILS.md#spec-split-record-moved-from-traceability-2026-10-16).

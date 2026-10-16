@@ -76,3 +76,21 @@ Repository onboarding checks passed: local links, feature requirements preserved
 Latest workflow clarification: 267 local links passed; startup, overview and working agreement consistently require titles first, optional summaries, joint feature selection, then full specs. Git whitespace checks passed. No product feature requirements changed.
 
 Update this file after work with completed/active/blocked status, actual test results, unresolved issues and any next step agreed with the user.
+
+## Spec split record (moved from traceability, 2026-10-16)
+
+2026-10-16: Hermes/Hindsight research is retained in the separate [evaluation and integration feature](../../features/hermes-hindsight/SPEC.md), alongside `hermes-hindsight-001–006`, acceptance A1–A6 and an ownership/overlap map. Existing memory, retrieval, orchestration, routing, task-runtime, tool, skill, catalog and provisioning requirements retain their owners. Concrete use case and adoption remain open; all affected product behavior is `not-started`, with no implementation/runtime acceptance evidence.
+
+| Original source | Current owner | Treatment |
+|---|---|---|
+| Header, development continuity | [Overview](../../OVERVIEW.md), [progress/history contract](../../WORKING_AGREEMENT.md#progress-and-history), [current progress](../../PROGRESS.md), [history](../../history/) | Compact current handoff; completed work/evidence retained as per-item summary/detail folders, read only as needed. Repository documentation workflow is distinct from the not-started structured-history product feature; [documentation evidence](../../history/2026-10-16-02-compact-progress-and-history/SUMMARY.md). |
+| 0: vocabulary, principles, cross-platform, exclusions | [Shared principles](../../PRINCIPLES.md) | Consolidated without changing product scope or platform obligations. |
+| 3.1, 3.3, 9.3, 13 | [Architecture/security/quality](../../ARCHITECTURE.md) | Shared implementation contracts, including all testing categories. |
+| 14 | [Working agreement](../../WORKING_AGREEMENT.md), feature specs and [quality contracts](../../ARCHITECTURE.md) | Fixed sequence removed at the user’s request; relevant technical proofs retained with their owners. |
+| 15 | [Acceptance](../../ACCEPTANCE.md) | All G1–G13 scenarios retained. |
+| 16 | [Working agreement](../../WORKING_AGREEMENT.md) | Process retained; reading policy and documentation paths updated. |
+| Appendix A | [Technology candidates](../../TECHNOLOGY_CANDIDATES.md) | Nonbinding status retained. |
+| Appendix B | [Projects](../../features/identity-projects/SPEC.md), [models](../../features/model-routing/SPEC.md), [Unity](../../features/unity/SPEC.md) | Three illustrative contracts moved to their owners; not production schemas. |
+| Appendix C | [Open decisions](../../OPEN_DECISIONS.md) | All 13 decisions retained; appended browser feature moved to its own folder. |
+
+Orchestrator and memory numbered requirements retain their original 1–20 and 1–23 identities with shorter wording. No application implementation or requirements validation is implied by this documentation split.

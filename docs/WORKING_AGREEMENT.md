@@ -12,7 +12,7 @@ Maintain progress, requirement traceability and ADRs whenever implementation or 
 
 The implementing AI coding agent **MUST** follow this process for each agreed feature scope:
 
-1. **Choose with minimal context:** keep [the overview](OVERVIEW.md) and [shared principles](PRINCIPLES.md) in context; check [progress](PROGRESS.md). If no scope is selected, discuss the feature titles with the user and open only short summaries relevant to that discussion. Explain known dependencies, value and trade-offs without loading full specs or implementation code, unless the user requests deeper analysis. Do not independently select the next feature or impose a fixed order.
+1. **Choose with minimal context** as in [AGENTS.md](../AGENTS.md) steps 1–3. Explain known dependencies, value and trade-offs; do not independently select the next feature or impose a fixed order.
 2. **Load detail for agreed work:** after the user and agent choose a feature set and intended outcome, read its full specs, affected dependency/security contracts, relevant traceability rows and ADRs. Inspect actual architecture, source and tests; do not assume the project is greenfield. Refine included requirements and acceptance checks together when detail raises a material choice. Write a concise plan covering affected modules, risks, migrations/security and tests; complete authorized work without repeated approval for routine steps.
 3. **Prefer vertical slices.** Deliver one demonstrable user workflow end-to-end before expanding scaffolding to many theoretical modules. **Keep increments small to keep token use low.** Split each feature scope into the smallest increments that can each be built, run and checked within one session; never attempt a whole feature in one large pass. Verify each increment before starting the next, stop at the first failed check, and confirm direction with the user before costly or hard-to-reverse work. Why (agreed with the user): a large one-shot attempt can consume a big share of the daily token budget before anyone learns it failed or needs changes; small increments fail cheaply and early, which keeps total cost as low as possible. Token use is not a hard limit, but every scope should be as small as the need allows.
 4. **Document decisions** in ADRs under the [decision record rules](#architecture-decision-records), separating required behavior from chosen technology. Resolve architecture, repository layout, CI/test/lint/format conventions, secrets policy and developer setup as the selected work needs them. Record unknowns and assumptions; do not invent vendor policies, licenses or capabilities. [Technology candidates](TECHNOLOGY_CANDIDATES.md) are nonbinding. Keep setup and documentation proportional to real work.
@@ -40,23 +40,6 @@ Write an ADR in `architecture/decisions/NNNN-short-name.md` (next free number) f
 
 Add one line per ADR to [the index](architecture/decisions/README.md) with number, title, status and affected features. Before changing an area, check the index for ADRs that govern it. Do not rewrite an accepted decision: add a new ADR and mark the old one `superseded by NNNN`. Clarifications, newly found limits and evidence links may be added in place. Commit ADR changes with the work they govern.
 
-## Required engineering artifacts as the project grows
+## Documentation as the project grows
 
-```text
-docs/
-  OVERVIEW.md                     # compact product map
-  PRINCIPLES.md                   # shared invariants
-  features/<feature>/
-    SUMMARY.md                    # purpose, scope, related features
-    SPEC.md                       # authoritative detailed requirements
-  PROGRESS.md                     # compact current scope, blockers, next action
-  history/YYYY-MM-DD-NN-name/      # SUMMARY.md + DETAILS.md per completed work item; on demand
-  REQUIREMENTS_TRACEABILITY.md    # requirements ↔ source/tests/status
-  architecture/                   # design/data flows/runtime/auth/runner/retrieval
-    decisions/                    # README.md index + NNNN-name.md ADRs, incl. rejected alternatives
-  security/                      # threat model, secrets and data policy
-  operations/                    # development, upgrades, restore, incidents
-  api/ or schemas/               # versioned contracts
-```
-
-These are illustrative names. Keep documentation proportional to what is actually implemented; don't generate empty placeholder essays.
+The current layout is described where it is used: [feature guide](ADDING_FEATURES.md), [history README](history/README.md), [ADR index](architecture/decisions/README.md), [traceability](REQUIREMENTS_TRACEABILITY.md). Add `docs/security/` (threat model, secrets and data policy), `docs/operations/` (upgrades, restore, incidents) or versioned API/schema contracts only when implemented work needs them; no empty placeholder essays.
