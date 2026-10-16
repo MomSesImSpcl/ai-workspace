@@ -46,7 +46,7 @@ export function getProject(id: string): Project {
   return project;
 }
 
-// shortcut: audit is an append-only file, not tamper-proof; upgrade when multi-user (ARCHITECTURE 3.3).
+// shortcut: audit is an append-only file, not tamper-proof; upgrade when multi-user (ARCHITECTURE 3.3, issue #5).
 export function audit(event: Record<string, unknown>): void {
   appendJsonl(join(home(), 'audit.jsonl'), { at: new Date().toISOString(), ...event });
 }

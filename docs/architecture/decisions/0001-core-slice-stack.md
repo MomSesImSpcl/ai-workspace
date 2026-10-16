@@ -25,12 +25,9 @@ The first core slice needs one local project, a restart-safe task, one agent ada
 
 ## Known limits
 
-- An interrupted step is re-run. The broker's effect ledger (`tasks/<id>.effects.jsonl`, key = step + tool + input hash + occurrence in the attempt) skips side effects the interrupted attempt already committed, in order; a crash between an effect and its ledger record can still repeat that one effect.
-- Budget is checked before each step and before every broker tool call, against committed usage (incl. delegated children) plus the running step's live usage (`tasks/<id>.live.json`, streamed by Claude Code; Codex reports usage only at turn end). A step the broker stopped for budget ends `paused`. One model turn can still overshoot, since its tokens are known only after it. A killed attempt's live usage is charged before the step re-runs.
-- A target project's own `CLAUDE.md` may still be auto-discovered; it can steer behavior but not widen tool scope (broker enforces).
-- Codex: the read-only sandbox block of `apply_patch` is not directly exercised (the model declined a bypass attempt; no file was written). Codex tool surface changes between versions (tested 0.163.0); re-verify on upgrade.
-- Delegation is sequential and blocking; no parallel children, no child cancel from the parent yet.
-- Audit file is not tamper-proof; single user only; no authentication yet.
+Recovery and budget design: an interrupted step is re-run; the broker effect ledger (`tasks/<id>.effects.jsonl`, key = step + tool + input hash + occurrence in the attempt) skips effects the interrupted attempt already committed. Budget is checked before each step and every broker tool call against committed usage (incl. children) plus the running step's live usage (`tasks/<id>.live.json`); a step stopped for budget ends `paused`, and a killed attempt's live usage is charged before re-run.
+
+Open limits are tracked as GitHub issues labelled [`known-limit`](https://github.com/MomSesImSpcl/ai-workspace/issues?q=label%3Aknown-limit): turn overshoots budget [#1](https://github.com/MomSesImSpcl/ai-workspace/issues/1), crash between effect and ledger record [#2](https://github.com/MomSesImSpcl/ai-workspace/issues/2), no Codex mid-turn usage [#3](https://github.com/MomSesImSpcl/ai-workspace/issues/3), sequential delegation [#4](https://github.com/MomSesImSpcl/ai-workspace/issues/4), audit not tamper-proof [#5](https://github.com/MomSesImSpcl/ai-workspace/issues/5), single user without auth [#6](https://github.com/MomSesImSpcl/ai-workspace/issues/6), project CLAUDE.md can steer the agent [#7](https://github.com/MomSesImSpcl/ai-workspace/issues/7), Codex apply_patch sandbox unexercised [#8](https://github.com/MomSesImSpcl/ai-workspace/issues/8), no fallback when `--resume` fails [#9](https://github.com/MomSesImSpcl/ai-workspace/issues/9), real-agent runs Windows-only [#10](https://github.com/MomSesImSpcl/ai-workspace/issues/10).
 
 ## Setup
 
