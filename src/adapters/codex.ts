@@ -69,11 +69,12 @@ export const codex: AgentAdapter = {
       '-c', 'approval_policy="never"',
       '-c', `mcp_servers.ws.command=${JSON.stringify(process.execPath)}`,
       '-c', `mcp_servers.ws.args=${JSON.stringify([mcpServer, task.id])}`,
+      '-c', 'mcp_servers.ws.tool_timeout_sec=3600', // delegate blocks until the subtask finishes
       '-c', 'mcp_servers.ws.default_tools_approval_mode="approve"', // the broker is the permission layer
       '-c', `mcp_servers.ws.env={AI_WORKSPACE_HOME=${JSON.stringify(home())}}`,
     ];
     if (task.model) args.push('-m', task.model);
-    args.push(`${task.goal}\n\nUse only the ws MCP tools (list_dir, read_file, write_file) for file access. Paths are relative to the project root.`);
+    args.push(`${task.goal}\n\nUse only the ws MCP tools (list_dir, read_file, write_file, delegate) for file access and subtasks. Paths are relative to the project root.`);
     return new Promise((resolvePromise, reject) => {
       mkdirSync(codexHome(), { recursive: true });
       const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() } });

@@ -8,6 +8,8 @@ import { createTask, loadTask, runTask, saveTask, type AgentAdapter } from '../s
 import { adapterFor, assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { parseResult } from '../src/adapters/claude-code.ts';
 import { parseEvents } from '../src/adapters/codex.ts';
+import { delegate } from '../src/delegate.ts';
+import { addProject } from '../src/store.ts';
 
 let root = '';
 beforeEach(() => {
@@ -111,4 +113,18 @@ test('codex event parsing maps completed turns, usage and failures', () => {
   const failed = parseEvents('{"type":"turn.failed","error":{"message":"usage limit"}}');
   assert.deepEqual([failed.done, failed.error], [false, 'usage limit']);
   assert.match(parseEvents('').error!, /no completed turn/);
+});
+
+test('delegate runs a child with inherited write grant and budget, charges the parent, and reuses it', async () => {
+  addProject({ id: 'p', root });
+  const parent = createTask({ ...fields, write: false, tokenBudget: 1000 });
+  const adapter = steps(1, 300);
+  const lookup = () => adapter;
+  const child = await delegate(parent.id, 'sub goal', 'Implementation', lookup);
+  assert.deepEqual([child.status, child.write, child.tokenBudget, child.parentId], ['completed', false, 1000, parent.id]);
+  assert.equal(loadTask(parent.id).usage.inputTokens, 300);
+  const again = await delegate(parent.id, 'sub goal', 'Implementation', lookup);
+  assert.equal(again.id, child.id);
+  assert.equal(adapter.calls, 1);
+  await assert.rejects(delegate(child.id, 'nested', 'Implementation', lookup), /depth limit/);
 });

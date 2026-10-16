@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { listDir, readFile, writeFile, type Scope } from './broker.ts';
 import { loadTask } from './runtime.ts';
+import { delegate } from './delegate.ts';
 import { getProject } from './store.ts';
 
 const task = loadTask(process.argv[2] ?? '');
@@ -28,6 +29,22 @@ server.registerTool(
   'write_file',
   { description: 'Create or overwrite a project file (needs write permission)', inputSchema: { path, content: z.string() } },
   (a) => tool(() => (writeFile(scope, a.path, a.content), `wrote ${a.path}`)),
+);
+server.registerTool(
+  'delegate',
+  {
+    description: 'Run a subtask with the agent assigned to a role (default Implementation) and return its result. Blocks until the subtask finishes.',
+    inputSchema: { goal: z.string().describe('Self-contained instructions for the subtask'), role: z.string().optional() },
+  },
+  async (a) => {
+    try {
+      const child = await delegate(task.id, a.goal, a.role);
+      return { content: [{ type: 'text' as const, text: `subtask ${child.id} ${child.status}${child.reason ? ` (${child.reason})` : ''}
+${child.result ?? ''}` }], isError: child.status !== 'completed' };
+    } catch (e) {
+      return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
+    }
+  },
 );
 
 await server.connect(new StdioServerTransport());
