@@ -18,7 +18,7 @@ const usage = `Usage:
   ws run <goal> --project <id> [--role Implementation] [--budget <tokens>] [--write]
   ws resume <taskId> [--budget <tokens>]
   ws status [taskId]
-  ws roles [<role> <integration>]`;
+  ws roles [<role> <integration> [model]]`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -55,9 +55,9 @@ try {
     for (const p of listProjects()) console.log(`${p.id} ${p.root}`);
   } else if (cmd === 'run' && rest[0] && values.project) {
     getProject(values.project);
-    const { integration } = assignmentFor(values.role);
+    const { integration, model } = assignmentFor(values.role);
     adapterFor(integration); // fail before creating a task that cannot run
-    const task = createTask({ projectId: values.project, goal: rest.join(' '), role: values.role, integration, write: values.write, tokenBudget: budget(values.budget, 200000) });
+    const task = createTask({ projectId: values.project, goal: rest.join(' '), role: values.role, integration, model, write: values.write, tokenBudget: budget(values.budget, 200000) });
     await run(task);
   } else if (cmd === 'resume' && rest[0]) {
     const task = loadTask(rest[0]);
@@ -68,8 +68,8 @@ try {
     if (rest[0]) show(loadTask(rest[0]));
     else for (const f of readdirSync(join(home(), 'tasks')).filter((f) => f.endsWith('.json'))) show(loadTask(f.slice(0, -5)));
   } else if (cmd === 'roles') {
-    if (rest[0] && rest[1]) setRole(rest[0], { integration: rest[1] });
-    for (const [role, a] of Object.entries(getRoles())) console.log(`${role} -> ${a.integration}`);
+    if (rest[0] && rest[1]) setRole(rest[0], { integration: rest[1], model: rest[2] });
+    for (const [role, a] of Object.entries(getRoles())) console.log(`${role} -> ${a.integration}${a.model ? ` (${a.model})` : ''}`);
   } else {
     console.log(usage);
     process.exitCode = 2;

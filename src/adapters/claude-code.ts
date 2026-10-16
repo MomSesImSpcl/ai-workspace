@@ -30,14 +30,16 @@ export function parseResult(stdout: string): StepResult {
 }
 
 // Claude Code in print mode with every built-in tool disabled: file access only through the
-// workspace MCP server, so the broker enforces scope and audits each call.
+// workspace MCP server, so the broker enforces scope and audits each call. No user/project
+// settings are loaded: user rules, hooks and model aliases must not steer a workspace task.
 export const claudeCode: AgentAdapter = {
   step({ task, root }) {
     const mcpConfig = JSON.stringify({
       mcpServers: { ws: { command: process.execPath, args: [mcpServer, task.id], env: { AI_WORKSPACE_HOME: home() } } },
     });
     const sessionId = task.adapterState?.sessionId as string | undefined;
-    const args = ['-p', sessionId ? 'Continue the task.' : task.goal, '--output-format', 'json', '--tools', '', '--mcp-config', mcpConfig, '--strict-mcp-config', '--allowedTools', 'mcp__ws', '--max-turns', String(TURNS_PER_STEP)];
+    const args = ['-p', sessionId ? 'Continue the task.' : task.goal, '--output-format', 'json', '--tools', '', '--mcp-config', mcpConfig, '--strict-mcp-config', '--setting-sources', '', '--allowedTools', 'mcp__ws', '--max-turns', String(TURNS_PER_STEP)];
+    if (task.model) args.push('--model', task.model);
     if (sessionId) args.push('--resume', sessionId);
     else args.push('--append-system-prompt', 'Use only the mcp__ws tools for file access. Paths are relative to the project root.');
     return new Promise((resolvePromise, reject) => {

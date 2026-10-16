@@ -6,7 +6,7 @@ Read this file at startup. Search [monthly history](history/) only for relevant 
 
 **Active scope: core slice 1** on branch `feature/core-slice` ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
 
-Increment 1 done: store/runtime/broker/MCP server/adapter/roles/CLI, unit tests pass. **Blocker:** real e2e run fails with `OAuth session expired` — user must log in to the standalone `claude` CLI.
+Increment 1 done and verified: unit tests 7/7 and a real Claude Code e2e (scoped write allowed, out-of-project read denied, both audited). Budget pause and kill/resume are verified with a fake adapter only. No blockers.
 
 ## Agreed direction
 
@@ -20,4 +20,4 @@ Using the workspace on its own repository after the core and the longer tentativ
 
 ## Resume here
 
-Next action: after the user re-logs in to `claude`, run the real e2e (`node src/cli.ts run ... --write`), check `hello.md` exists and the out-of-project read is denied in `~/.ai-workspace/audit.jsonl`. Then increment 2: Codex CLI adapter for the Orchestration role. Latest evidence: [core slice 1, increment 1](history/2026-10.md#2026-10-16--core-slice-1-increment-1-typescript-cli-claude-code-adapter-scoped-broker). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
+Next action: increment 2, the Codex CLI adapter (`codex exec`, ChatGPT subscription login) for the Orchestration role. Codex is not installed on this machine yet. Latest evidence: [increment 1b](history/2026-10.md#2026-10-16--core-slice-1-increment-1b-real-claude-code-end-to-end). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).

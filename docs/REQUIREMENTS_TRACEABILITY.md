@@ -26,7 +26,7 @@ Original numbered sections remain valid references inside the destination specs.
 | 7.5 | [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SPEC.md) | Local spec / agreed scope |
 | orchestrator-001–003 | [Independent role selection, handoffs and compatibility](features/ai-orchestrator/SPEC.md#independently-selectable-roles) | A1–A3; not-started; implementation/test evidence: none |
 | routing-001 | [Role and agent assignments](features/model-routing/SPEC.md#role-and-agent-assignments) | Local acceptance evidence; **in-progress** (core slice 1): role→integration config in `src/roles.ts`, test `test/core.test.ts` (roles); orchestration/planning adapters not built |
-| 4.2, 4.3 (restart resume), 4.6 (token budget) | [Durable tasks](features/task-runtime/SPEC.md) | **in-progress** (core slice 1): `src/runtime.ts`, tests in `test/core.test.ts`; real-agent e2e blocked on Claude Code login |
+| 4.2, 4.3 (restart resume), 4.6 (token budget) | [Durable tasks](features/task-runtime/SPEC.md) | **in-progress** (core slice 1): `src/runtime.ts`, tests in `test/core.test.ts`; unit tests plus real Claude Code e2e (history 2026-10-16, increment 1b) |
 | 5.2 (agent CLI adapter) | [Provider adapters](features/model-routing/SPEC.md#52-provider-adapters) | **in-progress** (core slice 1): `src/adapters/claude-code.ts`; one adapter only |
 | 6.2 (scoped MCP tools, audit) | [Tool broker](features/tool-broker/SPEC.md) | **in-progress** (core slice 1): `src/broker.ts`, `src/mcp-server.ts`, tests in `test/core.test.ts` |
 | browser-001 | [Planning-role handoff](features/integrated-browser/SPEC.md#planning-role-handoff) | Local browser handoff acceptance; not-started; implementation/test evidence: none |

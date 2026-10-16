@@ -16,6 +16,7 @@ export interface Task {
   goal: string;
   role: string;
   integration: string;
+  model?: string;
   write: boolean;
   status: Status;
   reason?: string;
@@ -59,7 +60,7 @@ export function loadTask(id: string): Task {
   return task;
 }
 
-export function createTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'integration' | 'write' | 'tokenBudget'>): Task {
+export function createTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'integration' | 'model' | 'write' | 'tokenBudget'>): Task {
   const now = new Date().toISOString();
   const task: Task = { ...fields, id: randomUUID().slice(0, 8), status: 'pending', usage: { inputTokens: 0, outputTokens: 0 }, steps: 0, createdAt: now, updatedAt: now };
   saveTask(task);
