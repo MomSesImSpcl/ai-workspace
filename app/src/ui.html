@@ -33,6 +33,7 @@
   .s-running { color: var(--running); } .s-paused { color: var(--paused); } .s-completed { color: var(--completed); }
   .s-failed { color: var(--failed); } .s-cancelled { color: var(--cancelled); } .s-pending { color: var(--pending); }
   pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 320px; overflow: auto; margin: 0; font-size: 12px; }
+  details { margin-bottom: 16px; } summary { cursor: pointer; color: var(--accent); }
   .error { color: var(--failed); min-height: 1em; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
 </style>
@@ -55,6 +56,15 @@
       </div>
       <p class="error" id="new-error" role="alert"></p>
     </form>
+    <details id="add-project">
+      <summary>Add project</summary>
+      <form id="project">
+        <label>Folder path<input name="path" required placeholder="D:\code\my-project"></label>
+        <label>Name (optional, defaults to the folder name)<input name="id"></label>
+        <div class="row"><button>Add project</button></div>
+        <p class="error" id="project-error" role="alert"></p>
+      </form>
+    </details>
     <h2>Tasks</h2>
     <ul id="tasks" aria-live="polite"></ul>
   </section>
@@ -135,10 +145,27 @@ $('#new').onsubmit = async (e) => {
   } catch (err) { $('#new-error').textContent = err.message; }
 };
 
-(async () => {
+$('#project').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const p = await api('/api/projects', { path: f.get('path'), id: f.get('id') || undefined });
+    e.target.reset();
+    $('#project-error').textContent = '';
+    $('#add-project').open = false;
+    await loadMeta(p.id);
+  } catch (err) { $('#project-error').textContent = err.message; }
+};
+
+async function loadMeta(pick) {
   const { projects, roles } = await api('/api/meta');
-  $('[name=projectId]').innerHTML = projects.map((p) => `<option>${esc(p.id)}</option>`).join('') || '<option value="">Add a project with ws project add</option>';
+  $('[name=projectId]').innerHTML = projects.map((p) => `<option ${p.id === pick ? 'selected' : ''}>${esc(p.id)}</option>`).join('') || '<option value="">No projects yet — use "Add project" below</option>';
+  $('#add-project').open = projects.length === 0;
   $('[name=role]').innerHTML = Object.entries(roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}</option>`).join('');
+}
+
+(async () => {
+  await loadMeta();
   await refresh();
   setInterval(() => refresh().catch(() => {}), 2000);
 })();

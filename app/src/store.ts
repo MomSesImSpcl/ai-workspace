@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 
 // Workspace state lives outside projects: project content is untrusted for privilege decisions.
 export function home(): string {
@@ -38,6 +38,16 @@ export function listProjects(): Project[] {
 export function addProject(project: Project): void {
   const projects = listProjects().filter((p) => p.id !== project.id);
   writeJson(projectsPath(), [...projects, project]);
+}
+
+// Registers an existing directory as a project; the id defaults to the folder name.
+export function registerProject(root: string, id = basename(root)): Project {
+  if (!isAbsolute(root)) throw new Error(`Project path must be absolute: ${root}`);
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`Not a directory: ${root}`);
+  if (!id.trim()) throw new Error('Project id is required');
+  const project = { id: id.trim(), root };
+  addProject(project);
+  return project;
 }
 
 export function getProject(id: string): Project {

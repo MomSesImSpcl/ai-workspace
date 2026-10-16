@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRoles, newRoleTask } from './roles.ts';
 import { cancelTask, listTasks, loadTask, markRunner, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { home, listProjects } from './store.ts';
+import { home, listProjects, registerProject } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -76,6 +76,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const task = loadTask(id);
     return { task: view(task), children: listTasks().filter((t) => t.parentId === id).map(view), events: events(id), log: tail(logPath(id)) };
   }
+  if (req.method === 'POST' && kind === 'projects') {
+    const b = await body(req);
+    if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');
+    return registerProject(b.path.trim(), b.id?.trim() || undefined);
+  }
   if (req.method === 'POST' && kind === 'tasks' && !id) {
     const b = await body(req);
     if (typeof b.goal !== 'string' || !b.goal.trim()) throw new HttpError(400, 'goal is required');
@@ -112,7 +117,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^No assignment|no runnable adapter/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^No assignment|no runnable adapter|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

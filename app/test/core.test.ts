@@ -239,6 +239,10 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     const cancelled = await (await post(`/api/tasks/${task.id}/cancel`, { origin: base, 'content-type': 'application/json' })).json();
     assert.equal(cancelled.status, 'cancelled');
     assert.equal((await post(`/api/tasks/${task.id}/resume`, { origin: base, 'content-type': 'application/json' })).status, 409);
+    const add = (body: unknown) => fetch(`${base}/api/projects`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
+    assert.equal((await add({ path: 'relative/dir' })).status, 400);
+    assert.equal((await add({ path: join(root, 'missing') })).status, 400);
   } finally {
     server.close();
   }

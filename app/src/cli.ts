@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import { existsSync, statSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { adapterFor, getRoles, newRoleTask, setRole } from './roles.ts';
 import { cancelTask, listTasks, loadTask, runTask, saveTask, type Task } from './runtime.ts';
-import { addProject, getProject, listProjects } from './store.ts';
+import { getProject, listProjects, registerProject } from './store.ts';
 
 function budget(value: string | undefined, fallback: number): number {
   const n = Number(value ?? fallback);
@@ -50,10 +49,8 @@ async function run(task: Task): Promise<void> {
 const [cmd, ...rest] = positionals;
 try {
   if (cmd === 'project' && rest[0] === 'add' && rest[1]) {
-    const root = resolve(rest[1]);
-    if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`Not a directory: ${root}`);
-    addProject({ id: values.id ?? basename(root), root });
-    console.log(`project ${values.id ?? basename(root)} -> ${root}`);
+    const p = registerProject(resolve(rest[1]), values.id);
+    console.log(`project ${p.id} -> ${p.root}`);
   } else if (cmd === 'project' && rest[0] === 'list') {
     for (const p of listProjects()) console.log(`${p.id} ${p.root}`);
   } else if (cmd === 'run' && rest[0] && values.project) {
