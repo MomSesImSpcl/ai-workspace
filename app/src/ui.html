@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Center</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f4; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #deded8; --accent: #2f5fd0;
+    --running: #2f5fd0; --paused: #a26a00; --completed: #2e7d32; --failed: #c62828; --cancelled: #6b6b66; --pending: #6b6b66; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --panel: #1f1f1d; --text: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7aa2ff;
+    --running: #7aa2ff; --paused: #e0a82e; --completed: #6cc070; --failed: #ef6b6b; --cancelled: #9a9a94; --pending: #9a9a94; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; }
+  h1 { font-size: 16px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; } h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  form { display: grid; gap: 8px; margin-bottom: 16px; }
+  label { display: grid; gap: 2px; color: var(--muted); font-size: 12px; }
+  input, select, textarea, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  textarea { min-height: 60px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; } .row > label { flex: 1; }
+  label.check { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 14px; }
+  button { cursor: pointer; } button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li button.task { width: 100%; text-align: left; display: grid; gap: 2px; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 4px; }
+  li button.task[aria-current="true"] { background: var(--bg); }
+  .goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .status { font-weight: 600; } .status::before { content: "● "; }
+  .s-running { color: var(--running); } .s-paused { color: var(--paused); } .s-completed { color: var(--completed); }
+  .s-failed { color: var(--failed); } .s-cancelled { color: var(--cancelled); } .s-pending { color: var(--pending); }
+  pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 320px; overflow: auto; margin: 0; font-size: 12px; }
+  .error { color: var(--failed); min-height: 1em; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<header><h1>Task Center</h1><span class="meta">Tasks keep running when this page or the UI server closes.</span></header>
+<main>
+  <section aria-labelledby="new-h">
+    <h2 id="new-h">New task</h2>
+    <form id="new">
+      <label>Goal<textarea name="goal" required></textarea></label>
+      <div class="row">
+        <label>Project<select name="projectId" required></select></label>
+        <label>Role<select name="role"></select></label>
+      </div>
+      <div class="row">
+        <label>Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
+        <label class="check"><input name="write" type="checkbox"> Allow writes</label>
+        <button class="primary">Start</button>
+      </div>
+      <p class="error" id="new-error" role="alert"></p>
+    </form>
+    <h2>Tasks</h2>
+    <ul id="tasks" aria-live="polite"></ul>
+  </section>
+  <section aria-labelledby="detail-h" id="detail"><h2 id="detail-h">Select a task</h2></section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const tokens = (t) => t.usage.inputTokens + t.usage.outputTokens;
+let selected = null;
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
+}
+
+// A running task whose runner process is gone (crash, reboot) can be resumed.
+const label = (t) => t.status === 'running' && !t.runnerAlive ? 'running (runner stopped)' : t.status;
+const summary = (t) => `step ${t.steps} · ${tokens(t).toLocaleString()} / ${t.tokenBudget.toLocaleString()} tokens · ${esc(t.integration)}`;
+
+async function refresh() {
+  const tasks = await api('/api/tasks');
+  $('#tasks').innerHTML = tasks.filter((t) => !t.parentId).map((t) => `<li><button class="task" data-id="${esc(t.id)}" aria-current="${t.id === selected}">
+    <span class="goal">${esc(t.goal)}</span>
+    <span class="meta"><span class="status s-${esc(t.status)}">${esc(label(t))}</span> · ${summary(t)}</span></button></li>`).join('') || '<li class="meta">No tasks yet.</li>';
+  if (selected && document.activeElement?.id !== 'budget-more') await showDetail(); // don't reset a budget being typed
+}
+
+async function showDetail() {
+  const { task: t, children, events, log } = await api(`/api/tasks/${selected}`);
+  const done = ['completed', 'failed', 'cancelled'].includes(t.status);
+  const canResume = !done && !t.runnerAlive;
+  const keep = $('#budget-more')?.value;
+  $('#detail').innerHTML = `<h2 id="detail-h">${esc(t.goal)}</h2>
+    <dl>
+      <dt>Status</dt><dd><span class="status s-${esc(t.status)}">${esc(label(t))}</span>${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
+      <dt>Progress</dt><dd>${summary(t)}${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
+      <dt>Task</dt><dd>${esc(t.id)} · project ${esc(t.projectId)} · role ${esc(t.role)} · ${t.write ? 'writes allowed' : 'read-only'}</dd>
+      <dt>Updated</dt><dd>${new Date(t.updatedAt).toLocaleString()}</dd>
+    </dl>
+    <div class="row" style="margin-top:10px">
+      <label>New budget (optional)<input id="budget-more" type="number" min="1" step="1" value="${esc(keep)}" ${canResume ? '' : 'disabled'}></label>
+      <button id="resume" ${canResume ? '' : 'disabled'}>Resume</button>
+      <button id="cancel" ${done ? 'disabled' : ''}>Cancel</button>
+    </div>
+    <p class="error" id="detail-error" role="alert"></p>
+    ${t.result ? `<h3>Result</h3><pre>${esc(t.result)}</pre>` : ''}
+    ${children.length ? `<h3>Subtasks</h3><ul>${children.map((c) => `<li class="meta"><span class="status s-${esc(c.status)}">${esc(label(c))}</span> ${esc(c.goal)} · ${summary(c)}</li>`).join('')}</ul>` : ''}
+    <h3>Audit</h3><pre>${esc(events.map((e) => `${e.at.slice(11, 19)} ${e.kind} ${e.event ?? e.tool ?? ''}${e.path ? ' ' + e.path : ''}${e.allowed === false ? ' DENIED: ' + e.reason : ''}${e.reason && e.allowed === undefined ? ' — ' + e.reason : ''}${e.step ? ' step ' + e.step : ''}`).join('\n')) || 'none'}</pre>
+    <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
+  $('#resume').onclick = () => act('resume', $('#budget-more').value ? { budget: Number($('#budget-more').value) } : {});
+  $('#cancel').onclick = () => act('cancel', {});
+}
+
+async function act(action, body) {
+  try { await api(`/api/tasks/${selected}/${action}`, body); await refresh(); }
+  catch (e) { $('#detail-error').textContent = e.message; }
+}
+
+$('#tasks').onclick = (e) => {
+  const b = e.target.closest('button.task');
+  if (!b) return;
+  selected = b.dataset.id;
+  refresh();
+};
+
+$('#new').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const t = await api('/api/tasks', { goal: f.get('goal'), projectId: f.get('projectId'), role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
+    selected = t.id;
+    e.target.goal.value = '';
+    $('#new-error').textContent = '';
+    await refresh();
+  } catch (err) { $('#new-error').textContent = err.message; }
+};
+
+(async () => {
+  const { projects, roles } = await api('/api/meta');
+  $('[name=projectId]').innerHTML = projects.map((p) => `<option>${esc(p.id)}</option>`).join('') || '<option value="">Add a project with ws project add</option>';
+  $('[name=role]').innerHTML = Object.entries(roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}</option>`).join('');
+  await refresh();
+  setInterval(() => refresh().catch(() => {}), 2000);
+})();
+</script>
+</body>
+</html>

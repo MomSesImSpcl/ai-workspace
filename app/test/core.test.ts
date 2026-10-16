@@ -1,10 +1,12 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeniedError, newAttempt, readFile, writeFile, type Scope } from '../src/broker.ts';
-import { createTask, liveUsage, loadTask, runTask, saveTask, writeLiveUsage, type AgentAdapter } from '../src/runtime.ts';
+import { cancelTask, createTask, listTasks, liveUsage, loadTask, runTask, saveTask, writeLiveUsage, type AgentAdapter } from '../src/runtime.ts';
+import { serve } from '../src/ui.ts';
 import { adapterFor, assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { parseResult, streamUsage } from '../src/adapters/claude-code.ts';
 import { parseEvents } from '../src/adapters/codex.ts';
@@ -187,4 +189,57 @@ test('a step the broker stopped for budget pauses the task even if the agent rep
   const result = await runTask(task.id, adapter, root);
   assert.equal(result.status, 'paused');
   assert.match(result.reason!, /mid-step/);
+});
+
+test('cancel ends an idle task at once and a running one at its next tool call or step end', async () => {
+  const idle = createTask({ ...fields, write: false, tokenBudget: 1000 });
+  assert.equal(cancelTask(idle.id).status, 'cancelled');
+  let calls = 0;
+  const after = await runTask(idle.id, { async step() { calls++; return { done: true, usage: { inputTokens: 0, outputTokens: 0 } }; } }, root);
+  assert.equal(after.status, 'cancelled');
+  assert.equal(calls, 0);
+
+  const task = createTask({ ...fields, write: true, tokenBudget: 1000 });
+  const child = createTask({ ...fields, write: true, tokenBudget: 1000, parentId: task.id });
+  const adapter: AgentAdapter = {
+    async step() {
+      assert.equal(cancelTask(task.id).status, 'running'); // this process is the live runner
+      assert.throws(() => readFile({ taskId: task.id, root, write: true }, 'a.txt'), /task cancelled/);
+      assert.throws(() => readFile({ taskId: child.id, root, write: true }, 'a.txt'), /task cancelled/);
+      return { done: true, usage: { inputTokens: 10, outputTokens: 0 } };
+    },
+  };
+  const result = await runTask(task.id, adapter, root);
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.usage.inputTokens, 10);
+});
+
+test('listTasks ignores side files such as live usage', () => {
+  const task = createTask({ ...fields, write: false, tokenBudget: 1000 });
+  writeLiveUsage(task.id, { inputTokens: 1, outputTokens: 0 });
+  assert.deepEqual(listTasks().map((t) => t.id), [task.id]);
+});
+
+test('ui API serves loopback requests and rejects foreign hosts, origins and non-JSON posts', async () => {
+  const task = createTask({ ...fields, write: false, tokenBudget: 1000 });
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const { port } = server.address() as { port: number };
+  const base = `http://127.0.0.1:${port}`;
+  const post = (path: string, headers: Record<string, string>) => fetch(base + path, { method: 'POST', headers, body: '{}' });
+  try {
+    const list = await (await fetch(`${base}/api/tasks`)).json();
+    assert.equal(list[0].id, task.id);
+    // fetch cannot override Host, which is what DNS rebinding sends
+    const rebound = await new Promise<number>((r) => get({ port, path: '/api/tasks', headers: { host: `evil.test:${port}` } }, (res) => r(res.statusCode!)).end());
+    assert.equal(rebound, 403);
+    assert.equal((await post(`/api/tasks/${task.id}/cancel`, { 'content-type': 'application/json' })).status, 403);
+    assert.equal((await post(`/api/tasks/${task.id}/resume`, { origin: base, 'content-type': 'text/plain' })).status, 415);
+    assert.equal(loadTask(task.id).status, 'pending');
+    const cancelled = await (await post(`/api/tasks/${task.id}/cancel`, { origin: base, 'content-type': 'application/json' })).json();
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal((await post(`/api/tasks/${task.id}/resume`, { origin: base, 'content-type': 'application/json' })).status, 409);
+  } finally {
+    server.close();
+  }
 });

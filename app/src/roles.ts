@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { home, readJson, writeJson } from './store.ts';
-import type { AgentAdapter } from './runtime.ts';
+import { getProject, home, readJson, writeJson } from './store.ts';
+import { createTask, type AgentAdapter, type Task } from './runtime.ts';
 import { claudeCode } from './adapters/claude-code.ts';
 import { codex } from './adapters/codex.ts';
 
@@ -39,4 +39,12 @@ export function adapterFor(integration: string): AgentAdapter {
   const adapter = adapters[integration];
   if (!adapter) throw new Error(`Integration "${integration}" has no runnable adapter yet`);
   return adapter;
+}
+
+// Creates a top-level task for a role, failing before creation if it could not run.
+export function newRoleTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'write' | 'tokenBudget'>): Task {
+  getProject(fields.projectId);
+  const { integration, model } = assignmentFor(fields.role);
+  adapterFor(integration);
+  return createTask({ ...fields, integration, model });
 }

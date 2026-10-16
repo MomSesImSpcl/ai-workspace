@@ -9,7 +9,7 @@ Agents: reading order and feature selection are in [AGENTS.md](../AGENTS.md). Su
 Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.md`. Marked entries are in progress; unmarked ones are not started. Each summary has a **Status** line.
 
 - [Identity, projects and repository access](features/identity-projects/SUMMARY.md) — in progress
-- [Desktop workspace and Task Center](features/desktop-client/SUMMARY.md)
+- [Desktop workspace and Task Center](features/desktop-client/SUMMARY.md) — in progress
 - [Mobile capture and cross-device task control](features/mobile-client/SUMMARY.md)
 - [Task notifications and privacy-safe previews](features/notifications/SUMMARY.md)
 - [Secure local and remote execution runners](features/runners/SUMMARY.md)
@@ -45,4 +45,4 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
 - [Adding or changing features](ADDING_FEATURES.md)
 
-Status: core slice 1 prototype (CLI) implemented and verified on Windows; see [progress](PROGRESS.md). All other features are planned. Next feature set: choose together with the user.
+Status: core slice 1 prototype (CLI) and Task Center slice 1 (local web UI) implemented and verified on Windows; see [progress](PROGRESS.md). Desktop client is in progress; other features are planned.

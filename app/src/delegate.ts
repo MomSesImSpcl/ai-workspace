@@ -1,18 +1,11 @@
-import { readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { adapterFor, assignmentFor } from './roles.ts';
-import { createTask, loadTask, runTask, saveTask, type AgentAdapter, type Task } from './runtime.ts';
-import { audit, getProject, home } from './store.ts';
+import { createTask, listTasks, loadTask, runTask, saveTask, type AgentAdapter, type Task } from './runtime.ts';
+import { audit, getProject } from './store.ts';
 
 const used = (t: Task) => t.usage.inputTokens + t.usage.outputTokens;
 
 function existingChild(parentId: string, goal: string): Task | undefined {
-  const dir = join(home(), 'tasks');
-  if (!existsSync(dir)) return undefined;
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => loadTask(f.slice(0, -5)))
-    .find((t) => t.parentId === parentId && t.goal === goal);
+  return listTasks().find((t) => t.parentId === parentId && t.goal === goal);
 }
 
 // Runs a subtask under another role. The child inherits the parent's project and write grant (never

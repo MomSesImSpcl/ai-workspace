@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { liveUsage, loadTask, markBudgetStop, used } from './runtime.ts';
+import { cancelRequested, liveUsage, loadTask, markBudgetStop, used } from './runtime.ts';
 import { appendJsonl, audit, home } from './store.ts';
 
 export interface Scope {
@@ -32,10 +32,12 @@ function budgetExhausted(taskId: string): boolean {
   return exhausted;
 }
 
-// Every tool call passes here: budget first, then scope and write grant.
+// Every tool call passes here: cancel and budget first, then scope and write grant.
 export function authorize(scope: Scope, tool: string, path?: string, needsWrite = false): string {
   const full = path === undefined ? '' : resolve(scope.root, path);
-  const reason = budgetExhausted(scope.taskId)
+  const reason = cancelRequested(scope.taskId)
+    ? 'task cancelled; stop now'
+    : budgetExhausted(scope.taskId)
     ? 'token budget exhausted; stop and report progress'
     : path !== undefined && !inside(scope.root, full) ? 'outside project' : needsWrite && !scope.write ? 'write not granted' : null;
   audit({ kind: 'tool', taskId: scope.taskId, tool, path, allowed: reason === null, reason });

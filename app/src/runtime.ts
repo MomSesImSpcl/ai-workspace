@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { audit, home, readJson, writeJson } from './store.ts';
 
-export type Status = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
+export type Status = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 export interface Usage {
   inputTokens: number;
@@ -62,6 +62,13 @@ export function loadTask(id: string): Task {
   return task;
 }
 
+// Task files are `<id>.json`; ids never contain dots, unlike the `<id>.live.json` side files.
+export function listTasks(): Task[] {
+  const dir = join(home(), 'tasks');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadTask(f.slice(0, -5)));
+}
+
 export function createTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'integration' | 'model' | 'write' | 'tokenBudget' | 'parentId'>): Task {
   const now = new Date().toISOString();
   const task: Task = { ...fields, id: randomUUID().slice(0, 8), status: 'pending', usage: { inputTokens: 0, outputTokens: 0 }, steps: 0, createdAt: now, updatedAt: now };
@@ -89,6 +96,49 @@ function takeBudgetStop(id: string): boolean {
   return stopped;
 }
 
+// Cancel is cooperative: a marker the broker and the runner check, so it also works when the
+// runner is another process. A cancelled parent cancels its delegated children.
+const cancelPath = (id: string) => join(home(), 'tasks', `${id}.cancel`);
+export function cancelRequested(id: string): boolean {
+  const { parentId } = loadTask(id);
+  return existsSync(cancelPath(id)) || (parentId !== undefined && existsSync(cancelPath(parentId)));
+}
+
+// The process running a task, so cancel can tell a live runner from one that crashed.
+const runnerPath = (id: string) => join(home(), 'tasks', `${id}.pid`);
+export const markRunner = (id: string, pid: number) => writeFileSync(runnerPath(id), String(pid));
+export function runnerAlive(id: string): boolean {
+  if (!existsSync(runnerPath(id))) return false;
+  try {
+    process.kill(Number(readFileSync(runnerPath(id), 'utf8')), 0); // signal 0 only probes
+    return true;
+  } catch {
+    return false; // shortcut: a reused pid reads as alive and the task stays "running" until resumed; upgrade with a runner lease.
+  }
+}
+
+// Folds a killed attempt's uncommitted step usage into the task.
+function chargeStale(task: Task): void {
+  const stale = liveUsage(task.id);
+  if (used(stale) === 0) return;
+  task.usage = { ...task.usage, inputTokens: task.usage.inputTokens + stale.inputTokens, outputTokens: task.usage.outputTokens + stale.outputTokens };
+  audit({ kind: 'step', taskId: task.id, step: task.steps + 1, interrupted: true, usage: stale });
+  saveTask(task);
+  clearLiveUsage(task.id);
+}
+
+export const terminal = (s: Status) => s === 'completed' || s === 'failed' || s === 'cancelled';
+
+export function cancelTask(id: string): Task {
+  const task = loadTask(id);
+  if (terminal(task.status)) return task;
+  writeJson(cancelPath(id), true);
+  audit({ kind: 'task', taskId: id, event: 'cancel-requested' });
+  if (task.status === 'running' && runnerAlive(id)) return task; // the runner finishes it
+  chargeStale(task);
+  return finish(task, 'cancelled', 'cancelled by user');
+}
+
 function finish(task: Task, status: Status, reason?: string): Task {
   task.status = status;
   task.reason = reason;
@@ -102,16 +152,21 @@ function finish(task: Task, status: Status, reason?: string): Task {
 // ledger keeps its already-committed side effects from repeating.
 export async function runTask(id: string, adapter: AgentAdapter, root: string, maxSteps = 20): Promise<Task> {
   let task = loadTask(id);
-  if (task.status === 'completed' || task.status === 'failed') return task;
+  if (terminal(task.status)) return task;
+  markRunner(id, process.pid);
+  try {
+    return await steps(task, adapter, root, maxSteps);
+  } finally {
+    rmSync(runnerPath(id), { force: true });
+  }
+}
+
+async function steps(task: Task, adapter: AgentAdapter, root: string, maxSteps: number): Promise<Task> {
+  const id = task.id;
   for (let i = 0; i < maxSteps; i++) {
     // Tokens a killed attempt spent were never committed; charge them before re-running the step.
-    const stale = liveUsage(id);
-    if (used(stale) > 0) {
-      task.usage = { ...task.usage, inputTokens: task.usage.inputTokens + stale.inputTokens, outputTokens: task.usage.outputTokens + stale.outputTokens };
-      audit({ kind: 'step', taskId: id, step: task.steps + 1, interrupted: true, usage: stale });
-      saveTask(task);
-      clearLiveUsage(id);
-    }
+    chargeStale(task);
+    if (cancelRequested(id)) return finish(task, 'cancelled', 'cancelled by user');
     if (used(task.usage) >= task.tokenBudget) return finish(task, 'paused', `token budget ${task.tokenBudget} reached (${used(task.usage)} used)`);
     task.status = 'running';
     saveTask(task);
@@ -134,6 +189,7 @@ export async function runTask(id: string, adapter: AgentAdapter, root: string, m
     audit({ kind: 'step', taskId: id, step: task.steps, integration: task.integration, usage: result.usage, error: result.error });
     saveTask(task);
     clearLiveUsage(id);
+    if (cancelRequested(id)) return finish(task, 'cancelled', 'cancelled by user');
     if (result.error) return finish(task, 'failed', result.error);
     if (takeBudgetStop(id)) return finish(task, 'paused', `token budget ${task.tokenBudget} reached mid-step (${used(task.usage)} used)`);
     if (result.done) return finish(task, 'completed');
