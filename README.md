@@ -61,7 +61,7 @@ node src/cli.ts roles
 node src/cli.ts roles Implementation codex
 ```
 
-Optional: run `npm link` once in `app/` to type `ws ...` instead of `node src/cli.ts ...`. Without `--write` the agent can only read. Workspace state lives in `~/.ai-workspace/` (override with `AI_WORKSPACE_HOME`): `audit.jsonl` logs every tool call, allowed or denied; `tasks/` holds task state. A killed run continues with `resume <taskId>`. `ui` serves the Task Center at http://127.0.0.1:4317/ (list, details, start, resume, cancel); tasks it starts run as separate processes, so they keep running after you close the page or stop `ui`.
+Optional: run `npm link` once in `app/` to type `ws ...` instead of `node src/cli.ts ...`. Without `--write` the agent can only read. Workspace state lives in `~/.ai-workspace/` (override with `AI_WORKSPACE_HOME`): `audit.jsonl` logs every tool call, allowed or denied; `tasks/` holds task state. A killed run continues with `resume <taskId>`. `ui` serves the Task Center at http://127.0.0.1:4317/ (list, details, start, resume, cancel); tasks it starts run as separate processes, so they keep running after you close the page or stop `ui`. On Windows, double-click `Task Center.cmd` in the repository root to start it and open the browser.
 
 **Develop** (from `app/`): `npm test` (unit tests), `npm run typecheck`. CI runs both on Windows, Linux and macOS and scans for private data on every push. Sources are in `app/src/`, tests in `app/test/`.
 
