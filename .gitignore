@@ -3,12 +3,8 @@
 .env.*
 !.env.example
 
-# Local Python tooling
-__pycache__/
-*.py[cod]
-.venv/
-
 # OS metadata
 .DS_Store
 Thumbs.db
+
 node_modules/

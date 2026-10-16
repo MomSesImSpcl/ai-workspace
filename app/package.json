@@ -2,6 +2,7 @@
   "name": "ai-workspace",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "AI Workspace core slice: restart-safe tasks, agent adapters, scoped MCP file tools.",
   "type": "module",
   "bin": {

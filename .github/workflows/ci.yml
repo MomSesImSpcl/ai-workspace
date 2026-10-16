@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  private-data:
+    # The repository is public: fail on local absolute user paths or personal emails.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked files
+        run: |
+          paths='[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9._-]+|/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/'
+          emails='[A-Za-z0-9._%+-]+@(gmail|outlook|hotmail|yahoo|icloud|proton|gmx|web)\.[a-z]+'
+          if git grep -nIE "$paths|$emails" -- . ':!app/package-lock.json'; then
+            echo "::error::Private data found (see lines above). Use placeholders such as <project-path>."
+            exit 1
+          fi

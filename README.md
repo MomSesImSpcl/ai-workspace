@@ -59,8 +59,12 @@ node src/cli.ts roles
 node src/cli.ts roles Implementation codex
 ```
 
-Without `--write` the agent can only read. Workspace state lives in `~/.ai-workspace/` (override with `AI_WORKSPACE_HOME`): `audit.jsonl` logs every tool call, allowed or denied; `tasks/` holds task state. A killed run continues with `resume <taskId>`.
+Optional: run `npm link` once in `app/` to type `ws ...` instead of `node src/cli.ts ...`. Without `--write` the agent can only read. Workspace state lives in `~/.ai-workspace/` (override with `AI_WORKSPACE_HOME`): `audit.jsonl` logs every tool call, allowed or denied; `tasks/` holds task state. A killed run continues with `resume <taskId>`.
 
-**Develop** (from `app/`): `npm test` (unit tests), `npm run typecheck`. Sources are in `app/src/`, tests in `app/test/`.
+**Develop** (from `app/`): `npm test` (unit tests), `npm run typecheck`. CI runs both on Windows, Linux and macOS and scans for private data on every push. Sources are in `app/src/`, tests in `app/test/`.
 
 On Windows, `.ts` files may be associated with a video player; open them with a code editor.
+
+## License
+
+[MIT](LICENSE).
