@@ -17,6 +17,8 @@
 
 ## 4.2 Minimum task state
 
+For Hermes, the separate [evaluation and integration feature](../hermes-hindsight/SPEC.md) must establish run/session mappings and recovery fit. External agent state does not replace the durable task, checkpoint, budget and safe-retry contracts owned here.
+
 Store **durably**, not just in the chat transcript:
 
 ```text

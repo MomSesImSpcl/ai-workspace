@@ -6,6 +6,8 @@
 
 ## 6.2 Capability broker/tool actions
 
+The separate [Hermes Agent and Hindsight feature](../hermes-hindsight/SPEC.md) evaluates product-specific native/MCP access paths. Tool validation, scoped authority and audited execution remain owned here; an external agent's built-in tools cannot bypass these contracts.
+
 - Define typed tool operations with validated inputs/outputs, rich error types, timeouts, cancellation, permission requirements, dry-run where possible, audit data and tool version.
 - Support MCP servers, local CLI commands, first-party adapters and normal web APIs. Their interfaces are standardized at the workspace level, not necessarily the same across vendors.
 - MCP processes are executable programs and must be governed by the same trusted-tool and scope policies as other tools. Do not permit arbitrary untrusted MCP installation/configuration from a project manifest.

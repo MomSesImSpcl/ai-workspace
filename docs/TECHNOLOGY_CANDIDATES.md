@@ -10,6 +10,8 @@
 | Workspace/control-plane backend | **Go** or **ASP.NET Core/.NET (C#)** | Both discussed; neither is mandated. Prefer a modular monolith first if suitable. |
 | Workstation agent/runner | Go worker, .NET Worker Service, Rust helpers | Cross-platform process supervision, secure IPC and straightforward deployment matter most. |
 | Durable workflows | **Temporal** or simpler DB-backed workflow engine | Evaluate operational overhead; Temporal is a candidate, not foundational requirement. |
+| Agent orchestration integration | **Hermes Agent** | Concrete use case and adoption remain open; see the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
+| Long-term memory engine | **Hindsight** | Concrete use case and adoption remain open; resolve `knowledge-001` and source ACLs through the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
 | Persistent relational state | **PostgreSQL** | Solid default; alternative must provide migrations, durability and correct transactions. |
 | Local state/cache | **SQLite** | Optional for disconnected runners and indexing. |
 | Embedding/vector search | **pgvector**, embedded vector index or dedicated search engine | Start with simple hybrid search and ACL-safe retrieval; separate vector DB only if needed. |

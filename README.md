@@ -8,7 +8,7 @@ Read [AGENTS.md](AGENTS.md), then the [feature map](docs/OVERVIEW.md), [shared p
 
 You can give an agent this instruction with the repository URL:
 
-> Read AGENTS.md and resume from docs/PROGRESS.md. Follow any scope I have already selected; otherwise discuss feature titles with me, open short summaries only as needed, and help choose what to build next before loading full specs.
+> Read AGENTS.md and resume from the compact docs/PROGRESS.md; search docs/history/ only for relevant past records. Follow any scope I have already selected; otherwise discuss feature titles with me, open short summaries only as needed, and help choose what to build next before loading full specs.
 
 There is no fixed build order. The user and agent choose each feature set together, agree on a bounded outcome and acceptance checks, then implement and verify it.
 
@@ -17,7 +17,7 @@ There is no fixed build order. The user and agent choose each feature set togeth
 - [Feature map](docs/OVERVIEW.md): descriptive titles and paths to all capabilities.
 - [Adding or changing features](docs/ADDING_FEATURES.md): concise specification rules and registration checklist.
 - [Working agreement](docs/WORKING_AGREEMENT.md): implementation, verification and handoff rules.
-- [Progress](docs/PROGRESS.md) and [requirement traceability](docs/REQUIREMENTS_TRACEABILITY.md): current work, evidence and what remains.
+- [Progress](docs/PROGRESS.md): compact current state and next action; [monthly history](docs/history/): completed work and detailed evidence, searched only as needed. [Requirement traceability](docs/REQUIREMENTS_TRACEABILITY.md) maps requirements to status and evidence.
 - [Architecture, security and quality](docs/ARCHITECTURE.md): shared contracts; [open decisions](docs/OPEN_DECISIONS.md): choices to resolve when relevant.
 
 Each `docs/features/<feature>/` folder contains exactly `SUMMARY.md` and `SPEC.md`. Application setup/build commands will be documented when runnable code exists.

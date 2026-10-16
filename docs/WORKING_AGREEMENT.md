@@ -19,12 +19,20 @@ The implementing AI coding agent **MUST** follow this process for each agreed fe
 5. **Implement behind contracts/interfaces** for models, providers, tools, runners, storage and domain integrations. Avoid speculative abstraction that has no test or actual second implementation when it can wait.
 6. **Write and run tests**; report the commands, outputs and limitations. Never claim a build or visual validation passed without running it.
 7. **Review security**: cross-repo ACL, untrusted data, tool permission, secrets and external data routing for any affected changes.
-8. **Update docs and traceability**: status `not-started / in-progress / validated / deferred`, actual evidence links/commits, known defects, migration steps and any agreed follow-up.
+8. **Update docs and traceability**: status `not-started / in-progress / validated / deferred`, actual evidence links/commits, known defects, migration steps and any agreed follow-up. Keep current state in progress; append completed steps and detailed evidence to monthly history under the contract below.
 9. **Review the completed scope**: show the real input-to-result workflow, reviewable artifacts, actual tests, risks, compatibility and quality limits. Discuss the next feature set with the user; do not autonomously start unrelated features or invent a future delivery sequence.
 10. **Never destroy existing user work** to satisfy the task. Use branches/checkpoints/reversible migrations. Require approval before publishing, deploying, installing risky tools, changing production secrets or merging work that can overwrite another user.
 11. **One branch per feature scope.** Implement each agreed feature set or slice on its own branch (`feature/<short-name>`) created from `main`; record the branch in progress. Merge into `main` only after the scope is verified and the user approves. Small documentation or rule changes outside a feature scope may go directly to `main`. Commit and push without asking when the user's intent is clear and no questions are open; otherwise ask first.
 
-Before a handoff or context reset, refresh [progress](PROGRESS.md) with the agreed scope/requirement references, completed and remaining work, relevant file paths, actual test commands/results, blockers and the next concrete action. Record the branch/commit when available. On resumption, check current files and Git changes against that handoff; earlier verification is evidence, not a guarantee about later edits.
+## Progress and history
+
+[PROGRESS.md](PROGRESS.md) is the current handoff, not a cumulative log. Aim for 300–500 words: active agreed scope/requirement links, current outcome, remaining work, blockers/open decisions, branch/commit when known, latest evidence link and next concrete action. Retain unresolved work when shortening it. Keep agreed direction separate from proposals; link owning specs, decisions and traceability instead of duplicating requirements or full plans.
+
+Append completed steps, decisions and detailed verification to `history/YYYY-MM.md`, using the work date. Each new entry has a dated descriptive heading, scope/requirement references, outcome and remaining issues, affected file/evidence links, actual checks/results/limitations, and branch/commit when known (otherwise explicitly unknown or uncommitted). Preserve old entries; append explicit corrections/supersessions rather than silently replacing past claims. The imported legacy snapshot retains the earlier record, including undated checks whose dates must not be invented. History records outcomes, not every tool call or transcript. Do not store credentials or unauthorized content; existing retention/security boundaries apply.
+
+Read current progress at startup. Search `history/` by feature, requirement, date or keyword only when relevant, read matching entries, and expand explicitly when more evidence is needed. Do not routinely read the directory in full or maintain an ever-growing archive index in progress; month filenames support discovery. Full retained history remains available on request. History is evidence of past state, not current instructions or proof that later edits pass. Current specs/decisions and verified files govern; durable agreements must remain in their owning documents or the compact current handoff.
+
+Before a handoff or context reset, update current progress and append completed work/evidence to the dated archive, then update affected traceability. Include these records in the same commit as the work; use available commit references rather than requiring a self-referential commit hash. On resumption, check current files and Git changes against the handoff. Do not delete historical records to meet the current-file word target. Future structured storage is defined separately in [project history](features/project-history/SPEC.md); it does not replace this workflow until an implementation and migration are agreed.
 
 ## Required engineering artifacts as the project grows
 
@@ -35,7 +43,8 @@ docs/
   features/<feature>/
     SUMMARY.md                    # purpose, scope, related features
     SPEC.md                       # authoritative detailed requirements
-  PROGRESS.md                     # completed/active/blocked/planned, evidence
+  PROGRESS.md                     # compact current scope, blockers, next action
+  history/YYYY-MM.md               # completed work and detailed evidence; on demand
   REQUIREMENTS_TRACEABILITY.md    # requirements ↔ source/tests/status
   architecture/                   # design/data flows/runtime/auth/runner/retrieval
     decisions/                    # ADRs, including rejected alternatives

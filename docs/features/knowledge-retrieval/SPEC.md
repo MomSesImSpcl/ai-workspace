@@ -15,7 +15,13 @@
 
 - **knowledge-001:** Retrieval owns one shared, repository-scoped index and search layer. [Code indexing](../code-index/SPEC.md), the [documentation registry](../documentation/SPEC.md) and [memory](../memory/SPEC.md) MUST feed and query it rather than maintaining separate search pipelines; each keeps its own source-specific extraction (for example compiler-backed C# analysis or documentation sync) and its own records.
 
+[Project history](../project-history/SPEC.md) supplies development records and current handoffs as source-specific records. It keeps canonical history storage; any derived query index integrates with this shared layer. Retrieve relevant entries with provenance rather than routinely injecting full archives.
+
 ## 7.4 Source/knowledge precedence
+
+[Project planning/wiki](../project-planning/SPEC.md) supplies linked planning records and curated pages with revision, approval/status and evidence metadata to this shared layer. Its source-specific records and public snapshots remain owned there; `knowledge-001` and existing authorization boundaries remain in force. Non-Git pages retain explicit project/source scope rather than requiring a repository.
+
+The separate [Hermes Agent and Hindsight feature](../hermes-hindsight/SPEC.md) evaluates Hindsight's internal retrieval against `knowledge-001`. No exception or federated search design is approved by that feature definition; this spec remains the owner of the shared-index requirement.
 
 Default retrieval plan should prefer: (1) user's current project and its actual installed versions, (2) internal approved solutions and architectural decisions, (3) version-matched official docs, (4) relevant external solutions/current docs as needed. This order is configurable; do not force it when the question explicitly asks for something else.
 

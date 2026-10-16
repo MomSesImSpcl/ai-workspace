@@ -6,6 +6,8 @@
 
 ## 7.6 Automatic Long-Term Memory and Project Knowledge
 
+Hindsight-specific qualification and any later provider adapter belong to the separate [Hermes Agent and Hindsight feature](../hermes-hindsight/SPEC.md). The memory behavior, history, provenance, source permissions and user controls below remain authoritative regardless of provider; Hindsight adoption is undecided.
+
 The workspace MUST provide a persistent, model-independent Memory System managed by the configured AI Orchestrator.
 
 By default, a locally hosted AI model SHOULD identify, organize, and maintain useful memories without recurring cloud inference costs. The memory-processing model MUST remain replaceable.

@@ -28,7 +28,7 @@ Dependencies describe required capabilities or integration contracts, not a fixe
 1. Add or update one descriptive title and summary path in the [overview](OVERVIEW.md). Keep the map compact; do not copy the full summary into it.
 2. Add the requirement references, owning spec and relevant checks to [traceability](REQUIREMENTS_TRACEABILITY.md). Mark new behavior `not-started` until implemented; distinguish specification completion from application completion.
 3. Update affected dependencies and shared contracts only when behavior actually changes. Record changes to shared requirements explicitly; do not silently weaken security or data boundaries. Keep feature-specific questions in its spec; cross-cutting choices may belong in [open decisions](OPEN_DECISIONS.md).
-4. Update [progress](PROGRESS.md) with the actual documentation work, unresolved decisions and any next action agreed with the user. Do not invent an implementation commitment.
+4. Keep [progress](PROGRESS.md) compact with current state, unresolved decisions and the next agreed action. Append completed documentation work and detailed verification to `history/YYYY-MM.md` under the [progress/history contract](WORKING_AGREEMENT.md#progress-and-history). Do not invent an implementation commitment.
 5. Check both feature files exist, local links resolve, the overview and traceability point to them, requirements do not conflict or repeat across owners, and acceptance checks describe observable results. Review edited requirements against the user's request; do not discard details while compressing.
 
 When renaming, splitting or removing a feature, update every incoming link and preserve or explicitly supersede its requirement references. Change only the user-authorized scope.

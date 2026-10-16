@@ -1,51 +1,27 @@
-# Development progress
+# Current development progress
 
-## Completed documentation work
-
-- 2026-10-15: Split the master spec into a compact map, shared contracts and 25 feature folders. Updated both agent entry prompts and preserved source-section traceability. This is documentation organization, not application implementation.
-- 2026-10-15: Replaced fixed delivery sequencing and priority labels with feature sets chosen jointly by the user and agent. Moved relevant verification checks into feature specs and shared quality contracts.
-- 2026-10-15: Added repository entry points (`README.md`, `AGENTS.md`, `CLAUDE.md`), feature-writing guidance and explicit handoff/resumption instructions. Replaced the three original starter files with these entry points.
-- 2026-10-15: Initialized Git on `main` and created the private [GitHub repository](https://github.com/MomSesImSpcl/ai-workspace).
-- 2026-10-15: Clarified the preferred collaboration workflow: review feature titles together, open only useful short summaries, agree on the next feature set, then load full specs and implement. Deeper analysis before selection happens only when requested.
-- 2026-10-15: Made the GitHub repository public at the user's request; verified visibility through GitHub.
-- 2026-10-15: Added the agreed direction, reuse-first principle 10, shared knowledge index (knowledge-001), proposed first slice and tentative order; `AGENTS.md` now requires automatic progress updates after each step, decision or commit.
-- 2026-10-15: Added the one-branch-per-feature-scope rule and inferred-commit rule (working agreement step 11).
-- 2026-10-15: Added the small-increment, low-token guideline (working agreement step 3).
-- 2026-10-15: Agents now suggest new or split features proactively ([feature-writing guide](ADDING_FEATURES.md)).
+Read this file at startup. Search [monthly history](history/) only for relevant past decisions/evidence; read matching entries and expand if needed. Completed work and detailed checks belong there, under the [progress/history contract](WORKING_AGREEMENT.md#progress-and-history). Requirements/status remain in owning specs and [traceability](REQUIREMENTS_TRACEABILITY.md).
 
 ## Active / blocked
 
-No feature set is selected for implementation. No implementation blockers have been established.
+No application implementation scope is selected; all product features remain `not-started`. No implementation blockers have been established. Branch: `main`. The user authorized committing and pushing all pending documentation, including the pre-existing edits. This checkpoint covers role selection, planning/wiki, Hermes/Hindsight and progress/history; use Git for the current commit and publication status.
 
-## Resume here
-
-Repository branch: `main`. The application is not implemented. Feature titles and all summaries were already reviewed with the user; see [agreed direction](#agreed-direction) and [proposed](#proposed-not-yet-agreed). Next product action: confirm the proposed first core slice with the user (scope, free technology choices, acceptance checks). Once agreed, record it under Active, then load the full specs of identity-projects, task-runtime, model-routing and tool-broker (plus runners/desktop-client only as needed) and the affected [architecture](ARCHITECTURE.md) contracts. For feature-definition requests, follow [the feature-writing guide](ADDING_FEATURES.md).
-
-For active work, record the agreed goal and requirement references, completed/remaining work with file paths, actual checks and results, blockers/open decisions, branch/commit when available, and the next concrete action. Update this handoff before ending or transferring work.
+The authorized documentation scope is complete: compact progress, preserved monthly history, updated workflow references and the separate [project history feature](features/project-history/SPEC.md) (`history-001–006`). JSONL/SQLite are future candidates, not an implementation commitment.
 
 ## Agreed direction
 
-- 2026-10-15: Personal tool first, multi-user later. Carry user and project identity through the core from the start so access checks can attach later; defer login servers and multi-tenant infrastructure until needed.
-- 2026-10-15: Build iteratively with thin end-to-end slices, usable before all features exist. Start with a minimal slice through the core features ([identity-projects](features/identity-projects/SUMMARY.md), [task-runtime](features/task-runtime/SUMMARY.md), [model-routing](features/model-routing/SUMMARY.md), [tool-broker](features/tool-broker/SUMMARY.md), with a local [runner](features/runners/SUMMARY.md) and [desktop-client](features/desktop-client/SUMMARY.md) as needed) before domain features. Later slices extend that core instead of working around it. Exact first-slice scope and acceptance checks are still to be agreed.
-- 2026-10-15: Technology is chosen per feature set when it is implemented, discussed together; see [open decisions](OPEN_DECISIONS.md). Existing free solutions are preferred over building ([principle 10](PRINCIPLES.md#product-invariants)).
-- 2026-10-15: Knowledge features stay separate but share one index layer ([knowledge-001](features/knowledge-retrieval/SPEC.md)).
+Personal tool first; retain user/project identity in the core for later authorization. Build thin, tested end-to-end slices through identity/projects, task runtime, model routing and tool broker, with runners/desktop only as needed; choose each bounded scope and free-to-use technologies together. Existing solutions take precedence. Knowledge features retain one shared index (`knowledge-001`).
 
-## Proposed (not yet agreed)
+Planning/design, orchestration and implementation roles are independently selectable; local/hosted integrations require verification, and browser planning is optional ([role requirements](features/ai-orchestrator/SPEC.md#independently-selectable-roles)). [Planning/wiki/public roadmap](features/project-planning/SPEC.md) and [Hermes/Hindsight evaluation](features/hermes-hindsight/SPEC.md) are defined concepts, with no adoption or implementation authorized. Select their concrete use cases and acceptance/security checks when chosen. History retrieval/storage is likewise separately defined, without fixed priority.
 
-- **First core slice:** one local project; one task persisted locally that survives a restart; one model adapter; MCP-based file read/write tools limited to the project folder; a deterministic permission check before writes plus an audit log; per-task token/cost tracking with a budget limit that pauses the task when reached; a minimal CLI or local web UI. Scope, technology and acceptance checks are confirmed together before implementation.
-- **After the core:** use the workspace on its own repository through [software-workflow](features/software-workflow/SUMMARY.md) and [code-index](features/code-index/SUMMARY.md).
-- **Tentative order, rearrangeable at any time (Unity is the primary use case):** core slice → software-workflow + code-index + knowledge-retrieval → [unity](features/unity/SUMMARY.md) + [documentation](features/documentation/SUMMARY.md) → [skills](features/skills/SUMMARY.md) + [ai-orchestrator](features/ai-orchestrator/SUMMARY.md) + [memory](features/memory/SUMMARY.md) → fuller [desktop-client](features/desktop-client/SUMMARY.md), [runners](features/runners/SUMMARY.md), [notifications](features/notifications/SUMMARY.md) → [creative-assets](features/creative-assets/SUMMARY.md), [animation](features/animation/SUMMARY.md), [provisioning](features/provisioning/SUMMARY.md), [technology-catalog](features/technology-catalog/SUMMARY.md), [evaluations](features/evaluations/SUMMARY.md), [mini-apps](features/mini-apps/SUMMARY.md) → [mobile-client](features/mobile-client/SUMMARY.md), [content-production](features/content-production/SUMMARY.md), [similarity-review](features/similarity-review/SUMMARY.md), [integrated-browser](features/integrated-browser/SUMMARY.md). Not an iteration agreement.
+## Proposed — not yet agreed
 
-## Planned
+First core slice: one local project and restart-safe task, one model adapter, project-scoped MCP file tools, deterministic write permission checks and audit log, task token/cost tracking with a budget pause, and minimal CLI or local web UI. Exact scope, technologies and acceptance checks remain open.
 
-All features are not started. Review the [feature map](OVERVIEW.md) with the user and choose the next feature set based on current goals and relevant dependencies. Record the agreed outcome, requirements and acceptance checks here when selected; there is no preset delivery sequence.
+Using the workspace on its own repository after the core and the longer tentative feature order remain proposals; see the [preserved proposal record](history/2026-10.md#proposed-not-yet-agreed). There is no fixed delivery sequence.
 
-## Verification evidence
+## Resume here
 
-Passed after the planning change: 250 local links; 25 two-file feature folders; feature requirements unchanged apart from planning labels and added verification checks; all 43 numbered orchestrator/memory requirements; all 13 product acceptance scenarios unchanged; no stale sequence/file references. Runtime task scheduling and priorities remain intact. No application, builds or runtime tests exist yet.
+No implementation work remains authorized. Next product action: confirm the proposed first core slice with the user, or jointly select another bounded feature set from the [map](OVERVIEW.md). Then load only its full specs and affected architecture/security contracts. Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md); feature-specific choices stay in their owning specs.
 
-Repository onboarding checks passed: local links, feature requirements preserved, startup/handoff references present, and no references to the removed starter files. GitHub repository visibility is public. Credential/environment and local-tool cache ignore rules were checked. A Markdown hard break was changed to a paragraph break to pass Git whitespace checks.
-
-Latest workflow clarification: 267 local links passed; startup, overview and working agreement consistently require titles first, optional summaries, joint feature selection, then full specs. Git whitespace checks passed. No product feature requirements changed.
-
-Update this file after work with completed/active/blocked status, actual test results, unresolved issues and any next step agreed with the user.
+Latest completed work, affected files and verification: [2026-10-16 progress/history update](history/2026-10.md#2026-10-16--compact-progress-preserved-history-and-future-structured-storage). Earlier planning, Hermes/Hindsight and role-selection evidence is retained in that month's archive. Documentation checks do not establish runtime or third-party integration behavior.

@@ -7,7 +7,7 @@ These are **not reasons to halt all work**, and the implementing agent should pr
 2. Initial local-only prototype versus centrally hosted control plane; hosting/availability/backup strategy when mobile or employees arrive.
 3. GitHub integration mechanics and precise authorization refresh semantics; behavior for non-Git projects.
 4. Modularity boundary: monolith versus separate worker services and whether/when Temporal is justified.
-5. Exact primary persistence/search/index technologies and dataset retention policies.
+5. Exact primary persistence/search/index technologies and dataset retention policies. The [Hermes/Hindsight feature](features/hermes-hindsight/SPEC.md) must evaluate Hindsight's fit with `knowledge-001`; its separate feature definition does not authorize an independent memory search pipeline.
 6. Runner-to-control-plane protocol, secure provisioning lifecycle and job identity/sandbox details.
 7. Cloud-model privacy consent defaults, provider allowlists, data residency and cost budgets.
 8. Skill/package distribution, signing, update and conflict semantics.

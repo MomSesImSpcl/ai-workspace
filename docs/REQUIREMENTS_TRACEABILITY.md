@@ -21,8 +21,14 @@ Original numbered sections remain valid references inside the destination specs.
 | 7.1, 7.4, knowledge-001 | [Authorized search and selective context assembly](features/knowledge-retrieval/SPEC.md) | G7 |
 | 7.2 | [Semantic code indexing and change-aware knowledge](features/code-index/SPEC.md) | G7 |
 | 7.3 | [Version-matched local documentation registry](features/documentation/SPEC.md) | G7 |
-| 7.5 | [Automatic agent, effort and context delegation](features/ai-orchestrator/SPEC.md) | Local spec / agreed scope |
+| planning-001–010 | [Project planning, wiki and public roadmap](features/project-planning/SPEC.md) | A1–A10 in owning spec; not-started; implementation/test evidence: none |
+| history-001–006 | [Project history and selective progress retrieval](features/project-history/SPEC.md) | A1–A6 in owning spec; not-started; implementation/test evidence: none |
+| 7.5 | [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SPEC.md) | Local spec / agreed scope |
+| orchestrator-001–003 | [Independent role selection, handoffs and compatibility](features/ai-orchestrator/SPEC.md#independently-selectable-roles) | A1–A3; not-started; implementation/test evidence: none |
+| routing-001 | [Role and agent assignments](features/model-routing/SPEC.md#role-and-agent-assignments) | Local acceptance evidence; not-started; implementation/test evidence: none |
+| browser-001 | [Planning-role handoff](features/integrated-browser/SPEC.md#planning-role-handoff) | Local browser handoff acceptance; not-started; implementation/test evidence: none |
 | 7.6 | [Automatic long-term memory and project knowledge](features/memory/SPEC.md) | Local spec / agreed scope |
+| hermes-hindsight-001–006 | [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SPEC.md) | A1–A6 in owning spec; not-started; implementation/test evidence: none |
 | 8 | [Technology discovery and build-versus-buy research](features/technology-catalog/SPEC.md) | G10 |
 | 9.1, 9.2 | [Trusted infrastructure registry and dependency provisioning](features/provisioning/SPEC.md) | G5 |
 | 10 | [Unity indexing, scene authoring and background validation](features/unity/SPEC.md) | G8, G9 |
@@ -34,9 +40,11 @@ Original numbered sections remain valid references inside the destination specs.
 
 ## Shared and planning material
 
+2026-10-16: Hermes/Hindsight research is retained in the separate [evaluation and integration feature](features/hermes-hindsight/SPEC.md), alongside `hermes-hindsight-001–006`, acceptance A1–A6 and an ownership/overlap map. Existing memory, retrieval, orchestration, routing, task-runtime, tool, skill, catalog and provisioning requirements retain their owners. Concrete use case and adoption remain open; all affected product behavior is `not-started`, with no implementation/runtime acceptance evidence.
+
 | Original source | Current owner | Treatment |
 |---|---|---|
-| Header, development continuity | [Overview](OVERVIEW.md), [working agreement](WORKING_AGREEMENT.md), [progress](PROGRESS.md) | Selective reading replaces mandatory full-spec loading; canonical tracking paths unified. |
+| Header, development continuity | [Overview](OVERVIEW.md), [progress/history contract](WORKING_AGREEMENT.md#progress-and-history), [current progress](PROGRESS.md), [monthly history](history/) | Compact current handoff; completed work/evidence retained in searchable monthly archives, read only as needed. Repository documentation workflow is distinct from the not-started structured-history product feature; [documentation evidence](history/2026-10.md#2026-10-16--compact-progress-preserved-history-and-future-structured-storage). |
 | 0: vocabulary, principles, cross-platform, exclusions | [Shared principles](PRINCIPLES.md) | Consolidated without changing product scope or platform obligations. |
 | 3.1, 3.3, 9.3, 13 | [Architecture/security/quality](ARCHITECTURE.md) | Shared implementation contracts, including all testing categories. |
 | 14 | [Working agreement](WORKING_AGREEMENT.md), feature specs and [quality contracts](ARCHITECTURE.md) | Fixed sequence removed at the user’s request; relevant technical proofs retained with their owners. |

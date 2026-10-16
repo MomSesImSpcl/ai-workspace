@@ -40,6 +40,8 @@ metadata/full-text/vector filters
 
 ## 8.4 Dependency decision support
 
+The separate [Hermes Agent and Hindsight feature](../hermes-hindsight/SPEC.md) owns those products' concrete use-case qualification and any selected adapters. This feature retains general discovery and comparison behavior; catalog listing or a positive research result does not select, trust or activate either product.
+
 - Architecture workflows consult internal code, approved tech and discovered candidates before recommending a new implementation.
 - Compare reuse vs integration vs custom implementation in terms of requirements coverage, maintenance, licensing, compatibility, performance, reliability, risk, cost and long-term lock-in.
 - Finalists should receive up-to-date documentation/license verification before decisions are made. Agents may propose additions to approved infrastructure but cannot approve executable software unilaterally.

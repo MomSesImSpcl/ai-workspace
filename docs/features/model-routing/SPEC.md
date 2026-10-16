@@ -21,6 +21,12 @@
 
 **Product acceptance:** G6 in [acceptance scenarios](../../ACCEPTANCE.md).
 
+## Role and agent assignments
+
+Product-specific qualification of Hermes belongs to [Hermes Agent and Hindsight evaluation and integration](../hermes-hindsight/SPEC.md). This feature continues to own assignment/configuration and capability contracts; an agent runtime is not interchangeable with a single model call.
+
+- **routing-001:** Configuration MUST distinguish the planning/design role (for example `ArchitectureReasoning`), orchestration role and implementation role. Each assignment identifies the compatible model or agent product and its integration, not only a model name. Supported agent adapters MAY use APIs, local inference or native agent CLIs; browser-only planning follows the [browser handoff contract](../integrated-browser/SPEC.md#planning-role-handoff) and MUST NOT be presented as an API adapter. Independent role selection and handoff behavior belong to [orchestrator-001–003](../ai-orchestrator/SPEC.md#independently-selectable-roles).
+
 ## Illustrative contract (not a production schema)
 
 ```yaml
@@ -45,3 +51,4 @@ Adapt this example to actual provider, tool and platform capabilities.
 ## Acceptance evidence
 
 - Demonstrate at least two real distinct provider adapters or a local-plus-hosted combination. Switch a role through configuration, rerun the same task and inspect provider/usage traces. Handoff at a checkpoint preserves goals/artifacts; unsupported capabilities produce explicit validation errors.
+- For routing-001, save and reload distinct planning/design, orchestration and implementation assignments, including integration identifiers. Confirm that changing one leaves the others intact and that browser-only planning is represented as a manual handoff rather than an API integration.
