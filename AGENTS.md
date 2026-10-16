@@ -9,4 +9,6 @@ This is the AI Workspace repository. Start here when opening or resuming work.
 5. When adding or changing feature definitions, read [the feature-writing guide](docs/ADDING_FEATURES.md). Specifying a feature does not authorize implementing it. If work reveals a capability that should be its own feature, suggest it to the user instead of folding it in.
 6. Update current progress automatically after each completed step, agreed decision or commit; append completed work and detailed verification to `docs/history/YYYY-MM.md` using the work date. Follow [the progress/history contract](docs/WORKING_AGREEMENT.md#progress-and-history), and include affected records in the same commit. Before finishing or handing off, refresh the compact current scope, remaining work, relevant links, blockers and next concrete action plus affected traceability. Keep agreed work separate from suggestions; never claim implementation or tests without evidence.
 
+This repository is public. Never commit private data: local absolute paths, usernames, emails, credentials, tokens or machine-specific output. Use placeholders such as `<project-path>` in docs, and check the staged diff for such data before every commit.
+
 Preserve user changes and shared security boundaries. Requirements belong in their owning specs; summaries and this file should link to details rather than duplicate them.
