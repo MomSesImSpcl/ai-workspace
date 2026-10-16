@@ -7,5 +7,5 @@
   - [Open decisions](../../OPEN_DECISIONS.md) #1, #2, #4 annotated with what slice 1 decided; closing principle removed (duplicate of principles invariant 9).
   - [Technology candidates](../../TECHNOLOGY_CANDIDATES.md): backend, durable workflows and AI gateway rows note the slice 1 choice and ADR 0001.
   - [Working agreement](../../WORKING_AGREEMENT.md) artifact tree replaced by pointers to where the layout is documented plus when to add security/operations/schema docs.
-- **Checks:** root docs 6,538 → 5,775 words (traceability 991 → 375; overview 480 → ~280); all relative Markdown links resolve; no remaining references to the removed "Agent reading order" section.
+- **Checks:** root docs 6,538 → 5,775 words (traceability 991 → 375; overview 480 → 360); all relative Markdown links resolve; no remaining references to the removed "Agent reading order" section.
 - **Branch / commit:** `feature/core-slice` and `main`; commit ID from Git.
