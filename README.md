@@ -42,11 +42,12 @@ Tested on Windows 10 with Node 24. Each agent run uses your own Claude and ChatG
 **Install and register a project folder:**
 
 ```bash
+cd app
 npm install
 node src/cli.ts project add <project-path> --id demo
 ```
 
-**Try it:**
+**Try it** (from `app/`):
 
 ```bash
 node src/cli.ts run "Create hello.js that prints Hello" --project demo --write
@@ -60,6 +61,6 @@ node src/cli.ts roles Implementation codex
 
 Without `--write` the agent can only read. Workspace state lives in `~/.ai-workspace/` (override with `AI_WORKSPACE_HOME`): `audit.jsonl` logs every tool call, allowed or denied; `tasks/` holds task state. A killed run continues with `resume <taskId>`.
 
-**Develop:** `npm test` (unit tests), `npm run typecheck`.
+**Develop** (from `app/`): `npm test` (unit tests), `npm run typecheck`. Sources are in `app/src/`, tests in `app/test/`.
 
 On Windows, `.ts` files may be associated with a video player; open them with a code editor.
