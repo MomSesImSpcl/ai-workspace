@@ -1,0 +1,26 @@
+{
+  "name": "ai-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Workspace core slice: restart-safe tasks, agent adapters, scoped MCP file tools.",
+  "type": "module",
+  "bin": {
+    "ws": "src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "ws": "node src/cli.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

@@ -4,9 +4,9 @@ Read this file at startup. Search [monthly history](history/) only for relevant 
 
 ## Active / blocked
 
-No application implementation scope is selected; all product features remain `not-started`. No implementation blockers have been established. Branch: `main`. The user authorized committing and pushing all pending documentation, including the pre-existing edits. This checkpoint covers role selection, planning/wiki, Hermes/Hindsight and progress/history; use Git for the current commit and publication status.
+**Active scope: core slice 1** on branch `feature/core-slice` ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
 
-The authorized documentation scope is complete: compact progress, preserved monthly history, updated workflow references and the separate [project history feature](features/project-history/SPEC.md) (`history-001–006`). JSONL/SQLite are future candidates, not an implementation commitment.
+Increment 1 done: store/runtime/broker/MCP server/adapter/roles/CLI, unit tests pass. **Blocker:** real e2e run fails with `OAuth session expired` — user must log in to the standalone `claude` CLI.
 
 ## Agreed direction
 
@@ -16,12 +16,8 @@ Planning/design, orchestration and implementation roles are independently select
 
 ## Proposed — not yet agreed
 
-First core slice: one local project and restart-safe task, one model adapter, project-scoped MCP file tools, deterministic write permission checks and audit log, task token/cost tracking with a budget pause, and minimal CLI or local web UI. Exact scope, technologies and acceptance checks remain open.
-
 Using the workspace on its own repository after the core and the longer tentative feature order remain proposals; see the [preserved proposal record](history/2026-10.md#proposed-not-yet-agreed). There is no fixed delivery sequence.
 
 ## Resume here
 
-No implementation work remains authorized. Next product action: confirm the proposed first core slice with the user, or jointly select another bounded feature set from the [map](OVERVIEW.md). Then load only its full specs and affected architecture/security contracts. Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md); feature-specific choices stay in their owning specs.
-
-Latest completed work, affected files and verification: [2026-10-16 progress/history update](history/2026-10.md#2026-10-16--compact-progress-preserved-history-and-future-structured-storage). Earlier planning, Hermes/Hindsight and role-selection evidence is retained in that month's archive. Documentation checks do not establish runtime or third-party integration behavior.
+Next action: after the user re-logs in to `claude`, run the real e2e (`node src/cli.ts run ... --write`), check `hello.md` exists and the out-of-project read is denied in `~/.ai-workspace/audit.jsonl`. Then increment 2: Codex CLI adapter for the Orchestration role. Latest evidence: [core slice 1, increment 1](history/2026-10.md#2026-10-16--core-slice-1-increment-1-typescript-cli-claude-code-adapter-scoped-broker). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
