@@ -35,6 +35,7 @@ Original numbered sections remain valid references inside the destination specs.
 | hermes-hindsight-001–006 | [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SPEC.md) | A1–A6 in owning spec; not-started; implementation/test evidence: none |
 | 8 | [Technology discovery and build-versus-buy research](features/technology-catalog/SPEC.md) | G10 |
 | 9.1, 9.2 | [Trusted infrastructure registry and dependency provisioning](features/provisioning/SPEC.md) | G5 |
+| distribution-001–005 | [Workspace installation, packaging and cross-platform setup](features/distribution/SPEC.md) | Acceptance evidence in owning spec; not-started; baseline: README Getting started (Windows only tested) |
 | 10 | [Unity indexing, scene authoring and background validation](features/unity/SPEC.md) | G8, G9 |
 | 11.1, 11.2 | [Visual concepts and editable 3D asset pipelines](features/creative-assets/SPEC.md) | G12 |
 | 11.3, 11.4 | [External animation, retargeting and cinematics](features/animation/SPEC.md) | G12 |

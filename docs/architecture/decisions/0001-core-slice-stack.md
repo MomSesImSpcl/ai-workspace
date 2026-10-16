@@ -34,8 +34,4 @@ The first core slice needs one local project, a restart-safe task, one agent ada
 
 ## Setup
 
-```bash
-npm install
-node src/cli.ts project add <path>
-node src/cli.ts run "<goal>" --project <id> --write --budget 200000
-```
+See [Getting started](../../../README.md#getting-started-prototype-cli).

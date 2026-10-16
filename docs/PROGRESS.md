@@ -20,4 +20,4 @@ Using the workspace on its own repository after the core and the longer tentativ
 
 ## Resume here
 
-Next action: choose the next feature set with the user from the [map](OVERVIEW.md); known slice 1 gaps are listed in [ADR 0001](architecture/decisions/0001-core-slice-stack.md#known-limits). Latest evidence: [increment 4](history/2026-10.md#2026-10-16--core-slice-1-increment-4-effect-ledger-and-per-call-budget-check). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
+Setup is documented in the README; the [distribution feature](features/distribution/SPEC.md) lists triggers for installers/containers, to evaluate after each feature set. Next action: choose the next feature set with the user from the [map](OVERVIEW.md); known slice 1 gaps are listed in [ADR 0001](architecture/decisions/0001-core-slice-stack.md#known-limits). Latest evidence: [increment 4](history/2026-10.md#2026-10-16--core-slice-1-increment-4-effect-ledger-and-per-call-budget-check). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).

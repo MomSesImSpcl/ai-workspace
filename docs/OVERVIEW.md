@@ -34,6 +34,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SUMMARY.md)
 - [Technology discovery and build-versus-buy research](features/technology-catalog/SUMMARY.md)
 - [Trusted infrastructure registry and dependency provisioning](features/provisioning/SUMMARY.md)
+- [Workspace installation, packaging and cross-platform setup](features/distribution/SUMMARY.md)
 - [Unity indexing, scene authoring and background validation](features/unity/SUMMARY.md)
 - [Visual concepts and editable 3D asset pipelines](features/creative-assets/SUMMARY.md)
 - [External animation, retargeting and cinematics](features/animation/SUMMARY.md)
@@ -48,4 +49,4 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
 - [Adding or changing features](ADDING_FEATURES.md)
 
-Status: planned product; no application implementation validated. Next feature set: choose together with the user.
+Status: core slice 1 prototype (CLI) implemented and verified on Windows; see [progress](PROGRESS.md). All other features are planned. Next feature set: choose together with the user.
