@@ -1,8 +1,9 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PickerUnavailable, pickFolder } from './folder-picker.ts';
 import { getRoles, newRoleTask } from './roles.ts';
 import { cancelTask, listTasks, loadTask, markRunner, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { home, listProjects, registerProject } from './store.ts';
@@ -37,22 +38,15 @@ function events(id: string): unknown[] {
   return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.taskId === id || e.childId === id);
 }
 
-// Browsers never reveal a picked folder's full path, so the server opens the OS dialog itself.
-const pickScript = `[Console]::OutputEncoding = [Text.Encoding]::UTF8
-Add-Type -AssemblyName System.Windows.Forms
-$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
-$d = New-Object System.Windows.Forms.FolderBrowserDialog -Property @{ Description = 'Select the project folder'; ShowNewFolderButton = $false }
-if ($d.ShowDialog($owner) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }`;
 let picking = false;
 
-async function pickFolder(): Promise<{ path: string | null }> {
-  if (process.platform !== 'win32') throw new HttpError(501, 'folder picker is Windows-only; type the path');
+async function pickFolderOnce(): Promise<{ path: string | null }> {
   if (picking) throw new HttpError(409, 'a folder dialog is already open');
   picking = true;
   try {
-    const path = await new Promise<string>((ok, fail) =>
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', pickScript], { windowsHide: true }, (e, out) => (e ? fail(e) : ok(out.trim()))));
-    return { path: path || null }; // null: dialog cancelled
+    return { path: await pickFolder() };
+  } catch (e) {
+    throw e instanceof PickerUnavailable ? new HttpError(501, e.message) : e;
   } finally {
     picking = false;
   }
@@ -97,7 +91,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const task = loadTask(id);
     return { task: view(task), children: listTasks().filter((t) => t.parentId === id).map(view), events: events(id), log: tail(logPath(id)) };
   }
-  if (req.method === 'POST' && kind === 'pick-folder') return pickFolder();
+  if (req.method === 'POST' && kind === 'pick-folder') return pickFolderOnce();
   if (req.method === 'POST' && kind === 'projects') {
     const b = await body(req);
     if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');
