@@ -27,18 +27,18 @@ interface CodexEvent {
   type: string;
   thread_id?: string;
   item?: { type: string; text?: string };
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
   error?: { message?: string };
   message?: string;
 }
 
-// Parses `codex exec --json` JSONL. input_tokens already includes cached input.
+// Parses `codex exec --json` JSONL. input_tokens already includes cached_input_tokens.
 export function parseEvents(stdout: string): StepResult {
   let text: string | undefined;
   let threadId: string | undefined;
   let error: string | undefined;
   let completed = false;
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
   for (const line of stdout.split('\n')) {
     if (!line.startsWith('{')) continue;
     const e = JSON.parse(line) as CodexEvent;
@@ -47,6 +47,7 @@ export function parseEvents(stdout: string): StepResult {
     else if (e.type === 'turn.completed') {
       completed = true;
       usage.inputTokens += e.usage?.input_tokens ?? 0;
+      usage.cachedInputTokens += e.usage?.cached_input_tokens ?? 0;
       usage.outputTokens += e.usage?.output_tokens ?? 0;
     } else if (e.type === 'turn.failed' || e.type === 'error') error = e.error?.message ?? e.message ?? e.type;
   }

@@ -87,7 +87,7 @@ test('claude stream usage counts each assistant message once', () => {
     JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: u(1, 5) } }),
     JSON.stringify({ type: 'assistant', message: { id: 'm2', usage: u(3, 4) } }),
   ];
-  assert.deepEqual(streamUsage(lines), { inputTokens: 24, outputTokens: 9 });
+  assert.deepEqual(streamUsage(lines), { inputTokens: 24, outputTokens: 9, cachedInputTokens: 20, costUsd: undefined });
 });
 
 const steps = (n: number, tokensPerStep: number): AgentAdapter & { calls: number } => {
@@ -157,7 +157,7 @@ test('codex event parsing maps completed turns, usage and failures', () => {
     '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}',
     '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":60,"output_tokens":7}}',
   ].join('\n'));
-  assert.deepEqual([ok.done, ok.text, ok.usage.inputTokens, ok.usage.outputTokens, ok.adapterState], [true, 'done', 100, 7, { threadId: 't1' }]);
+  assert.deepEqual([ok.done, ok.text, ok.usage.inputTokens, ok.usage.cachedInputTokens, ok.usage.outputTokens, ok.adapterState], [true, 'done', 100, 60, 7, { threadId: 't1' }]);
   const failed = parseEvents('{"type":"turn.failed","error":{"message":"usage limit"}}');
   assert.deepEqual([failed.done, failed.error], [false, 'usage limit']);
   assert.match(parseEvents('').error!, /no completed turn/);

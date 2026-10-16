@@ -85,7 +85,12 @@ async function api(path, body) {
 
 // A running task whose runner process is gone (crash, reboot) can be resumed.
 const label = (t) => t.status === 'running' && !t.runnerAlive ? 'running (runner stopped)' : t.status;
-const summary = (t) => `step ${t.steps} · ${tokens(t).toLocaleString()} / ${t.tokenBudget.toLocaleString()} tokens · ${esc(t.integration)}`;
+// Cached input is mostly the agent's fixed prompt; the rest is what the work itself cost.
+const cached = (t) => t.usage.cachedInputTokens ?? 0;
+const spent = (t) => t.usage.cachedInputTokens === undefined // tasks recorded before the split
+  ? tokens(t).toLocaleString()
+  : `${(tokens(t) - cached(t)).toLocaleString()} work + ${cached(t).toLocaleString()} cached`;
+const summary = (t) => `step ${t.steps} · ${spent(t)} / ${t.tokenBudget.toLocaleString()} tokens · ${esc(t.integration)}`;
 
 async function refresh() {
   const tasks = await api('/api/tasks');
@@ -131,6 +136,11 @@ $('#tasks').onclick = (e) => {
   if (!b) return;
   selected = b.dataset.id;
   refresh();
+};
+
+// Enter starts the task; Shift+Enter adds a line break.
+$('[name=goal]').onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };
 
 $('#new').onsubmit = async (e) => {

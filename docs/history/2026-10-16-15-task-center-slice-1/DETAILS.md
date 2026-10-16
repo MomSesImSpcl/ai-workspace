@@ -16,6 +16,8 @@
 
 **Follow-up (same day):** `Task Center.cmd` (Windows; test start answered HTTP 200) and `Task Center.command` (macOS/Linux; syntax-checked only) double-click launchers. "Add project" form (clicking Folder path opens the OS folder dialog via `POST /api/pick-folder`, `app/src/folder-picker.ts`: Explorer-style dialog on Windows, `osascript` on macOS, `zenity`/`kdialog` on Linux; only the Windows dialog was started, macOS/Linux untested) and `POST /api/projects` via shared `registerProject` in `app/src/store.ts` (absolute existing directory required); API test plus browser check.
 
+**Follow-up (2026-10-17):** usage records `cachedInputTokens` (Claude `cache_read_input_tokens`, Codex `cached_input_tokens`), summed through steps, interrupted attempts and delegation; UI and `ws status` show work vs cached tokens. The budget still counts all input. Enter in the goal field starts the task (Shift+Enter for a new line). Checked: tests 17/17; real Claude Code "Print Test" started with Enter showed 712 work + 3,211 cached tokens. Codex split only unit-tested.
+
 **Not covered:** G3 (concurrent tasks with two models) not run; macOS/Linux not run; no native shell, notifications or project/conversation views.
 
 **Open limits:** [#11](https://github.com/MomSesImSpcl/ai-workspace/issues/11), [#12](https://github.com/MomSesImSpcl/ai-workspace/issues/12).

@@ -6,7 +6,8 @@ import { audit, home, readJson, writeJson } from './store.ts';
 export type Status = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 export interface Usage {
-  inputTokens: number;
+  inputTokens: number; // includes cachedInputTokens
+  cachedInputTokens?: number; // input served from the provider's prompt cache, mostly the agent's fixed prompt
   outputTokens: number;
   costUsd?: number; // reported by the provider; subscription agents may report an estimate or nothing
 }
@@ -79,6 +80,15 @@ export function createTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'i
 
 export const used = (u: Usage) => u.inputTokens + u.outputTokens;
 
+export function addUsage(a: Usage, b: Usage): Usage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens: (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0),
+    costUsd: a.costUsd === undefined && b.costUsd === undefined ? undefined : (a.costUsd ?? 0) + (b.costUsd ?? 0),
+  };
+}
+
 // Usage of the step in progress, written by adapters that stream it, so the broker can enforce the
 // budget mid-step. Kept apart from the task file, which another process may update during a step.
 const livePath = (id: string) => join(home(), 'tasks', `${id}.live.json`);
@@ -121,7 +131,7 @@ export function runnerAlive(id: string): boolean {
 function chargeStale(task: Task): void {
   const stale = liveUsage(task.id);
   if (used(stale) === 0) return;
-  task.usage = { ...task.usage, inputTokens: task.usage.inputTokens + stale.inputTokens, outputTokens: task.usage.outputTokens + stale.outputTokens };
+  task.usage = addUsage(task.usage, { ...stale, costUsd: undefined });
   audit({ kind: 'step', taskId: task.id, step: task.steps + 1, interrupted: true, usage: stale });
   saveTask(task);
   clearLiveUsage(task.id);
@@ -179,11 +189,7 @@ async function steps(task: Task, adapter: AgentAdapter, root: string, maxSteps: 
     }
     task = loadTask(id);
     task.steps++;
-    task.usage = {
-      inputTokens: task.usage.inputTokens + result.usage.inputTokens,
-      outputTokens: task.usage.outputTokens + result.usage.outputTokens,
-      costUsd: result.usage.costUsd === undefined ? task.usage.costUsd : (task.usage.costUsd ?? 0) + result.usage.costUsd,
-    };
+    task.usage = addUsage(task.usage, result.usage);
     task.adapterState = result.adapterState ?? task.adapterState;
     task.result = result.text ?? task.result;
     audit({ kind: 'step', taskId: id, step: task.steps, integration: task.integration, usage: result.usage, error: result.error });

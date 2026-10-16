@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { writeLiveUsage, type AgentAdapter, type StepResult, type Usage } from '../runtime.ts';
+import { addUsage, writeLiveUsage, type AgentAdapter, type StepResult, type Usage } from '../runtime.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 const TURNS_PER_STEP = 8;
@@ -19,6 +19,7 @@ type ClaudeUsage = NonNullable<ClaudeResult['usage']>;
 const tokens = (u: ClaudeUsage): Usage => ({
   inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
   outputTokens: u.output_tokens ?? 0,
+  cachedInputTokens: u.cache_read_input_tokens ?? 0,
 });
 
 // Live usage from stream-json: one entry per assistant message id (later events of the same id supersede).
@@ -29,7 +30,7 @@ export function streamUsage(lines: string[]): Usage {
     const e = JSON.parse(line) as { type: string; message?: { id?: string; usage?: ClaudeUsage } };
     if (e.type === 'assistant' && e.message?.id && e.message.usage) byMessage.set(e.message.id, e.message.usage);
   }
-  return [...byMessage.values()].map(tokens).reduce((a, b) => ({ inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens }), { inputTokens: 0, outputTokens: 0 });
+  return [...byMessage.values()].map(tokens).reduce(addUsage, { inputTokens: 0, outputTokens: 0 });
 }
 
 export function parseResult(stdout: string): StepResult {

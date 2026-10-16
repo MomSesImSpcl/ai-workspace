@@ -29,6 +29,7 @@ export async function delegate(parentId: string, goal: string, role = 'Implement
   const p = loadTask(parentId);
   p.usage.inputTokens += child.usage.inputTokens - before.inputTokens;
   p.usage.outputTokens += child.usage.outputTokens - before.outputTokens;
+  p.usage.cachedInputTokens = (p.usage.cachedInputTokens ?? 0) + (child.usage.cachedInputTokens ?? 0) - (before.cachedInputTokens ?? 0);
   saveTask(p);
   return child;
 }
