@@ -6,4 +6,4 @@ Make the workspace itself installable and runnable on machines other than the de
 
 [Full requirements and triggers](SPEC.md).
 
-**Dependencies / related features:** [provisioning](../provisioning/SUMMARY.md), [runners](../runners/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [desktop-client](../desktop-client/SUMMARY.md).
+**Dependencies / related features:** [provisioning](../provisioning/SUMMARY.md), [runners](../runners/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [desktop-client](../desktop-client/SUMMARY.md), [onboarding](../onboarding/SUMMARY.md) (shows the prerequisite check in the UI).
