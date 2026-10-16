@@ -59,7 +59,7 @@
     <details id="add-project">
       <summary>Add project</summary>
       <form id="project">
-        <label>Folder path<input name="path" required placeholder="D:\code\my-project"></label>
+        <label>Folder path<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
         <label>Name (optional, defaults to the folder name)<input name="id"></label>
         <div class="row"><button>Add project</button></div>
         <p class="error" id="project-error" role="alert"></p>
@@ -143,6 +143,18 @@ $('#new').onsubmit = async (e) => {
     $('#new-error').textContent = '';
     await refresh();
   } catch (err) { $('#new-error').textContent = err.message; }
+};
+
+$('[name=path]').onclick = async (e) => {
+  const input = e.target;
+  if (input.dataset.picking) return;
+  input.dataset.picking = '1';
+  try {
+    const { path } = await api('/api/pick-folder', {});
+    if (path) input.value = path;
+    $('#project-error').textContent = '';
+  } catch (err) { $('#project-error').textContent = err.message; }
+  finally { delete input.dataset.picking; }
 };
 
 $('#project').onsubmit = async (e) => {

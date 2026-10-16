@@ -14,7 +14,7 @@
 - Real Claude Code, temporary workspace home, read-only demo project: task started from the UI; UI server stopped mid-run; task completed (`steps=1`, 8,002 tokens) and showed as completed after restart.
 - Real cancel: running task cancelled from the UI after 4 reads; the 5th `read_file` was denied ("task cancelled; stop now"); task ended `cancelled` at step end with usage charged (30,151 tokens).
 
-**Follow-up (same day):** `Task Center.cmd` double-click launcher (Windows; test start answered HTTP 200). "Add project" form and `POST /api/projects` via shared `registerProject` in `app/src/store.ts` (absolute existing directory required); API test plus browser check.
+**Follow-up (same day):** `Task Center.cmd` double-click launcher (Windows; test start answered HTTP 200). "Add project" form (clicking Folder path opens the Windows folder dialog via `POST /api/pick-folder`) and `POST /api/projects` via shared `registerProject` in `app/src/store.ts` (absolute existing directory required); API test plus browser check.
 
 **Not covered:** G3 (concurrent tasks with two models) not run; macOS/Linux not run; no native shell, notifications or project/conversation views.
 
