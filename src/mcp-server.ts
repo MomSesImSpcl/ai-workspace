@@ -3,7 +3,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { listDir, readFile, writeFile, type Scope } from './broker.ts';
+import { authorize, listDir, once, readFile, writeFile, type Scope } from './broker.ts';
 import { loadTask } from './runtime.ts';
 import { delegate } from './delegate.ts';
 import { getProject } from './store.ts';
@@ -13,9 +13,9 @@ const scope: Scope = { taskId: task.id, root: getProject(task.projectId).root, w
 
 const server = new McpServer({ name: 'ai-workspace', version: '0.1.0' });
 
-function tool(fn: () => string) {
+async function tool(fn: () => string | Promise<string>) {
   try {
-    return { content: [{ type: 'text' as const, text: fn() }] };
+    return { content: [{ type: 'text' as const, text: await fn() }] };
   } catch (e) {
     return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
   }
@@ -28,7 +28,7 @@ server.registerTool('read_file', { description: 'Read a project file (UTF-8)', i
 server.registerTool(
   'write_file',
   { description: 'Create or overwrite a project file (needs write permission)', inputSchema: { path, content: z.string() } },
-  (a) => tool(() => (writeFile(scope, a.path, a.content), `wrote ${a.path}`)),
+  (a) => tool(() => writeFile(scope, a.path, a.content)),
 );
 server.registerTool(
   'delegate',
@@ -36,15 +36,17 @@ server.registerTool(
     description: 'Run a subtask with the agent assigned to a role (default Implementation) and return its result. Blocks until the subtask finishes.',
     inputSchema: { goal: z.string().describe('Self-contained instructions for the subtask'), role: z.string().optional() },
   },
-  async (a) => {
-    try {
-      const child = await delegate(task.id, a.goal, a.role);
-      return { content: [{ type: 'text' as const, text: `subtask ${child.id} ${child.status}${child.reason ? ` (${child.reason})` : ''}
-${child.result ?? ''}` }], isError: child.status !== 'completed' };
-    } catch (e) {
-      return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
-    }
-  },
+  (a) =>
+    tool(() => {
+      authorize(scope, 'delegate');
+      return once(scope, 'delegate', { goal: a.goal, role: a.role }, async () => {
+        const child = await delegate(task.id, a.goal, a.role);
+        const text = `subtask ${child.id} ${child.status}${child.reason ? ` (${child.reason})` : ''}\n${child.result ?? ''}`;
+        if (child.status !== 'completed') throw new Error(text);
+        return text;
+      });
+    }),
+
 );
 
 await server.connect(new StdioServerTransport());

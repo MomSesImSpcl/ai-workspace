@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DeniedError, readFile, writeFile, type Scope } from '../src/broker.ts';
-import { createTask, loadTask, runTask, saveTask, type AgentAdapter } from '../src/runtime.ts';
+import { DeniedError, newAttempt, readFile, writeFile, type Scope } from '../src/broker.ts';
+import { createTask, liveUsage, loadTask, runTask, saveTask, writeLiveUsage, type AgentAdapter } from '../src/runtime.ts';
 import { adapterFor, assignmentFor, getRoles, setRole } from '../src/roles.ts';
-import { parseResult } from '../src/adapters/claude-code.ts';
+import { parseResult, streamUsage } from '../src/adapters/claude-code.ts';
 import { parseEvents } from '../src/adapters/codex.ts';
 import { delegate } from '../src/delegate.ts';
 import { addProject } from '../src/store.ts';
@@ -21,8 +21,9 @@ beforeEach(() => {
   writeFileSync(join(dir, 'secret.txt'), 'secret');
 });
 
-const auditLines = () => readFileSync(join(process.env.AI_WORKSPACE_HOME!, 'audit.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-const scope = (write: boolean): Scope => ({ taskId: 't1', root, write });
+const auditLines = () => readFileSync(join(process.env.AI_WORKSPACE_HOME!, 'audit.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'tool');
+const fields = { projectId: 'p', goal: 'g', role: 'Implementation', integration: 'fake', write: false };
+const scope = (write: boolean, tokenBudget = 10_000): Scope => ({ taskId: createTask({ ...fields, write, tokenBudget }).id, root, write });
 
 test('broker reads inside the project and denies paths outside it, with audit', () => {
   assert.equal(readFile(scope(false), 'a.txt'), 'hello');
@@ -33,15 +34,60 @@ test('broker reads inside the project and denies paths outside it, with audit', 
   assert.equal(denied[0].reason, 'outside project');
 });
 
-test('broker denies writes without a write grant and audits them', () => {
+test('broker denies writes without a write grant and audits them', async () => {
   assert.throws(() => writeFile(scope(false), 'b.txt', 'x'), /write not granted/);
   assert.equal(existsSync(join(root, 'b.txt')), false);
-  writeFile(scope(true), 'sub/b.txt', 'x');
+  await writeFile(scope(true), 'sub/b.txt', 'x');
   assert.equal(readFileSync(join(root, 'sub/b.txt'), 'utf8'), 'x');
   assert.deepEqual(auditLines().map((e) => e.allowed), [false, true]);
 });
 
-const fields = { projectId: 'p', goal: 'g', role: 'Implementation', integration: 'fake', write: false };
+test('broker denies every call once committed plus live usage reaches the budget', () => {
+  const s = scope(true, 1000);
+  writeLiveUsage(s.taskId, { inputTokens: 999, outputTokens: 0 });
+  assert.equal(readFile(s, 'a.txt'), 'hello');
+  writeLiveUsage(s.taskId, { inputTokens: 1000, outputTokens: 0 });
+  assert.throws(() => readFile(s, 'a.txt'), /token budget exhausted/);
+});
+
+test('re-run of an interrupted step skips its committed effects, in order', async () => {
+  const s = scope(true);
+  const file = join(root, 'f.txt');
+  newAttempt();
+  await writeFile(s, 'f.txt', 'A');
+  await writeFile(s, 'f.txt', 'B');
+  writeFileSync(file, 'changed by user');
+  newAttempt(); // killed, same step re-runs
+  assert.match(await writeFile(s, 'f.txt', 'A'), /not repeated/);
+  assert.match(await writeFile(s, 'f.txt', 'B'), /not repeated/);
+  assert.equal(readFileSync(file, 'utf8'), 'changed by user');
+  assert.equal(await writeFile(s, 'f.txt', 'A'), 'wrote f.txt'); // a third write is new work
+  const t = loadTask(s.taskId);
+  t.steps = 1;
+  saveTask(t);
+  newAttempt();
+  assert.equal(await writeFile(s, 'f.txt', 'A'), 'wrote f.txt'); // next step: fresh keys
+});
+
+test('usage from a killed attempt is charged before the step re-runs', async () => {
+  const task = createTask({ ...fields, tokenBudget: 1000 });
+  writeLiveUsage(task.id, { inputTokens: 1200, outputTokens: 0 });
+  const done = await runTask(task.id, steps(1, 1), root);
+  assert.equal(done.status, 'paused');
+  assert.equal(done.usage.inputTokens, 1200);
+  assert.equal(liveUsage(task.id).inputTokens, 0);
+});
+
+test('claude stream usage counts each assistant message once', () => {
+  const u = (i: number, o: number) => ({ input_tokens: i, cache_read_input_tokens: 10, output_tokens: o });
+  const lines = [
+    JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: u(1, 2) } }),
+    JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: u(1, 5) } }),
+    JSON.stringify({ type: 'assistant', message: { id: 'm2', usage: u(3, 4) } }),
+  ];
+  assert.deepEqual(streamUsage(lines), { inputTokens: 24, outputTokens: 9 });
+});
+
 const steps = (n: number, tokensPerStep: number): AgentAdapter & { calls: number } => {
   const a = { calls: 0, async step() { a.calls++; return { done: a.calls >= n, text: `step ${a.calls}`, usage: { inputTokens: tokensPerStep, outputTokens: 0 } }; } };
   return a;
@@ -127,4 +173,18 @@ test('delegate runs a child with inherited write grant and budget, charges the p
   assert.equal(again.id, child.id);
   assert.equal(adapter.calls, 1);
   await assert.rejects(delegate(child.id, 'nested', 'Implementation', lookup), /depth limit/);
+});
+
+test('a step the broker stopped for budget pauses the task even if the agent reports done', async () => {
+  const task = createTask({ ...fields, write: true, tokenBudget: 1000 });
+  const adapter: AgentAdapter = {
+    async step() {
+      writeLiveUsage(task.id, { inputTokens: 1000, outputTokens: 0 });
+      assert.throws(() => readFile({ taskId: task.id, root, write: true }, 'a.txt'), /budget exhausted/);
+      return { done: true, usage: { inputTokens: 1000, outputTokens: 0 } };
+    },
+  };
+  const result = await runTask(task.id, adapter, root);
+  assert.equal(result.status, 'paused');
+  assert.match(result.reason!, /mid-step/);
 });

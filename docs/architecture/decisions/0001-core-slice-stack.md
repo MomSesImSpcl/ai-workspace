@@ -25,8 +25,8 @@ The first core slice needs one local project, a restart-safe task, one agent ada
 
 ## Known limits
 
-- An interrupted step is re-run; non-idempotent side effects inside it may repeat.
-- Budget is enforced between steps, not mid-step (one step ≤ 8 Claude turns).
+- An interrupted step is re-run. The broker's effect ledger (`tasks/<id>.effects.jsonl`, key = step + tool + input hash + occurrence in the attempt) skips side effects the interrupted attempt already committed, in order; a crash between an effect and its ledger record can still repeat that one effect.
+- Budget is checked before each step and before every broker tool call, against committed usage (incl. delegated children) plus the running step's live usage (`tasks/<id>.live.json`, streamed by Claude Code; Codex reports usage only at turn end). A step the broker stopped for budget ends `paused`. One model turn can still overshoot, since its tokens are known only after it. A killed attempt's live usage is charged before the step re-runs.
 - A target project's own `CLAUDE.md` may still be auto-discovered; it can steer behavior but not widen tool scope (broker enforces).
 - Codex: the read-only sandbox block of `apply_patch` is not directly exercised (the model declined a bypass attempt; no file was written). Codex tool surface changes between versions (tested 0.163.0); re-verify on upgrade.
 - Delegation is sequential and blocking; no parallel children, no child cancel from the parent yet.

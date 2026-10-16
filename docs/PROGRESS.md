@@ -4,9 +4,9 @@ Read this file at startup. Search [monthly history](history/) only for relevant 
 
 ## Active / blocked
 
-**Active scope: core slice 1** on branch `feature/core-slice` ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
+**Core slice 1: complete, merged into `main`** from `feature/core-slice` with user approval ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
 
-Increments 1–3 done and verified: unit tests 9/9; real e2e for Claude Code (Implementation), Codex CLI (Orchestration, dedicated `CODEX_HOME` login), and Codex delegating a subtask to Claude Code with inherited scope, budget ceiling and usage charged to the parent. Budget pause and kill/resume also verified against real Claude Code; known gaps: a step can overshoot the budget, and a killed step re-runs so its side effects repeat ([evidence](history/2026-10.md#2026-10-16--core-slice-1-real-budget-pause-and-killresume-checks)). No blockers.
+Increments 1–4 done and verified: unit tests 14/14; real e2e for Claude Code (Implementation), Codex CLI (Orchestration, dedicated `CODEX_HOME` login), and Codex delegating a subtask to Claude Code with inherited scope, budget ceiling and usage charged to the parent. Budget pause and kill/resume also verified against real Claude Code; now with mid-step budget stop and an effect ledger so a re-run step does not repeat committed writes ([evidence](history/2026-10.md#2026-10-16--core-slice-1-increment-4-effect-ledger-and-per-call-budget-check)); remaining: one model turn can overshoot. No blockers.
 
 ## Agreed direction
 
@@ -20,4 +20,4 @@ Using the workspace on its own repository after the core and the longer tentativ
 
 ## Resume here
 
-Next action: agree with the user whether slice 1 is complete (optionally run budget pause and kill/resume against a real agent) and whether to merge `feature/core-slice` into `main`, then choose the next feature set. Latest evidence: [increment 3](history/2026-10.md#2026-10-16--core-slice-1-increment-3-orchestrator-delegates-to-implementation). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
+Next action: choose the next feature set with the user from the [map](OVERVIEW.md); known slice 1 gaps are listed in [ADR 0001](architecture/decisions/0001-core-slice-stack.md#known-limits). Latest evidence: [increment 4](history/2026-10.md#2026-10-16--core-slice-1-increment-4-effect-ledger-and-per-call-budget-check). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
