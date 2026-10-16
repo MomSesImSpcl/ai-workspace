@@ -29,6 +29,7 @@ Tested on Windows 10 with Node 24. Each agent run uses your own Claude and ChatG
 **Requirements** (not installed by `npm install`):
 
 - [Node.js](https://nodejs.org/) 24 or newer (runs the TypeScript sources directly).
+- At least one agent CLI for the roles you use (any agent can run any role, see `roles` below; full list in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)):
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, logged in (`claude`, then `/login`). Used for the `Implementation` role.
 - [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`), only for the `Orchestration` role. It runs in a dedicated Codex home so your personal Codex rules do not steer workspace tasks; log in there once with "Sign in with ChatGPT":
 

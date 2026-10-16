@@ -7,10 +7,16 @@ Everything the workspace needs to build, run or develop, kept current during dev
 | Dependency | Needed for | Required version | Last tested | Install / setup | OS notes |
 |---|---|---|---|---|---|
 | Node.js | Everything: CLI, UI server, task runners (runs TypeScript directly via type stripping) | ≥ 24 | 24 on Windows 10 | [nodejs.org](https://nodejs.org/) | Must be on `PATH` for the desktop app ([#13](https://github.com/MomSesImSpcl/ai-workspace/issues/13)) |
-| Claude Code CLI (`claude`) | `Implementation` role (default) | not pinned | 2.1.301 (2026-10-17) | Install per [docs](https://docs.anthropic.com/en/docs/claude-code), then `/login` with a Claude subscription | Real runs Windows-only so far ([#10](https://github.com/MomSesImSpcl/ai-workspace/issues/10)) |
-| Codex CLI (`codex`) | `Orchestration` role (default) | not pinned | 0.163.0 installed (2026-10-17) | `npm install -g @openai/codex`; one-time `codex login` (Sign in with ChatGPT) with `CODEX_HOME=~/.ai-workspace/codex` | Windows bypasses the npm `.cmd` shim |
-| Claude subscription | Quota for Claude Code runs | — | — | Account login | — |
-| ChatGPT subscription | Quota for Codex runs | — | — | Account login | — |
+
+## Agent integrations (optional, user's choice)
+
+The user assigns any agent to any role ([routing-001](features/model-routing/SPEC.md#role-and-agent-assignments)), so no agent CLI is a direct dependency. Only the integrations assigned to roles that are actually used must be installed and logged in; at least one runnable integration is needed to run tasks. A prerequisite check should test the assigned ones and mark the rest optional.
+
+| Integration | Default role | Last tested | Install / setup | Notes |
+|---|---|---|---|---|
+| Claude Code CLI (`claude`) | `Implementation` | 2.1.301 (2026-10-17) | Install per [docs](https://docs.anthropic.com/en/docs/claude-code), then `/login` with a Claude subscription (quota) | Real runs Windows-only so far ([#10](https://github.com/MomSesImSpcl/ai-workspace/issues/10)) |
+| Codex CLI (`codex`) | `Orchestration` | 0.163.0 installed (2026-10-17) | `npm install -g @openai/codex`; one-time `codex login` (Sign in with ChatGPT, subscription quota) with `CODEX_HOME=~/.ai-workspace/codex` | Windows bypasses the npm `.cmd` shim |
+| `manual-browser` | `ArchitectureReasoning` | — | Nothing to install; no runnable adapter yet | Manual handoff |
 
 ## npm packages (`app/package.json`, pinned in the lockfile)
 
