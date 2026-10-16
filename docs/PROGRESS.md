@@ -6,7 +6,7 @@ Read this file at startup. Search [monthly history](history/) only for relevant 
 
 **Active scope: core slice 1** on branch `feature/core-slice` ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). TypeScript CLI; Claude Code as first agent adapter; Codex CLI on the ChatGPT subscription as the later orchestrator; any agent assignable to any role via config (routing-001). Acceptance: task survives a process kill and resumes; out-of-project or ungranted write is denied and audited; token budget overrun pauses the task.
 
-Increment 1 done and verified: unit tests 7/7 and a real Claude Code e2e (scoped write allowed, out-of-project read denied, both audited). Budget pause and kill/resume are verified with a fake adapter only. No blockers.
+Increments 1–2 done and verified: unit tests 8/8; real e2e for Claude Code (Implementation) and Codex CLI (Orchestration, dedicated `CODEX_HOME` login): scoped write allowed, out-of-project read denied, both audited. Budget pause and kill/resume verified with a fake adapter only. No blockers.
 
 ## Agreed direction
 
@@ -20,4 +20,4 @@ Using the workspace on its own repository after the core and the longer tentativ
 
 ## Resume here
 
-Next action: increment 2, the Codex CLI adapter (`codex exec`, ChatGPT subscription login) for the Orchestration role. Codex is not installed on this machine yet. Latest evidence: [increment 1b](history/2026-10.md#2026-10-16--core-slice-1-increment-1b-real-claude-code-end-to-end). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
+Next action: increment 3 — orchestrator delegates subtasks to the Implementation role (a broker `delegate` tool creating child tasks with inherited write scope and budget ceiling). Latest evidence: [increment 2](history/2026-10.md#2026-10-16--core-slice-1-increment-2-codex-cli-adapter-for-orchestration). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).

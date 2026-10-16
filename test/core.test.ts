@@ -7,6 +7,7 @@ import { DeniedError, readFile, writeFile, type Scope } from '../src/broker.ts';
 import { createTask, loadTask, runTask, saveTask, type AgentAdapter } from '../src/runtime.ts';
 import { adapterFor, assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { parseResult } from '../src/adapters/claude-code.ts';
+import { parseEvents } from '../src/adapters/codex.ts';
 
 let root = '';
 beforeEach(() => {
@@ -81,12 +82,12 @@ test('adapter errors fail the task with a reason', async () => {
 
 test('roles keep independent assignments; unknown integrations fail explicitly', () => {
   assert.equal(assignmentFor('Implementation').integration, 'claude-code');
-  setRole('Orchestration', { integration: 'codex-cli' });
+  setRole('Orchestration', { integration: 'not-built' });
   const roles = getRoles();
-  assert.equal(roles.Orchestration.integration, 'codex-cli');
+  assert.equal(roles.Orchestration.integration, 'not-built');
   assert.equal(roles.Implementation.integration, 'claude-code');
   assert.equal(roles.ArchitectureReasoning.integration, 'manual-browser');
-  assert.throws(() => adapterFor('codex-cli'), /no runnable adapter/);
+  assert.throws(() => adapterFor('not-built'), /no runnable adapter/);
 });
 
 test('claude-code result parsing maps success, max-turns and errors', () => {
@@ -97,4 +98,17 @@ test('claude-code result parsing maps success, max-turns and errors', () => {
   assert.deepEqual([more.done, more.error], [false, undefined]);
   const bad = parseResult(JSON.stringify({ ...base, subtype: 'error_during_execution', is_error: true }));
   assert.equal(bad.error, 'error_during_execution');
+});
+
+test('codex event parsing maps completed turns, usage and failures', () => {
+  const ok = parseEvents([
+    '{"type":"thread.started","thread_id":"t1"}',
+    '{"type":"item.completed","item":{"type":"error","message":"warning"}}',
+    '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}',
+    '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":60,"output_tokens":7}}',
+  ].join('\n'));
+  assert.deepEqual([ok.done, ok.text, ok.usage.inputTokens, ok.usage.outputTokens, ok.adapterState], [true, 'done', 100, 7, { threadId: 't1' }]);
+  const failed = parseEvents('{"type":"turn.failed","error":{"message":"usage limit"}}');
+  assert.deepEqual([failed.done, failed.error], [false, 'usage limit']);
+  assert.match(parseEvents('').error!, /no completed turn/);
 });
