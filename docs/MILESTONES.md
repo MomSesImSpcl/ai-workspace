@@ -36,3 +36,11 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - vcs-005 (history), vcs-007 (a conflict view in the workspace; for M1 the agent resolves conflicts)
 
 **Decisions (2026-10-17):** merge conflicts go to the session's agent, no own conflict view for M1; the fallback start of the previous version (selfdev-006) is required, so a broken merge never leaves the user without a working workspace; both Claude Code and Codex must complete the flow.
+
+## M2 — First release
+
+**Status:** next (goal only; exit criteria to agree with the user before it becomes active)
+
+**Goal:** Publish the first GitHub release of the workspace, and from then on check for and install new releases from inside the app.
+
+**Known parts:** [distribution](features/distribution/SPEC.md) distribution-006 (releases), distribution-007 (update check), distribution-008 (update from the workspace), distribution-004 (state survives upgrades).
