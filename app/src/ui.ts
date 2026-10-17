@@ -134,7 +134,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const id = kind === 'projects' && rawId !== undefined ? decodeURIComponent(rawId) : rawId;
   if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders() };
+  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
   if (req.method === 'GET' && kind === 'tasks') {
     const task = loadTask(id);

@@ -308,6 +308,9 @@
           <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
           <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
           <span class="meta" id="workspace-saved" role="status"></span></form>
+        <div style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace storage</b>
+          <p class="meta" style="margin:0">Sessions, tasks and logs live here, never in project folders, so they cannot be committed by accident.</p>
+          <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div></div>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
@@ -394,6 +397,8 @@ function renderShell() {
   $('#crumb-workspace').title = state.workspaceRoot ? `${state.workspaceRoot}${window.desktop ? '\nClick to open the folder' : ''}` : 'Set the workspace folder in Settings';
   $('#crumb-workspace').disabled = !state.workspaceRoot || !window.desktop;
   if (document.activeElement?.name !== 'root') $('[name=root]').value = state.workspaceRoot ?? '';
+  $('#storage-path').textContent = state.storage ?? '';
+  $('#open-storage').disabled = !window.desktop;
   $('#crumb').textContent = p?.id ?? 'No project';
   $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
   $('#crumb').disabled = !p || !window.desktop;
@@ -621,6 +626,7 @@ $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().ro
 $('#new-session').onclick = newSession;
 $('#restart').hidden = !window.desktop?.restart;
 $('#restart').onclick = () => window.desktop.restart();
+$('#open-storage').onclick = () => state.storage && window.desktop?.openFolder(state.storage);
 $('#session-list').addEventListener('click', (e) => {
   if (!e.target.closest('#new-global')) return;
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
