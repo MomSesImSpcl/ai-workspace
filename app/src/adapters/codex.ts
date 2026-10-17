@@ -84,7 +84,7 @@ export const codex: AgentAdapter = {
     args.push(`${prompt}\n\nUse only the ws MCP tools (list_dir, read_file, write_file, delegate) for file access and subtasks. Paths are relative to the project root.`);
     return new Promise((resolvePromise, reject) => {
       mkdirSync(codexHome(), { recursive: true });
-      const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() } });
+      const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() }, windowsHide: true });
       let out = '';
       let err = '';
       child.stdout.on('data', (d) => (out += d));

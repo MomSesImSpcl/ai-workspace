@@ -65,7 +65,7 @@ export const claudeCode: AgentAdapter = {
     if (sessionId) args.push('--resume', sessionId);
     else args.push('--append-system-prompt', 'Use only the mcp__ws tools for file access. Paths are relative to the project root.');
     return new Promise((resolvePromise, reject) => {
-      const child = spawn(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MCP_TOOL_TIMEOUT: '3600000' } });
+      const child = spawn(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MCP_TOOL_TIMEOUT: '3600000' }, windowsHide: true });
       let out = '';
       let err = '';
       let pending = '';
