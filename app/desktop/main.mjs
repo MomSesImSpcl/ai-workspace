@@ -43,7 +43,10 @@ function createWindow(url) {
   win.webContents.on('will-navigate', (e, target) => {
     if (!target.startsWith(url)) e.preventDefault();
   });
+  // Taskbar pin relaunches this app, not bare Electron.
+  if (process.platform === 'win32') win.setAppDetails({ appId: appUserModelId, relaunchCommand: `"${process.execPath}" "${appDir}"`, relaunchDisplayName: 'AI Workspace' });
   win.loadURL(`${url}?platform=${process.platform}`);
+  return win;
 }
 
 ipcMain.handle('pick-folder', async (event) => {
@@ -51,9 +54,23 @@ ipcMain.handle('pick-folder', async (event) => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+const appUserModelId = 'AIWorkspace.Desktop';
+let mainWindow;
+
+// One window: a second launch focuses the open one.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
+
 app.whenReady().then(async () => {
+  if (!primary) return;
+  if (process.platform === 'win32') app.setAppUserModelId(appUserModelId);
   try {
-    createWindow(await startServer());
+    mainWindow = createWindow(await startServer());
   } catch (e) {
     dialog.showErrorBox('AI Workspace could not start', e.message);
     app.quit();
