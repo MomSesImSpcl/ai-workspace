@@ -1,1 +1,4 @@
+Use the TypeScript Compiler API combined with the TypeScript Language Service for semantic search for the orchestrator (Candidates: TypeScript Compiler API, ts-morph, Tree-sitter)
+
 On first release add About section + topics update check on every merge (already exists for the readme)
+ALso add currently implemented features on every release to the readme
