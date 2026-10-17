@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
-import { cancelTask, childrenOf, createTask, listTasks, resumeTask, taskStatus, taskUsed, usageOf } from './tasks.ts';
+import { cancelTask, childrenOf, listTasks, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
@@ -32,10 +32,6 @@ class HttpError extends Error {
   }
 }
 
-function budget(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) <= 0) throw new HttpError(400, 'budget must be a positive integer');
-  return value as number;
-}
 
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   if (req.headers['content-type'] !== 'application/json') throw new HttpError(415, 'expected application/json');
@@ -53,14 +49,27 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 function taskView(s: Session) {
   const ts = turns(readEvents(s.id), turnRunning(s.id));
   const last = ts.at(-1);
-  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0) };
+  const step = last?.activity.at(-1);
+  const chat = s.task?.sessionId ? loadSession(s.task.sessionId) : undefined;
+  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined, session: chat && { id: chat.id, title: chat.title } };
+}
+
+// A task as its starting chat shows it (sessions-002): status, its and its subtasks' pending approvals, the result.
+function taskCard(s: Session) {
+  const pending = [s, ...childrenOf(s.id)].flatMap((t) => {
+    const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
+    return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
+  });
+  const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
+  return { ...taskView(s), pending, result: last?.state === 'working' ? '' : last?.text ?? '' };
 }
 
 // shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
 function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
-  return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
+  const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
+  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + taskCard(t).pending.length, 0) };
 }
 
 // Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
@@ -90,7 +99,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   if (req.method === 'GET' && !id) return listSessions(url.searchParams.get('global') ? GLOBAL : text(url.searchParams.get('project'), 'project')).map(sessionView);
   if (req.method === 'GET' && !action) {
     const s = loadSession(id!);
-    return { session: sessionView(s), turns: turns(readEvents(s.id), turnRunning(s.id)), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
+    return { session: sessionView(s), turns: turns(readEvents(s.id), turnRunning(s.id)), tasks: Object.fromEntries(startedIn(s.id).map((t) => [t.id, taskCard(t)])), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
   }
   if (req.method !== 'POST') throw new HttpError(404, 'not found');
   const b = await body(req);
@@ -158,7 +167,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
-    return { task: taskView(s), turns: turns(readEvents(id), turnRunning(id)), children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
+    return { task: taskCard(s), children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
@@ -195,18 +204,10 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');
     return registerProject(b.path.trim(), b.id?.trim() || undefined);
   }
-  if (req.method === 'POST' && kind === 'tasks' && !id) {
+  // Tasks start from a chat (start_task); the user answers them there (ADR 0010).
+  if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
     const b = await body(req);
-    const goal = text(b.goal, 'goal');
-    getProject(text(b.projectId, 'projectId'));
-    if (b.permissionMode !== undefined && typeof b.permissionMode !== 'string') throw new HttpError(400, 'permissionMode must be a string');
-    const task = createTask({ projectId: b.projectId as string, goal, role: text(b.role, 'role'), tokenBudget: budget(b.budget), permissionMode: b.permissionMode as string | undefined });
-    startTurn(task.id);
-    return taskView(task);
-  }
-  if (req.method === 'POST' && kind === 'tasks' && (action === 'resume' || action === 'reply')) {
-    const b = await body(req);
-    const task = resumeTask(id, b.budget === undefined ? undefined : budget(b.budget), action === 'reply' ? text(b.text, 'text') : undefined);
+    const task = resumeTask(id, undefined, text(b.text, 'text'));
     if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
     return taskView(task);
   }

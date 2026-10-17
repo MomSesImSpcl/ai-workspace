@@ -294,18 +294,7 @@
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:24px">Background work for this project. The agent runs with its own tools and permission rules; its questions wait here as approval cards. Progress shows verified steps and tokens, never guessed percentages.</p>
-        <form class="card" id="new-task" style="display:grid;gap:8px;margin-bottom:20px">
-          <textarea name="goal" required aria-label="Task goal" placeholder="What should the agent do?"></textarea>
-          <div class="row">
-            <label class="field">Role<select name="role"></select></label>
-            <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
-            <label class="field">Permissions<select name="mode"></select></label>
-            <button class="btn primary small">Start task</button>
-          </div>
-          <p class="flag" id="mode-warn" hidden>⚠ This mode skips every permission check: the agent acts without asking.</p>
-          <p class="error" id="task-error" role="alert"></p>
-        </form>
+        <p class="lede" style="margin-bottom:24px">Background work for this project. A chat's agent starts tasks; their approval cards, replies and results appear in that chat. Here you see what each task is doing, and can cancel it. Progress shows verified steps and tokens, never guessed percentages.</p>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -369,7 +358,7 @@ async function api(path, body) {
 const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
 const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
 const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${COST_HINT}">${t.used.toLocaleString()} / ${t.task.tokenBudget.toLocaleString()} tokens</span> · ${esc(t.integration)}`;
-const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (resume to continue)' };
+const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (reply to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';
 const projectTasks = () => state.tasks.filter((t) => t.projectId === state.project && !t.task.parentId);
@@ -498,19 +487,33 @@ function activityList(t) {
   return `<ol>${items}${answered}</ol>`;
 }
 
+// taskId: the card belongs to a task (or subtask) shown in this chat, not to the chat's own agent.
+const approvalCard = (a, taskId, who = '') => `<div class="approval"><b>${who}${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>${a.repeat ? `<span class="flag">⚠ Possible repeat: ${code(a.repeat)} already ran before the interruption</span>` : ''}
+    <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Deny</button></div></div>`;
+const pendingCards = (t) => t.pending.map((a) => approvalCard(a, a.taskId, a.taskId === t.id ? '' : 'Subtask: ')).join('');
+
+// A task the chat's agent started (sessions-002): its approvals, replies and result are answered here.
+function taskCardHtml(t) {
+  if (!t) return '';
+  const canReply = !active(t) && t.status !== 'cancelled';
+  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} <button class="btn small" data-id="${esc(t.id)}">Details</button></div>
+    <div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
+    ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
+    ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="Reply to continue the task" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
+}
+
 // Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
-function turnHtml(t) {
+function turnHtml(t, tasks = {}) {
   const steps = t.activity.length;
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
     : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
   const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
-  const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>${a.repeat ? `<span class="flag">⚠ Possible repeat: ${code(a.repeat)} already ran before the interruption</span>` : ''}
-    <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
+  const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${t.tasks.map((id) => taskCardHtml(tasks[id])).join('')}${switched}`;
 }
 
 let shown = '';
@@ -539,12 +542,12 @@ function renderChat() {
   renderPickers(s);
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
-  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns]);
-  if (key === shown) return; // keep the reader's scroll position between polls
+  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
+  if (key === shown || document.activeElement?.dataset.replyTask) return; // keep the reader's scroll position and a reply being typed
   shown = key;
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = d?.turns.map(turnHtml).join('')
+  box.innerHTML = d?.turns.map((t) => turnHtml(t, d.tasks)).join('')
     || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
@@ -574,42 +577,26 @@ async function sessionAction(act, body = {}, id = state.session) {
   render();
 }
 
-// The mode menu offers the role's agent's own permission modes (runtime-003).
-function renderModes() {
-  const a = state.roles[$('[name=role]').value];
-  const modes = state.agents[a?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
-  const keep = $('[name=mode]').value;
-  $('[name=mode]').innerHTML = modes.map((m) => option(m.id, m.label, m.id === keep)).join('');
-  $('#mode-warn').hidden = !modes.find((m) => m.id === $('[name=mode]').value)?.warn;
-}
-
 async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
-  if (document.activeElement?.name !== 'mode') renderModes();
   $('#tasks').innerHTML = projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>';
   if (!state.selected) return void ($('#detail').innerHTML = '<p class="empty">Select a task to see its steps, approvals and result.</p>');
-  if (['budget-more', 'task-reply'].includes(document.activeElement?.id)) return; // don't reset a field being typed
-  const { task: t, turns, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
-  const canResume = !active(t) && t.status !== 'cancelled';
-  const keep = $('#budget-more')?.value ?? '';
-  const draft = $('#task-reply')?.value ?? '';
+  const { task: t, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
   const mode = state.agents[t.integration]?.modes?.find((m) => m.id === (t.permissionMode ?? ''));
-  $('#detail').innerHTML = `<h2>${esc(t.goal)}</h2>
+  $('#detail').innerHTML = `<h2>${esc(t.goal.split('\n')[0])}</h2>
     <dl>
       <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
+      <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button> <span class="meta">approvals and replies are there</span>` : 'outside a chat (CLI)'}</dd>
+      <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
       <dt>Progress</dt><dd>${summary(t)}${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
       <dt>Task</dt><dd>${esc(t.id)} · role ${esc(t.role)}</dd>
       <dt>Updated</dt><dd>${new Date(t.updatedAt).toLocaleString()}</dd>
     </dl>
-    <div class="row" style="margin-top:14px">
-      <label class="field">New budget (optional)<input id="budget-more" type="number" min="1" step="1" value="${esc(keep)}" ${canResume ? '' : 'disabled'}></label>
-      <button class="btn small" data-act="resume" ${canResume ? '' : 'disabled'}>Resume</button>
-      <button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button>
-    </div>
+    <div class="row" style="margin-top:14px"><button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
     <p class="error" id="detail-error" role="alert"></p>
-    <h3>Conversation</h3><div class="messages" style="padding:0">${turns.map(turnHtml).join('')}</div>
-    <div class="row" style="margin-top:8px"><input id="task-reply" style="flex:1" value="${esc(draft)}" placeholder="Reply to continue the task" aria-label="Reply to the task" ${canResume ? '' : 'disabled'}><button class="btn small" data-act="reply" ${canResume ? '' : 'disabled'}>Send</button></div>
+    ${t.session ? '' : pendingCards(t)}
+    <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
     ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
     <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
 }
@@ -638,8 +625,6 @@ async function load() {
   Object.assign(state, meta);
   const active = state.projects.filter((p) => !p.archived);
   if (!active.some((p) => p.id === state.project)) state.project = active[0]?.id ?? null;
-  const roleOptions = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}${a.model ? ` (${esc(a.model)})` : ''}</option>`).join('');
-  $('[name=role]').innerHTML = roleOptions;
 }
 
 async function poll() {
@@ -658,11 +643,6 @@ $('#toggle-sidebar').onclick = () => {
 for (const b of $$('.nav button')) b.onclick = () => setPage(b.dataset.page);
 for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
 $('#close-drawer').onclick = () => setTool(state.tool);
-const newTask = () => {
-  state.selected = null;
-  setPage('tasks');
-  $('[name=goal]').focus();
-};
 // A new session is created with its first message, so empty sessions do not pile up.
 const newSession = () => {
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
@@ -855,17 +835,21 @@ document.addEventListener('click', async (e) => {
     return openMenu(menuBtn.dataset.kind, menuBtn.dataset.menu, r.left, r.bottom + 4);
   }
   if (!e.target.closest('.menu')) closeMenu();
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve],[data-reply]');
   if (!el) return;
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
-  if (el.dataset.approve && el.closest('#detail')) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' }, state.selected).then(poll);
-  if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
-  if (el.dataset.action === 'new-task') return newTask();
+  if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' }, el.dataset.task).then(poll);
+  if (el.dataset.reply) {
+    const input = $(`[data-reply-task="${el.dataset.reply}"]`);
+    try { await api(`/api/tasks/${el.dataset.reply}/reply`, { text: input.value }); input.value = ''; $('#new-error').textContent = ''; }
+    catch (err) { $('#new-error').textContent = err.message; }
+    input.blur();
+    return poll();
+  }
   if (el.dataset.action === 'view-tasks') return setPage('tasks');
   if (el.dataset.act) {
-    const budget = $('#budget-more').value ? { budget: Number($('#budget-more').value) } : {};
-    try { await api(`/api/tasks/${state.selected}/${el.dataset.act}`, el.dataset.act === 'reply' ? { ...budget, text: $('#task-reply').value } : el.dataset.act === 'resume' ? budget : {}); $('#task-reply').value = ''; await poll(); }
+    try { await api(`/api/tasks/${state.selected}/${el.dataset.act}`, {}); await poll(); }
     catch (err) { $('#detail-error').textContent = err.message; }
     return;
   }
@@ -885,21 +869,6 @@ document.addEventListener('keydown', (e) => {
   if (e.target.id === 'rename' && e.key === 'Escape') { state.renaming = false; renderChat(); }
 });
 
-$('#new-task').onsubmit = async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  try {
-    if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const t = await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), permissionMode: f.get('mode') || undefined });
-    state.selected = t.id;
-    e.target.goal.value = '';
-    $('#task-error').textContent = '';
-    await poll();
-  } catch (err) { $('#task-error').textContent = err.message; }
-};
-
-$('[name=role]').onchange = renderModes;
-$('[name=mode]').onchange = renderModes;
 
 // Enter sends; Shift+Enter adds a line break.
 $('[name=text]').onkeydown = (e) => {

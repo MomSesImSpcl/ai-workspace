@@ -1,6 +1,6 @@
 # ADR 0010 — Tasks are started and steered from chat; the Task Center only shows them
 
-Status: accepted (2026-10-18, chosen by the user); not implemented. Changes [desktop-client 2.1](../../features/desktop-client/SPEC.md#21-desktop-client) task controls, [sessions-002](../../features/sessions/SPEC.md#projects-agents-and-context) and [task-runtime 4.1](../../features/task-runtime/SPEC.md#41-two-top-level-work-modes).
+Status: accepted (2026-10-18, chosen by the user); implemented with sessions-002 (2026-10-18), stopgap removed. Changes [desktop-client 2.1](../../features/desktop-client/SPEC.md#21-desktop-client) task controls, [sessions-002](../../features/sessions/SPEC.md#projects-agents-and-context) and [task-runtime 4.1](../../features/task-runtime/SPEC.md#41-two-top-level-work-modes).
 
 ## Decision
 

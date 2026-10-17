@@ -57,6 +57,7 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   if (name === 'Task' || name === 'Agent') return { label: `Delegating: ${s('description')}` };
   if (name === 'TodoWrite') return { label: 'Updating the to-do list' };
   if (name === 'mcp__aiws__delegate') return { label: `Subtask: ${s('goal')}` };
+  if (name === 'mcp__aiws__start_task') return { label: `Starting task: ${s('goal')}` };
   return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}` };
 }
 
@@ -179,7 +180,7 @@ export class ClaudeProcess implements AgentProcess {
     }
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task && !session.task.parentId ? ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.' : ''}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : ' To run self-contained work in the background as a task with a token budget, use the mcp__aiws__start_task tool.'}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
