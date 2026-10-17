@@ -1,15 +1,19 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { home, listProjects, registerProject } from './store.ts';
+import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
+import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
+import { exportStorage, importStorage } from './transfer.ts';
+import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
+import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
-const logPath = (id: string) => join(home(), 'tasks', `${id}.log`);
+const logPath = (id: string) => taskFile(id, '.log');
+const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
 
 // Each task runs in its own detached `ws resume` process, so closing the UI never stops it.
 function startRunner(task: Task): void {
@@ -66,11 +70,104 @@ function view(task: Task) {
   return { ...task, messages: conversation(task), runnerAlive: task.status === 'running' && runnerAlive(task.id) };
 }
 
+// shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
+function sessionView(s: Session) {
+  const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
+  const working = last?.state === 'working';
+  return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
+}
+
+// Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
+// effort means the agent's own default.
+function agentConfig(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
+  const integration = b.integration === undefined ? current.integration : b.integration;
+  if (typeof integration !== 'string' || !sessionAgents[integration]) throw new HttpError(400, `agent must be one of ${Object.keys(sessionAgents).join(', ')}`);
+  const catalog = sessionAgents[integration]!.catalog();
+  const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
+  const model = pick(b.model, integration === current.integration ? current.model : undefined);
+  const entry = catalog.models.find((m) => m.id === (model ?? ''));
+  if (model !== undefined && (typeof model !== 'string' || !entry)) throw new HttpError(400, `model must be one of ${catalog.models.map((m) => m.id || 'default').join(', ')}`);
+  let effort = pick(b.effort, current.effort);
+  if (effort !== undefined && !(entry ?? catalog.models[0])?.efforts.includes(effort as string)) {
+    if (b.effort !== undefined) throw new HttpError(400, `effort must be one of ${(entry ?? catalog.models[0])?.efforts.join(', ')}`);
+    effort = undefined; // a kept level the new agent or model does not offer falls back to its default
+  }
+  return { integration, model: model as string | undefined, effort: effort as string | undefined };
+}
+
+const text = (v: unknown, name: string) => {
+  if (typeof v !== 'string' || !v.trim()) throw new HttpError(400, `${name} is required`);
+  return v.trim();
+};
+
+async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?: string): Promise<unknown> {
+  if (req.method === 'GET' && !id) return listSessions(url.searchParams.get('global') ? GLOBAL : text(url.searchParams.get('project'), 'project')).map(sessionView);
+  if (req.method === 'GET' && !action) {
+    const s = loadSession(id!);
+    return { session: sessionView(s), turns: turns(readEvents(s.id), turnRunning(s.id)), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
+  }
+  if (req.method !== 'POST') throw new HttpError(404, 'not found');
+  const b = await body(req);
+  if (id === 'order') {
+    if (!Array.isArray(b.ids) || !b.ids.every((v) => typeof v === 'string' && /^[\w-]+$/.test(v))) throw new HttpError(400, 'ids must be session ids');
+    reorderPinned(b.ids as string[]);
+    return { ok: true };
+  }
+  if (!id) {
+    const role = text(b.role, 'role');
+    const assignment = assignmentFor(role);
+    sessionAgent(assignment.integration);
+    const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
+    const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
+    s.effort = config.effort;
+    saveSession(s);
+    return sessionView(s);
+  }
+  const s = loadSession(id);
+  if (action === 'message') {
+    addMessage(id, text(b.text, 'text'));
+    if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
+  } else if (action === 'stop') {
+    if (sessionWorking(id)) requestStop(id);
+  } else if (action === 'approve') {
+    const last = turns(readEvents(id), turnRunning(id)).at(-1);
+    const pending = last?.state === 'working' && last.approvals.find((a) => a.id === b.approval && a.allow === undefined);
+    if (!pending || typeof b.allow !== 'boolean') throw new HttpError(409, 'no such pending approval');
+    emit(id, last.n, { type: 'approval-answer', id: pending.id, allow: b.allow });
+  } else if (action === 'rename') {
+    s.title = text(b.title, 'title').slice(0, 120);
+    saveSession(s);
+  } else if (action === 'config') {
+    if (sessionWorking(id)) throw new HttpError(409, 'the agent is working; stop it or wait for the reply');
+    const config = agentConfig(b, s);
+    // A switch hands the conversation over as text: the new agent cannot resume the old one's session.
+    if (config.integration !== s.integration) {
+      const n = turns(readEvents(id), false).at(-1)?.n ?? 0;
+      emit(id, n, { type: 'switch', from: s.integration, to: config.integration, model: config.model });
+      s.vendorSessionId = undefined;
+    }
+    Object.assign(s, config);
+    saveSession(s);
+  } else if (action === 'pin') {
+    setPinned(id, b.pinned === true);
+  } else if (action === 'archive') {
+    s.archived = b.archived === true;
+    saveSession(s);
+  } else if (action === 'delete') {
+    deleteSession(id);
+    return { deleted: id };
+  } else throw new HttpError(404, 'not found');
+  return sessionView(loadSession(id));
+}
+
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {
-  const [, api, kind, id, action] = url.pathname.split('/');
+  const [, api, kind, rawId, action] = url.pathname.split('/');
   if (api !== 'api') throw new HttpError(404, 'not found');
-  if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad task id');
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations };
+  // Task and session ids name files, so they stay strict; project ids are folder names (spaces allowed).
+  const id = kind === 'projects' && rawId !== undefined ? decodeURIComponent(rawId) : rawId;
+  if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
+  if (kind === 'sessions') return sessionRoute(req, url, id, action);
+  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
   if (req.method === 'GET' && kind === 'tasks') {
     const task = loadTask(id);
@@ -83,7 +180,30 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
     return getRoles();
   }
-  if (req.method === 'POST' && kind === 'projects') {
+  if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
+  if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});
+  if (req.method === 'POST' && kind === 'prefs') {
+    const b = await body(req);
+    if (typeof b.key !== 'string' || !b.key || b.key.length > 200 || typeof b.value !== 'string' || b.value.length > 1000) throw new HttpError(400, 'key and string value required');
+    writeJson(prefsPath(), { ...readJson<Record<string, string>>(prefsPath(), {}), [b.key]: b.value });
+    return { ok: true };
+  }
+  if (req.method === 'POST' && kind === 'storage' && (id === 'export' || id === 'import')) {
+    const b = await body(req);
+    if (typeof b.path !== 'string' || !isAbsolute(b.path)) throw new HttpError(400, 'an absolute file path is required');
+    return id === 'export' ? exportStorage(b.path) : importStorage(b.path);
+  }
+  if (req.method === 'POST' && kind === 'workspace') {
+    const b = await body(req);
+    if (typeof b.root !== 'string' || !b.root.trim()) throw new HttpError(400, 'root is required');
+    return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
+  }
+  if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
+  if (req.method === 'POST' && kind === 'projects' && action === 'remove') {
+    removeProject(id);
+    return { removed: id };
+  }
+  if (req.method === 'POST' && kind === 'projects' && !id) {
     const b = await body(req);
     if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');
     return registerProject(b.path.trim(), b.id?.trim() || undefined);
@@ -131,7 +251,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^No assignment|no runnable adapter|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

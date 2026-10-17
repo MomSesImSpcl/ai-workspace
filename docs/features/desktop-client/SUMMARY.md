@@ -1,6 +1,6 @@
 # Desktop workspace and Task Center
 
-**Status:** in-progress — Electron workspace app: project Overview and Task Center (list, details, start, resume, cancel), Projects and Settings tools; see [ADR 0003](../../architecture/decisions/0003-electron-workspace-shell.md)
+**Status:** in-progress — Electron workspace app: Projects page, per-project Task Center (list, details, start, resume, cancel), sessions column and chat, Settings tool; see [ADR 0003](../../architecture/decisions/0003-electron-workspace-shell.md)
 
 Provide project navigation, interactive conversations, task controls, artifacts, search, logs and local runner management. Delegated work survives closing the client; progress reflects verified state and steps.
 

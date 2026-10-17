@@ -3,6 +3,8 @@
 // tasks keep running in their own processes.
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDir = fileURLToPath(new URL('..', import.meta.url));
@@ -22,10 +24,19 @@ function startServer() {
   });
 }
 
+// The window reopens where it was closed: size, position and maximized state.
+const boundsPath = () => join(app.getPath('userData'), 'window.json');
+function savedBounds() {
+  try { return JSON.parse(readFileSync(boundsPath(), 'utf8')); } catch { return {}; }
+}
+
 function createWindow(url) {
+  const saved = savedBounds();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: saved.width ?? 1280,
+    height: saved.height ?? 820,
+    x: saved.x,
+    y: saved.y,
     minWidth: 760,
     minHeight: 480,
     title: 'AI Workspace',
@@ -45,13 +56,42 @@ function createWindow(url) {
   });
   // Taskbar pin relaunches this app, not bare Electron.
   if (process.platform === 'win32') win.setAppDetails({ appId: appUserModelId, relaunchCommand: `"${process.execPath}" "${appDir}"`, relaunchDisplayName: 'AI Workspace' });
+  if (saved.maximized) win.maximize();
+  win.on('close', () => {
+    try { writeFileSync(boundsPath(), JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
+  });
   win.loadURL(`${url}?platform=${process.platform}`);
   return win;
 }
 
-ipcMain.handle('pick-folder', async (event) => {
-  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Select the project folder', properties: ['openDirectory'] });
+// Starts in the given folder (the workspace root) when it exists.
+ipcMain.handle('pick-folder', async (event, title, start) => {
+  const defaultPath = typeof start === 'string' && existsSync(start) ? start : undefined;
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: typeof title === 'string' ? title : 'Select a folder', defaultPath, properties: ['openDirectory'] });
   return result.canceled ? null : result.filePaths[0];
+});
+
+// File dialogs for workspace export and import; the page only gets the chosen path.
+const transferFilters = [{ name: 'AI Workspace export', extensions: ['aiworkspace'] }];
+ipcMain.handle('save-export', async (event) => {
+  const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Export workspace', defaultPath: `ai-workspace-${new Date().toISOString().slice(0, 10)}.aiworkspace`, filters: transferFilters });
+  return result.canceled ? null : result.filePath;
+});
+ipcMain.handle('open-export', async (event) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Import workspace', filters: transferFilters, properties: ['openFile'] });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// Only existing folders, so the page cannot make the shell open files or URLs.
+ipcMain.handle('open-folder', (_event, path) => {
+  if (typeof path !== 'string' || !existsSync(path) || !statSync(path).isDirectory()) return 'not a folder';
+  return shell.openPath(path);
+});
+
+// Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
+ipcMain.handle('restart', () => {
+  app.relaunch();
+  app.quit();
 });
 
 const appUserModelId = 'AIWorkspace.Desktop';

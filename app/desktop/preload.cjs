@@ -2,5 +2,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
-  pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  pickFolder: (title, start) => ipcRenderer.invoke('pick-folder', title, start),
+  openFolder: (path) => ipcRenderer.invoke('open-folder', path),
+  restart: () => ipcRenderer.invoke('restart'),
+  saveExport: () => ipcRenderer.invoke('save-export'),
+  openExport: () => ipcRenderer.invoke('open-export'),
 });

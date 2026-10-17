@@ -1,0 +1,5 @@
+# Workspace storage laid out per project
+
+Storage now mirrors the workspace: `projects/<project name>/{sessions,tasks}`, `global/sessions`, and the workspace-wide files at the top (identity-projects 1.4). Items are still found by id; the folder only groups them (`store.ts`: `folderName`, `placeIn`, `storageDir`, `storageDirs`). `migrateStorage()` runs at every CLI start (the desktop app's server and runners start through the CLI) and moves items from the old flat `tasks/` and `sessions/` folders with all their side files; items whose runner is still alive stay until a later start, and the run is idempotent and tolerant of concurrent starts. Project names are made safe as folder names (Windows characters and device names).
+
+Checks: `npm test` 35/35 (new migration test: new items land in their folders, old ones move with side files, a busy one waits, a second run changes nothing). Dry run on a copy of the real storage: 512 files before and after, old folders removed, items grouped under their projects and `global`; the copy was deleted afterwards. The real storage migrates on the next app start. Branch `claude/chat-sessions-per-project-f82af3`.

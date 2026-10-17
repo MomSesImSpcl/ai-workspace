@@ -1,9 +1,12 @@
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { conversation, type AgentAdapter, type StepResult } from '../runtime.ts';
+import { runLines, type Body, type Catalog, type SessionAgent } from '../sessions.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 
@@ -81,7 +84,7 @@ export const codex: AgentAdapter = {
     args.push(`${prompt}\n\nUse only the ws MCP tools (list_dir, read_file, write_file, delegate) for file access and subtasks. Paths are relative to the project root.`);
     return new Promise((resolvePromise, reject) => {
       mkdirSync(codexHome(), { recursive: true });
-      const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() } });
+      const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() }, windowsHide: true });
       let out = '';
       let err = '';
       child.stdout.on('data', (d) => (out += d));
@@ -94,4 +97,90 @@ export const codex: AgentAdapter = {
       });
     });
   },
+};
+
+// --- Sessions (ADR 0004): Codex with the user's own config, rules and sign-in. `codex exec` reports
+// only completed items and cannot relay approvals: its "ask" becomes a deny (known limit until the
+// app-server protocol is adopted). Each turn sends the conversation as text.
+
+interface CodexItem { type: string; id?: string; text?: string; command?: string; exit_code?: number; status?: string; changes?: { path: string }[] }
+
+export function codexSessionEvents(line: string): { events: Body[]; done?: boolean; error?: string } {
+  if (!line.startsWith('{')) return { events: [] };
+  const e = JSON.parse(line) as Omit<CodexEvent, 'item'> & { item?: CodexItem };
+  const item = e.item;
+  if (e.type === 'item.completed' && item) {
+    const id = item.id ?? randomUUID();
+    if (item.type === 'agent_message' && item.text) return { events: [{ type: 'text', text: item.text }] };
+    const label = item.type === 'command_execution' ? `Running \`${item.command ?? ''}\`` : item.type === 'file_change' ? `Editing ${(item.changes ?? []).map((c) => `\`${c.path}\``).join(', ')}` : null;
+    const failed = (item.exit_code !== undefined && item.exit_code !== 0) || item.status === 'failed' || item.status === 'declined';
+    return { events: label ? [{ type: 'activity', id, label }, { type: 'activity-done', id, error: failed || undefined }] : [] };
+  }
+  if (e.type === 'turn.completed') {
+    const u = e.usage ?? {};
+    return { events: [{ type: 'usage', usage: { inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0, cachedInputTokens: u.cached_input_tokens ?? 0, cacheWriteTokens: u.cache_write_input_tokens ?? 0 } }], done: true };
+  }
+  if (e.type === 'turn.failed' || e.type === 'error') return { events: [], error: e.error?.message ?? e.message ?? e.type };
+  return { events: [] };
+}
+
+const userCodexHome = () => process.env.CODEX_HOME ?? join(homedir(), '.codex');
+
+// shortcut: reads two top-level keys with a regex, not a TOML parser or profiles; upgrade with app-server `config/read`.
+export function codexPermissions(): { line: string; warn?: string } {
+  const path = join(userCodexHome(), 'config.toml');
+  const toml = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  const key = (k: string) => new RegExp(`^${k}\\s*=\\s*"([^"]*)"`, 'm').exec(toml)?.[1];
+  const sandbox = key('sandbox_mode') ?? 'default';
+  const line = `Codex · approval ${key('approval_policy') ?? 'default'} · sandbox ${sandbox} · asks are denied (exec)`;
+  return { line, warn: sandbox === 'danger-full-access' ? 'Codex runs without a sandbox (danger-full-access)' : undefined };
+}
+
+// Codex lists its models and each model's reasoning levels itself (`codex debug models`); cached briefly
+// because it starts a process. Without it, only the configured default with Codex's basic levels.
+let codexModels: { at: number; catalog: Catalog } | undefined;
+interface CodexModel { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] }
+export function parseCodexModels(json: string, configured?: string): Catalog {
+  const list = (JSON.parse(json) as { models?: CodexModel[] }).models ?? [];
+  const shown = list.filter((m) => m.visibility !== 'hide');
+  const efforts = (m?: CodexModel) => m?.supported_reasoning_levels?.map((r) => r.effort) ?? ['low', 'medium', 'high'];
+  const own = list.find((m) => m.slug === configured);
+  return {
+    models: [
+      { id: '', label: `Default${configured ? ` (${configured})` : ''}`, efforts: efforts(own), defaultEffort: own?.default_reasoning_level },
+      ...shown.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, efforts: efforts(m), defaultEffort: m.default_reasoning_level })),
+    ],
+  };
+}
+export function codexCatalog(): Catalog {
+  if (codexModels && Date.now() - codexModels.at < 10 * 60_000) return codexModels.catalog;
+  const toml = existsSync(join(userCodexHome(), 'config.toml')) ? readFileSync(join(userCodexHome(), 'config.toml'), 'utf8') : '';
+  const configured = /^model\s*=\s*"([^"]*)"/m.exec(toml)?.[1];
+  const [bin, pre] = command();
+  const r = spawnSync(bin, [...pre, 'debug', 'models'], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  let catalog: Catalog;
+  try { catalog = parseCodexModels(r.stdout, configured); } catch { catalog = { models: [{ id: '', label: `Default${configured ? ` (${configured})` : ''}`, efforts: ['low', 'medium', 'high'] }] }; }
+  codexModels = { at: Date.now(), catalog };
+  return catalog;
+}
+
+export const codexSession: SessionAgent = {
+  async turn({ session, root, prompt, history, emit, signal }) {
+    const [bin, pre] = command();
+    const text = history ? `Earlier in this conversation:\n\n${history}\n\nUser: ${prompt}` : prompt;
+    let done = false;
+    let error: string | undefined;
+    const { code, err } = await runLines(bin, [...pre, 'exec', '--json', '--skip-git-repo-check', '-C', root, ...(session.model ? ['-m', session.model] : []),
+      ...(session.effort ? ['-c', `model_reasoning_effort="${session.effort}"`] : []), text], { cwd: root, signal }, (line) => {
+      let parsed;
+      try { parsed = codexSessionEvents(line); } catch { return; }
+      for (const ev of parsed.events) emit(ev);
+      done ||= !!parsed.done;
+      error = parsed.error ?? error;
+    });
+    if (signal.aborted) return {};
+    return { error: error ?? (done ? undefined : `codex exited ${code}: ${err.split('\n').pop() || 'no completed turn'}`) };
+  },
+  permissions: codexPermissions,
+  catalog: codexCatalog,
 };

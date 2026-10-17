@@ -20,7 +20,7 @@
     --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
     --radius-sm: 7px; --radius: 10px; --radius-lg: 14px;
     --t: 160ms cubic-bezier(.4,0,.2,1);
-    --sidebar-w: 380px; --drawer-w: 300px;
+    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 300px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
   * { box-sizing: border-box; }
@@ -46,24 +46,72 @@
   .toolbar { display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid var(--hairline); }
   .icon-btn { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-dim); cursor: pointer; transition: background var(--t), color var(--t); }
   .icon-btn:hover { background: var(--surface-2); color: var(--text); }
-  .crumbs { display: flex; gap: 9px; align-items: center; font-size: 14px; min-width: 0; }
+  /* Fixed to the sessions column's width (minus toolbar padding, toggle and gaps), so the tabs never move. */
+  .crumbs { display: flex; gap: 9px; align-items: center; font-size: 14px; flex: none; width: calc(var(--sessions-w) - 68px); min-width: 0; }
+  .crumbs .crumb-btn { min-width: 0; }
+  .crumbs #crumb-workspace, .crumbs i { flex: none; }
   .crumbs span { color: var(--text-dim); } .crumbs i { color: var(--text-muted); font-style: normal; }
-  .crumbs b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumbs b, .crumb-btn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb-btn { padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 6px; background: none; font-size: 14px; cursor: pointer; }
+  .crumb-btn:hover:not(:disabled) { background: var(--surface-2); }
   .toolbar .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   .pill { font-size: 11px; color: var(--text-dim); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
   .pill .dot { margin-right: 6px; }
 
-  .body { display: grid; grid-template-columns: var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
-  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 minmax(0,1fr) auto 48px; }
+  .body { display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
+  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) auto 48px; }
+  .app[data-sidebar=collapsed] .sessions-col { visibility: hidden; }
+  /* Fixed columns: a hidden drawer leaves the grid, which would shift the rail off the edge. */
+  .body > .drawer { grid-column: 4; } .body > .rail { grid-column: 5; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
-  /* Chat column: the selected task's conversation, full height. */
+  /* Chat column: the project's sessions above the open session, full height. */
+  .sessions-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 10px; background: var(--rail); border-right: 1px solid var(--hairline); }
+  .sessions-col .row { align-items: center; }
+  .session-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+  .session-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 9px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
+  .session-item:hover { background: var(--surface-2); }
+  .session-item[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
+  .session-item span:not(.dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-item small { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+  .session-row { position: relative; display: flex; align-items: center; }
+  .session-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .session-row[draggable=true] .session-item { cursor: grab; }
+  .pin { color: var(--text-muted); font-size: 10px; }
+  .list-head { display: flex; align-items: center; justify-content: space-between; margin: 12px 2px 4px; }
+  .session-row .session-item { padding-right: 30px; }
+  .menu-btn { position: absolute; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); cursor: pointer; opacity: 0; }
+  .session-row:hover .menu-btn, .menu-btn:focus-visible, .menu-btn[aria-expanded=true] { opacity: 1; }
+  .menu-btn:hover { background: var(--surface-2); color: var(--text); }
+  .menu { position: fixed; z-index: 20; min-width: 150px; padding: 4px; border: 1px solid var(--hairline-strong); border-radius: 9px; background: var(--elevated); box-shadow: 0 8px 24px rgba(0,0,0,.4); display: grid; }
+  .menu button { padding: 7px 10px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: var(--surface-2); }
+  .menu button.danger { color: var(--red); }
+  dialog.confirm { max-width: 420px; padding: 20px; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); background: var(--panel); color: var(--text); }
+  dialog.confirm::backdrop { background: rgba(0,0,0,.5); }
+  dialog.confirm h2 { margin: 0 0 8px; font-size: 15px; }
+  dialog.confirm p { margin: 0 0 18px; color: var(--text-dim); }
+  .btn.danger { background: var(--red); border-color: var(--red); color: #1a1918; }
+  .badge { padding: 0 6px; border-radius: 9px; background: var(--amber); color: #1a1918; font-size: 10px; font-weight: 700; }
+  .perm { justify-self: end; max-width: 100%; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+  .perm .warn, .flag { color: var(--amber); font-weight: 600; }
+  .turn-activity { align-self: stretch; font-size: 12px; color: var(--text-dim); border-left: 2px solid var(--hairline-strong); padding: 2px 0 2px 10px; }
+  .turn-activity summary { cursor: pointer; color: var(--text-muted); }
+  .turn-activity ol { margin: 4px 0 0; padding-left: 18px; }
+  .turn-activity li.err { color: var(--red); }
+  .turn-activity li.run::marker { color: var(--blue); }
+  .marker { margin-top: 4px; color: var(--amber); font-weight: 600; }
+  .approval { align-self: stretch; padding: 10px 12px; border: 1px solid var(--accent-edge); border-radius: 10px; background: var(--accent-dim); display: grid; gap: 6px; }
+  .approval code, .turn-activity code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
   .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--hairline); }
   .sidebar { position: relative; }
   .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
   .resizer:hover, .resizer.dragging, .resizer:focus-visible { background: var(--accent-edge); outline: none; }
-  .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 15px 12px; border-bottom: 1px solid var(--hairline); }
-  .chat-title { padding: 10px 18px 0; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Left cell stays empty so the session name is centred; the project is in the breadcrumb above. */
+  .chat-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr) minmax(0,1fr); align-items: center; gap: 10px; padding: 14px 15px 12px; border-bottom: 1px solid var(--hairline); }
+  .chat-title { display: flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; font-size: 14px; text-align: center; }
+  .chat-title b { font-weight: 700; }
+  .chat-title b, .chat-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .messages { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 15px; }
   .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
   .msg.user { align-self: flex-end; background: var(--elevated); border: 1px solid var(--hairline-strong); }
@@ -73,9 +121,10 @@
   .chat-state:empty { display: none; }
   .chat-composer { display: grid; gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); }
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
+  .pickers { flex-wrap: nowrap; gap: 6px; }
+  .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
-  .brand-mark { display: grid; place-content: center; flex: none; width: 38px; height: 40px; border-radius: 11px; border: 1px solid rgba(228,189,104,.19); background: rgba(228,189,104,.06); color: #e4bd68; font-weight: 700; font-size: 18px; text-transform: uppercase; }
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .identity small { display: block; font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav { display: flex; gap: 4px; }
@@ -170,45 +219,91 @@
     <button class="icon-btn" id="toggle-sidebar" aria-label="Toggle chat" aria-expanded="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg>
     </button>
-    <nav class="crumbs" aria-label="Breadcrumb"><span>Workspace</span><i>/</i><b id="crumb">No project</b></nav>
+    <nav class="crumbs" aria-label="Breadcrumb"><button class="crumb-btn" id="crumb-workspace" type="button" style="font-weight:400;color:var(--text-dim)">Workspace</button><i>/</i><button class="crumb-btn" id="crumb" type="button">No project</button></nav>
     <div class="nav" aria-label="Pages">
-      <button data-page="overview">Overview</button>
+      <button data-page="projects">Projects</button>
       <button data-page="tasks">Tasks</button>
     </div>
     <div class="right">
+      <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
-      <button class="btn primary small" id="new-task-btn">New chat</button>
     </div>
   </div>
 
   <div class="body">
+    <aside class="sessions-col" aria-label="Sessions">
+      <h2 class="eyebrow" style="margin:2px 2px 0">Sessions</h2>
+      <button class="btn small" id="new-session" type="button">+ New session</button>
+      <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions">
+      <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
+      <div class="session-list" id="session-list"></div>
+      <div class="menu" id="project-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="archive">Archive</button>
+        <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
+      </div>
+      <div class="menu" id="session-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="pin">Pin</button>
+        <button role="menuitem" data-mact="rename">Rename</button>
+        <button role="menuitem" data-mact="archive">Archive</button>
+        <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
+      </div>
+      <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
+        <form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p>
+          <div class="row" style="justify-content:flex-end"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" id="confirm-ok" value="ok"></button></div></form>
+      </dialog>
+      <small class="meta" id="session-agent"></small>
+    </aside>
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
-        <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
-        <button class="link-btn" data-tool="projects">Switch ↗</button>
+        <span aria-hidden="true"></span>
+        <div class="chat-title" id="chat-title"></div>
+        <div class="perm" id="perm" tabindex="0"></div>
       </div>
-      <div class="chat-title" id="chat-title"></div>
       <div class="messages" id="messages" aria-live="polite"></div>
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
-        <textarea name="goal" required aria-label="Message"></textarea>
-        <div class="row" id="new-options">
-          <label class="field">Role<select name="role"></select></label>
-          <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
-          <label class="check"><input name="write" type="checkbox"> Allow writes</label>
+        <textarea name="text" required aria-label="Message"></textarea>
+        <div class="row pickers">
+          <select id="agent" aria-label="Agent" title="Agent"></select>
+          <select id="model" aria-label="Model" title="Model"></select>
+          <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><button class="btn primary small" id="send">Send</button></div>
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
 
     <main class="content" id="content">
-      <section class="page" id="page-overview" hidden></section>
+      <section class="page" id="page-projects" hidden>
+        <div class="topline"><div class="eyebrow">Workspace</div></div>
+        <h1 class="display">Projects</h1>
+        <p class="lede" style="margin-bottom:24px">Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.</p>
+        <label class="check" style="margin-bottom:8px"><input id="show-archived-projects" type="checkbox"> Show archived</label>
+        <div class="task-list" id="project-list"></div>
+        <div id="unadded"></div>
+        <form class="card" id="project" style="display:grid;gap:8px;margin-top:20px">
+          <h3 style="margin:0">Add project</h3>
+          <label class="field">Folder<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
+          <label class="field">Name (optional, defaults to the folder name)<input name="id"></label>
+          <div class="row"><button class="btn primary small">Add project</button></div>
+          <p class="error" id="project-error" role="alert"></p>
+        </form>
+      </section>
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:24px">Delegated work for this project. Select a task to open its conversation in the chat. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <p class="lede" style="margin-bottom:24px">Delegated work for this project. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <form class="card" id="new-task" style="display:grid;gap:8px;margin-bottom:20px">
+          <textarea name="goal" required aria-label="Task goal" placeholder="What should the agent do?"></textarea>
+          <div class="row">
+            <label class="field">Role<select name="role"></select></label>
+            <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
+            <label class="check"><input name="write" type="checkbox"> Allow writes</label>
+            <button class="btn primary small">Start task</button>
+          </div>
+          <p class="error" id="task-error" role="alert"></p>
+        </form>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -218,26 +313,22 @@
 
     <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title">
       <header><h2 id="drawer-title"></h2><button class="icon-btn" id="close-drawer" aria-label="Close panel">✕</button></header>
-      <div id="drawer-projects" hidden>
-        <div id="project-list" style="display:grid;gap:4px;margin-bottom:18px"></div>
-        <h3>Add project</h3>
-        <form id="project">
-          <label class="field">Folder<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
-          <label class="field">Name (optional, defaults to the folder name)<input name="id"></label>
-          <button class="btn primary small">Add project</button>
-          <p class="error" id="project-error" role="alert"></p>
-        </form>
-      </div>
       <div id="drawer-settings" hidden>
-        <p class="meta" style="margin:0 0 6px">Which agent runs each role. New tasks use these; running tasks keep theirs.</p>
+        <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
+          <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
+          <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
+          <span class="meta" id="workspace-saved" role="status"></span></form>
+        <div style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace storage</b>
+          <p class="meta" style="margin:0">Sessions, tasks and logs live here, never in project folders, so they cannot be committed by accident.</p>
+          <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div>
+          <div class="row"><button class="btn small" id="export-storage" type="button">Export…</button><button class="btn small" id="import-storage" type="button">Import…</button></div>
+          <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
+        <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
     </aside>
 
     <nav class="rail" aria-label="Tools">
-      <button data-tool="projects" aria-pressed="false">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3.2l1.6 1.8h6.2A1.5 1.5 0 0 1 16 7.3v6.2A1.5 1.5 0 0 1 14.5 15h-11A1.5 1.5 0 0 1 2 13.5z"/></svg><span>Projects</span>
-      </button>
       <button data-tool="settings" aria-pressed="false">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 5h12M3 9h12M3 13h12"/><circle cx="7" cy="5" r="1.6" fill="var(--rail)"/><circle cx="12" cy="9" r="1.6" fill="var(--rail)"/><circle cx="6" cy="13" r="1.6" fill="var(--rail)"/></svg><span>Settings</span>
       </button>
@@ -251,11 +342,19 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 document.documentElement.dataset.platform = new URLSearchParams(location.search).get('platform') ?? '';
 
 // Layout preferences are per viewer and optional, so storage failures are ignored.
+// View state (project, session, page, layout) lives in workspace storage, not browser storage:
+// the server's port and so the page's origin change on every launch.
+const prefs = {};
 const pref = {
-  get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
-  set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
+  get: (k, d) => prefs[k] ?? d,
+  set: (k, v) => {
+    v = String(v ?? '');
+    if (prefs[k] === v) return;
+    prefs[k] = v;
+    api('/api/prefs', { key: k, value: v }).catch(() => {});
+  },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'overview'), tool: null, selected: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, agents: {}, draft: null, session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -284,7 +383,7 @@ function setPage(page) {
     if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   }
-  $('#page-overview').hidden = page !== 'overview';
+  $('#page-projects').hidden = page !== 'projects';
   $('#page-tasks').hidden = page !== 'tasks';
   render();
 }
@@ -292,9 +391,8 @@ function setPage(page) {
 function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
   $('#drawer').hidden = !state.tool;
-  $('#drawer-projects').hidden = state.tool !== 'projects';
   $('#drawer-settings').hidden = state.tool !== 'settings';
-  $('#drawer-title').textContent = { projects: 'Projects', settings: 'Settings' }[state.tool] ?? '';
+  $('#drawer-title').textContent = { settings: 'Settings' }[state.tool] ?? '';
   for (const b of $$('.rail button')) b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool));
   renderDrawer();
 }
@@ -303,73 +401,178 @@ function selectProject(id) {
   state.project = id;
   state.selected = null;
   pref.set('project', id);
-  render();
-  renderDrawer();
+  openSession(pref.get(`session.${id}`, '') || null);
 }
 
 function renderShell() {
   const p = current();
+  $('#crumb-workspace').title = state.workspaceRoot ? `${state.workspaceRoot}${window.desktop ? '\nClick to open the folder' : ''}` : 'Set the workspace folder in Settings';
+  $('#crumb-workspace').disabled = !state.workspaceRoot || !window.desktop;
+  if (document.activeElement?.name !== 'root') $('[name=root]').value = state.workspaceRoot ?? '';
+  $('#storage-path').textContent = state.storage ?? '';
+  $('#open-storage').disabled = $('#export-storage').disabled = $('#import-storage').disabled = !window.desktop;
   $('#crumb').textContent = p?.id ?? 'No project';
-  $('#project-name').textContent = p?.id ?? 'No project';
-  $('#project-root').textContent = p?.root ?? 'Add one from Projects';
-  $('#mark').textContent = p?.id[0] ?? '?';
-  $('#new-task-btn').disabled = !p;
+  $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
+  $('#crumb').disabled = !p || !window.desktop;
+  const chat = state.roles.Chat;
+  $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
   const running = state.tasks.filter((t) => t.status === 'running' && t.runnerAlive).length;
   $('#running-pill').innerHTML = `<span class="dot s-running"></span>${running} running`;
   const mine = projectTasks();
   $('#foot-status').innerHTML = p ? `<span class="dot s-running"></span> ${mine.filter((t) => t.status === 'running').length} running · ${mine.length} tasks` : '';
 }
 
-function renderOverview() {
-  const p = current();
-  if (!p) {
-    $('#page-overview').innerHTML = `<div class="topline"><div class="eyebrow">Workspace</div></div>
-      <h1 class="display">Start with a project.</h1>
-      <p class="lede">A project is a folder the agents may read, and write to when you allow it. Everything they do is audited.</p>
-      <div class="actions"><button class="btn primary" data-action="add-project">Add project →</button></div>`;
-    return;
-  }
-  const mine = projectTasks();
-  const count = (s) => mine.filter((t) => t.status === s).length;
-  const all = state.tasks.filter((t) => t.projectId === p.id); // includes subtasks, whose usage is already in their parent
-  const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
-  const cache = mine.reduce((n, t) => n + cached(t), 0);
-  $('#page-overview').innerHTML = `<div class="topline"><div class="eyebrow">Project / ${esc(p.id)}</div><span class="pill">${all.length - mine.length} subtasks</span></div>
-    <h1 class="display">${esc(p.id)}</h1>
-    <p class="lede">${esc(p.root)}</p>
-    <div class="actions"><button class="btn primary" data-action="new-task">New task →</button><button class="btn" data-action="view-tasks">View tasks</button></div>
-    <div class="stats">
-      <div><strong>${mine.length}</strong><span>tasks · ${count('completed')} completed</span></div>
-      <div><strong>${count('running')}</strong><span>running · ${count('paused')} paused</span></div>
-      <div><strong>${work.toLocaleString()}</strong><span>work tokens</span></div>
-      <div><strong>${cache.toLocaleString()}</strong><span>prompt-cache tokens</span></div>
-    </div>
-    <div class="section-head"><h2>Recent tasks</h2><span>${mine.length ? 'latest first' : ''}</span></div>
-    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one in the chat.</p>'}</div>`;
+function renderProjects() {
+  const archived = $('#show-archived-projects').checked;
+  $('#project-list').innerHTML = state.projects.filter((p) => !!p.archived === archived).map((p) => {
+    const mine = state.tasks.filter((t) => t.projectId === p.id && !t.parentId);
+    const running = mine.filter((t) => t.status === 'running' && t.runnerAlive).length;
+    const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
+    return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
+      <span class="goal">${esc(p.id)}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
+      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} work tokens</span></button>
+      <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>`;
+  }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
+  const folders = archived ? [] : state.unaddedFolders ?? [];
+  $('#unadded').innerHTML = folders.length ? `<div class="section-head"><h2>Folders in the workspace</h2><span>not added yet</span></div>
+    <div class="task-list">${folders.map((f) => `<div class="task-row" style="display:flex;align-items:center;gap:10px;cursor:default"><span class="meta" style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(f)}</span><button class="btn small" data-add-folder="${esc(f)}">Add</button></div>`).join('')}</div>` : '';
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
   <span class="goal">${esc(t.goal)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
 
-// The chat shows the selected task's conversation; with none selected, the next message starts a task.
+// Chat column: the project's sessions and the open session's turns, built from its event log.
+const code = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+const took = (t) => {
+  const s = Math.round((new Date(t.endedAt) - new Date(t.startedAt)) / 1000);
+  const unit = (value, u) => new Intl.NumberFormat(undefined, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(value); // locale-aware
+  return s < 60 ? unit(s, 'second') : unit(Math.round(s / 60), 'minute');
+};
+const sessionState = (s) => s.working ? '<span class="dot s-running"></span>' : s.state === 'interrupted' || s.state === 'stopped' || s.state === 'error' ? '<small>⚠</small>' : '';
+
+const allSessions = () => [...state.sessions, ...state.globals];
+const isGlobal = (s) => s.projectId === '';
+
+// Pinned sessions come first (the server sorts them) and can be dragged to reorder.
+const sessionRows = (list, group) => list.map((s) => `<div class="session-row" data-row="${esc(s.id)}" data-group="${group}" ${s.pinOrder !== undefined ? 'draggable="true"' : ''}><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
+    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
+    <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('');
+
+const EFFORT_LABELS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', ultra: 'Ultra' };
+const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+function pickerValues(s) {
+  if (s) return { integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
+  const chat = state.roles.Chat ?? { integration: 'claude-code' };
+  return state.draft ?? { integration: chat.integration, model: chat.model ?? '', effort: '' };
+}
+function renderPickers(s) {
+  if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
+  const v = pickerValues(s);
+  const catalog = state.agents[v.integration];
+  $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option(v.integration, v.integration, true);
+  const models = catalog?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+  $('#model').innerHTML = models.map((m) => option(m.id, m.label, m.id === v.model)).join('');
+  const efforts = (models.find((m) => m.id === v.model) ?? models[0]).efforts;
+  $('#effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
+  const working = !!s?.working;
+  for (const id of ['agent', 'model', 'effort']) $(`#${id}`).disabled = working || !catalog;
+}
+
+function renderSessions() {
+  if (dragged) return; // a re-render during a drag would drop the dragged row
+  const q = $('#session-filter').value.trim().toLowerCase();
+  const archived = $('#show-archived').checked;
+  const keep = (s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived);
+  const mine = state.sessions.filter(keep);
+  const globals = state.globals.filter(keep);
+  const empty = (text) => `<p class="empty" style="margin:4px 2px">${text}</p>`;
+  $('#session-list').innerHTML = (sessionRows(mine, 'project')
+    || empty(current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'))
+    + `<div class="list-head"><h2 class="eyebrow" style="margin:0">Global</h2></div>
+    <button class="btn small" id="new-global" type="button" style="margin-bottom:4px" ${state.workspaceRoot ? '' : 'disabled title="Set the workspace folder in Settings first"'}>+ New global session</button>`
+    + (sessionRows(globals, 'global') || empty(q || archived ? 'No matching sessions.' : 'Global sessions run in the workspace folder, outside any one project.'));
+}
+
+function activityList(t) {
+  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
+  const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
+  return `<ol>${items}${answered}</ol>`;
+}
+
+// Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
+function turnHtml(t) {
+  const steps = t.activity.length;
+  const activity = !steps && !t.marker && !t.approvals.length ? ''
+    : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
+    : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
+  const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
+  const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>
+    <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
+  const used = t.usage.inputTokens + t.usage.outputTokens;
+  const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
+  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${switched}`;
+}
+
 let shown = '';
 function renderChat() {
-  const t = state.tasks.find((x) => x.id === state.selected);
-  const busy = t?.status === 'running' && t.runnerAlive;
-  $('#chat-title').textContent = t ? `Task ${t.id} · ${t.role} · ${t.write ? 'writes allowed' : 'read-only'}` : 'New chat: your first message becomes the task goal';
-  $('#new-options').hidden = !!t;
-  $('#send').disabled = !current() || busy || t?.status === 'cancelled';
-  $('[name=goal]').placeholder = t ? 'Reply to continue this task. Enter sends, Shift+Enter adds a line.' : 'What should the agent do? Enter sends, Shift+Enter adds a line.';
-  $('#chat-state').innerHTML = !t ? '' : busy ? `<span class="dot s-running"></span> Working… ${summary(t)}`
-    : t.status === 'running' ? 'Runner stopped. Resume it from Tasks.'
-    : ['paused', 'failed', 'cancelled'].includes(t.status) ? `${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}` : '';
-  const messages = t?.messages ?? [];
-  const key = `${t?.id}:${messages.length}:${!!current()}`;
+  renderSessions();
+  const d = state.sessionData?.session.id === state.session ? state.sessionData : null;
+  const s = d?.session;
+  const working = !!s?.working;
+  if (s && state.renaming) {
+    if (document.activeElement?.id !== 'rename') {
+      $('#chat-title').innerHTML = `<form id="rename-form" class="row" style="flex:1"><input id="rename" value="${esc(s.title)}" aria-label="Session name" style="flex:1"><button class="btn small">Save</button></form>`;
+      $('#rename').focus();
+      $('#rename').select();
+    }
+  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
+    : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
+  const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
+  const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
+  const info = d && d.turns.findLast((t) => t.model);
+  const warnings = [d?.permissions.warn, d?.turns.at(-1)?.permissionMode === 'bypassPermissions' ? 'running with all permission checks skipped' : '', failed.length ? `not connected: ${failed.map((m) => m.name).join(', ')}` : ''].filter(Boolean);
+  $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
+  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
+  const global = s ? isGlobal(s) : state.newGlobal;
+  $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
+  $('#stop').hidden = !working;
+  renderPickers(s);
+  $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
+  $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
+  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns]);
   if (key === shown) return; // keep the reader's scroll position between polls
   shown = key;
-  $('#messages').innerHTML = messages.map((m) => `<div class="msg ${m.from === 'user' ? 'user' : 'agent'}">${esc(m.text)}<time>${new Date(m.at).toLocaleTimeString()}</time></div>`).join('')
-    || `<p class="empty">${current() ? 'Describe a task below to start it.' : 'Add a project first (Projects, right rail).'}</p>`;
-  $('#messages').scrollTop = $('#messages').scrollHeight;
+  const box = $('#messages');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = d?.turns.map(turnHtml).join('')
+    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function loadSessions() {
+  state.sessions = state.project ? await api(`/api/sessions?project=${encodeURIComponent(state.project)}`) : [];
+  state.globals = await api('/api/sessions?global=1');
+  if (state.session && !allSessions().some((s) => s.id === state.session)) state.session = null;
+  state.sessionData = state.session ? await api(`/api/sessions/${state.session}`) : null;
+}
+
+function openSession(id, newGlobal = false) {
+  state.session = id;
+  state.newGlobal = !id && newGlobal;
+  state.renaming = false;
+  pref.set(`session.${state.project}`, id ?? '');
+  shown = '';
+  loadSessions().then(render).catch(() => {});
+}
+
+async function sessionAction(act, body = {}, id = state.session) {
+  try {
+    await api(`/api/sessions/${id}/${act}`, body);
+    $('#new-error').textContent = '';
+  } catch (err) { $('#new-error').textContent = err.message; }
+  await loadSessions();
+  render();
 }
 
 async function renderTasks() {
@@ -394,23 +597,20 @@ async function renderTasks() {
       <button class="btn small" data-act="cancel" ${done ? 'disabled' : ''}>Cancel</button>
     </div>
     <p class="error" id="detail-error" role="alert"></p>
-    ${t.result ? `<h3>Result</h3><pre>${esc(t.result)}</pre>` : ''}
+    <h3>Conversation</h3><div class="messages" style="padding:0">${t.messages.map((m) => `<div class="msg ${m.from === 'user' ? 'user' : 'agent'}">${esc(m.text)}<time>${new Date(m.at).toLocaleString()}</time></div>`).join('')}</div>
     ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
     <h3>Audit</h3><pre>${esc(events.map((e) => `${e.at.slice(11, 19)} ${e.kind} ${e.event ?? e.tool ?? ''}${e.path ? ' ' + e.path : ''}${e.allowed === false ? ' DENIED: ' + e.reason : ''}${e.reason && e.allowed === undefined ? ' — ' + e.reason : ''}${e.step ? ' step ' + e.step : ''}`).join('\n')) || 'none'}</pre>
     <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
 }
 
 function renderDrawer() {
-  if (state.tool === 'projects') {
-    $('#project-list').innerHTML = state.projects.map((p) => `<button class="project-item" data-project="${esc(p.id)}" aria-current="${p.id === state.project}"><span>${esc(p.id)}</span><small>${esc(p.root)}</small></button>`).join('') || '<p class="empty">No projects yet.</p>';
-  }
   if (state.tool === 'settings') {
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
       return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
         <div class="row"><label class="field">Agent<select name="integration">${options.map((i) => `<option ${i === a.integration ? 'selected' : ''}>${esc(i)}</option>`).join('')}</select></label>
         <label class="field">Model (optional)<input name="model" value="${esc(a.model)}" placeholder="default"></label></div>
-        <div class="row"><button class="btn small">Save</button><span class="meta" data-saved></span></div></form>`;
+        <span class="meta" data-saved role="status"></span></form>`;
     }).join('');
   }
 }
@@ -418,19 +618,22 @@ function renderDrawer() {
 function render() {
   renderShell();
   renderChat();
-  if (state.page === 'overview') renderOverview();
+  if (state.page === 'projects') renderProjects();
   else renderTasks().catch((e) => { $('#detail').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
 }
 
 async function load() {
   const meta = await api('/api/meta');
   Object.assign(state, meta);
-  if (!state.projects.some((p) => p.id === state.project)) state.project = state.projects[0]?.id ?? null;
-  $('[name=role]').innerHTML = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}</option>`).join('');
+  const active = state.projects.filter((p) => !p.archived);
+  if (!active.some((p) => p.id === state.project)) state.project = active[0]?.id ?? null;
+  const roleOptions = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}${a.model ? ` (${esc(a.model)})` : ''}</option>`).join('');
+  $('[name=role]').innerHTML = roleOptions;
 }
 
 async function poll() {
   state.tasks = await api('/api/tasks');
+  await loadSessions();
   render();
 }
 
@@ -446,19 +649,208 @@ for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
 $('#close-drawer').onclick = () => setTool(state.tool);
 const newTask = () => {
   state.selected = null;
-  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
-  render();
+  setPage('tasks');
   $('[name=goal]').focus();
 };
-$('#new-task-btn').onclick = newTask;
+// A new session is created with its first message, so empty sessions do not pile up.
+const newSession = () => {
+  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
+  openSession(null);
+  $('[name=text]').focus();
+};
+$('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
+$('#new-session').onclick = newSession;
+$('#restart').hidden = !window.desktop?.restart;
+$('#restart').onclick = () => window.desktop.restart();
+$('#open-storage').onclick = () => state.storage && window.desktop?.openFolder(state.storage);
+// Export and import between computers (workspace-transfer part 1); sign-ins never leave this computer.
+$('#export-storage').onclick = async () => {
+  if (!(await ask('Export the workspace?', 'The file contains your private conversations, tasks and logs. Keep it somewhere only you can read. Sign-ins and credentials are not included.', 'Choose file…'))) return;
+  const path = await window.desktop.saveExport();
+  if (!path) return;
+  try { const r = await api('/api/storage/export', { path }); $('#transfer-result').textContent = `Exported ${r.files} files.`; }
+  catch (err) { $('#transfer-result').textContent = err.message; }
+};
+$('#import-storage').onclick = async () => {
+  const path = await window.desktop.openExport();
+  if (!path) return;
+  try {
+    const r = await api('/api/storage/import', { path });
+    const projects = r.projects.map((p) => `${p.id}: ${p.outcome}`).join('; ');
+    $('#transfer-result').textContent = `Imported ${r.sessions} sessions and ${r.tasks} tasks.${projects ? ` Projects: ${projects}.` : ''}`;
+    await load();
+    await poll();
+  } catch (err) { $('#transfer-result').textContent = err.message; }
+};
+$('#session-list').addEventListener('click', (e) => {
+  if (!e.target.closest('#new-global')) return;
+  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
+  openSession(null, true);
+  $('[name=text]').focus();
+});
+let dragged = null;
+const pinnedRow = (e) => e.target.closest('.session-row[draggable=true]');
+$('#session-list').addEventListener('dragstart', (e) => {
+  const row = pinnedRow(e);
+  if (!row) return;
+  dragged = row;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', row.dataset.row);
+});
+$('#session-list').addEventListener('dragover', (e) => {
+  const row = pinnedRow(e);
+  if (!row || !dragged || row.dataset.group !== dragged.dataset.group) return;
+  e.preventDefault();
+  for (const r of $$('.drop-before')) r.classList.remove('drop-before');
+  if (row !== dragged) row.classList.add('drop-before');
+});
+$('#session-list').addEventListener('dragend', () => {
+  dragged = null;
+  for (const r of $$('.drop-before')) r.classList.remove('drop-before');
+});
+$('#session-list').addEventListener('drop', async (e) => {
+  const row = pinnedRow(e);
+  if (!row || !dragged || row === dragged || row.dataset.group !== dragged.dataset.group) return;
+  e.preventDefault();
+  const ids = $$(`.session-row[draggable=true][data-group=${row.dataset.group}]`).map((r) => r.dataset.row).filter((id) => id !== dragged.dataset.row);
+  ids.splice(ids.indexOf(row.dataset.row), 0, dragged.dataset.row);
+  dragged = null;
+  try { await api('/api/sessions/order', { ids }); } catch (err) { $('#new-error').textContent = err.message; }
+  await loadSessions();
+  render();
+});
+$('#session-filter').oninput = renderSessions;
+$('#show-archived').onchange = renderSessions;
+$('#stop').onclick = () => sessionAction('stop');
+// The level applies from the next message; a running reply keeps the level it started with.
+async function pickerChanged(which) {
+  const s = state.sessionData?.session.id === state.session ? state.sessionData.session : null;
+  const v = { ...pickerValues(s), [which]: $(`#${which}`).value };
+  if (which === 'agent') v.integration = $('#agent').value, v.model = '', v.effort = '';
+  if (which === 'model') v.effort = '';
+  if (!s) { state.draft = v; return renderPickers(null); }
+  if (which === 'agent' && !(await ask(`Switch this session to ${v.integration}?`, `${v.integration} gets the conversation so far as text; it cannot resume ${s.integration}'s own session. The chat marks the switch.`, 'Switch'))) return renderPickers(s);
+  await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort });
+}
+for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
+
+// Styled confirmation (the native confirm() dialog does not match the workspace).
+function ask(title, text, ok, danger = false) {
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = text;
+  $('#confirm-ok').textContent = ok;
+  $('#confirm-ok').className = `btn small ${danger ? 'danger' : 'primary'}`;
+  $('#confirm').returnValue = '';
+  $('#confirm').showModal();
+  $('#confirm-ok').focus();
+  // Resolved from the button or Escape directly; the dialog's 'close' event is async and paused in hidden windows.
+  return new Promise((resolve) => {
+    const done = (ok) => { d.removeEventListener('submit', onSubmit); d.removeEventListener('cancel', onCancel); resolve(ok); };
+    const onSubmit = (e) => done(e.submitter?.value === 'ok');
+    const onCancel = () => done(false);
+    const d = $('#confirm');
+    d.addEventListener('submit', onSubmit);
+    d.addEventListener('cancel', onCancel);
+  });
+}
+
+const menuItem = (kind, id) => (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id);
+function openMenu(kind, id, x, y) {
+  const s = menuItem(kind, id);
+  if (!s) return;
+  closeMenu();
+  state.menu = { kind, id };
+  const menu = $(`#${kind}-menu`);
+  menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
+  const pin = menu.querySelector('[data-mact=pin]');
+  if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
+  menu.hidden = false;
+  menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
+  menu.querySelector('button').focus();
+  render();
+}
+function closeMenu() {
+  if (!state.menu) return;
+  state.menu = null;
+  for (const m of $$('.menu')) m.hidden = true;
+  render();
+}
+
+// Archive is the only way to take a project out of the workspace; nothing on disk is deleted.
+async function projectMenuAction(act, id) {
+  closeMenu();
+  const p = menuItem('project', id);
+  if (!p) return;
+  if (act === 'remove') {
+    if (!(await ask(`Remove "${p.id}" from the workspace?`, `Only the reference is removed. Nothing is deleted: the folder (${p.root}) stays, and its sessions and tasks stay in workspace storage. Adding the folder again with the same name brings them back.`, 'Remove', true))) return;
+    try { await api(`/api/projects/${encodeURIComponent(id)}/remove`, {}); } catch (err) { return void ($('#project-error').textContent = err.message); }
+    await load();
+    return state.project !== pref.get('project', null) ? selectProject(state.project) : render();
+  }
+  if (act !== 'archive') return;
+  if (!p.archived && !(await ask(`Archive project "${p.id}"?`, `It is hidden from the workspace. Its folder (${p.root}), sessions and tasks stay untouched, and running work continues. Tick "Show archived" on this page to restore it.`, 'Archive'))) return;
+  try { await api(`/api/projects/${encodeURIComponent(id)}/archive`, { archived: !p.archived }); } catch (err) { return void ($('#project-error').textContent = err.message); }
+  await load();
+  if (state.project !== pref.get('project', null)) selectProject(state.project); else render();
+}
+
+async function menuAction(act, id) {
+  closeMenu();
+  const s = menuItem('session', id);
+  if (!s) return;
+  if (act === 'pin') return sessionAction('pin', { pinned: s.pinOrder === undefined }, id);
+  if (act === 'rename') {
+    if (state.session !== id) { state.session = id; await loadSessions(); }
+    state.renaming = true;
+    renderChat();
+    return $('#rename')?.focus();
+  }
+  if (act === 'archive' && s.archived) return sessionAction('archive', { archived: false }, id);
+  if (act === 'archive') {
+    if (!(await ask(`Archive "${s.title}"?`, 'It is hidden from the session list but kept on this computer. Tick "Show archived" to find it and restore it.', 'Archive'))) return;
+    return sessionAction('archive', { archived: true }, id);
+  }
+  if (act === 'delete') {
+    if (!(await ask(`Delete "${s.title}" permanently?`, 'Its history is removed and cannot be restored. Tasks it started are kept in the Tasks view. Archive keeps the session instead.', 'Delete', true))) return;
+    await sessionAction('delete', {}, id);
+    if (state.session === id) openSession(null);
+  }
+}
+
+document.addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('[data-row],[data-prow]');
+  if (!row) return;
+  e.preventDefault();
+  if (row.dataset.prow) openMenu('project', row.dataset.prow, e.clientX, e.clientY);
+  else openMenu('session', row.dataset.row, e.clientX, e.clientY);
+});
+$('#show-archived-projects').onchange = () => render();
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project]');
+  const addFolder = e.target.closest('[data-add-folder]');
+  if (addFolder) {
+    try { const p = await api('/api/projects', { path: addFolder.dataset.addFolder }); await load(); return selectProject(p.id); }
+    catch (err) { return void ($('#project-error').textContent = err.message); }
+  }
+  const item = e.target.closest('[data-mact]');
+  if (item && state.menu?.kind === 'project') return projectMenuAction(item.dataset.mact, state.menu.id);
+  if (item) return menuAction(item.dataset.mact, state.menu?.id);
+  const menuBtn = e.target.closest('[data-menu]');
+  if (menuBtn) {
+    if (state.menu?.id === menuBtn.dataset.menu) return closeMenu();
+    const r = menuBtn.getBoundingClientRect();
+    return openMenu(menuBtn.dataset.kind, menuBtn.dataset.menu, r.left, r.bottom + 4);
+  }
+  if (!e.target.closest('.menu')) closeMenu();
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
   if (!el) return;
   if (el.dataset.project) return selectProject(el.dataset.project);
+  if (el.dataset.session) return openSession(el.dataset.session);
+  if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
   if (el.dataset.action === 'new-task') return newTask();
   if (el.dataset.action === 'view-tasks') return setPage('tasks');
-  if (el.dataset.action === 'add-project') return state.tool !== 'projects' && setTool('projects');
   if (el.dataset.act) {
     try { await api(`/api/tasks/${state.selected}/${el.dataset.act}`, el.dataset.act === 'resume' && $('#budget-more').value ? { budget: Number($('#budget-more').value) } : {}); await poll(); }
     catch (err) { $('#detail-error').textContent = err.message; }
@@ -468,31 +860,71 @@ document.addEventListener('click', async (e) => {
   if (state.page !== 'tasks') setPage('tasks'); else render();
 });
 
+// Rename edits the title in place (Electron has no window.prompt); Escape or leaving the field cancels.
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'rename-form') return;
+  e.preventDefault();
+  const title = $('#rename').value;
+  state.renaming = false;
+  if (title.trim()) sessionAction('rename', { title }); else renderChat();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'rename' && e.key === 'Escape') { state.renaming = false; renderChat(); }
+});
+
+$('#new-task').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    if (!state.project) throw new Error('Add a project first (Projects, right rail).');
+    const t = await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
+    state.selected = t.id;
+    e.target.goal.value = '';
+    $('#task-error').textContent = '';
+    await poll();
+  } catch (err) { $('#task-error').textContent = err.message; }
+};
+
 // Enter sends; Shift+Enter adds a line break.
-$('[name=goal]').onkeydown = (e) => {
+$('[name=text]').onkeydown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };
 $('#new').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   try {
-    if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const t = state.selected
-      ? await api(`/api/tasks/${state.selected}/reply`, { text: f.get('goal') })
-      : await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
-    state.selected = t.id;
-    e.target.goal.value = '';
+    if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
+    const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', ...config } : { projectId: state.project, role: 'Chat', ...config })).id;
+    state.draft = null;
+    await api(`/api/sessions/${id}/message`, { text: f.get('text') });
+    e.target.text.value = '';
     $('#new-error').textContent = '';
-    await poll();
+    openSession(id);
   } catch (err) { $('#new-error').textContent = err.message; }
 };
 
 // Browsers never reveal a folder's full path; the desktop app's native dialog does.
 $('[name=path]').onclick = async (e) => {
   if (!window.desktop) return;
-  const path = await window.desktop.pickFolder();
+  const path = await window.desktop.pickFolder('Select the project folder', state.workspaceRoot ?? undefined);
   if (path) e.target.value = path;
 };
+$('[name=root]').onclick = async (e) => {
+  if (!window.desktop) return;
+  const path = await window.desktop.pickFolder('Select the workspace folder', state.workspaceRoot ?? undefined);
+  if (path) { e.target.value = path; $('#workspace-form').requestSubmit(); }
+};
+$('#workspace-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/workspace', { root: new FormData(e.target).get('root') });
+    await load();
+    render();
+    $('#workspace-saved').textContent = 'Saved';
+  } catch (err) { $('#workspace-saved').textContent = err.message; }
+};
+$('#crumb-workspace').onclick = () => state.workspaceRoot && window.desktop?.openFolder(state.workspaceRoot);
 $('#project').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -504,6 +936,9 @@ $('#project').onsubmit = async (e) => {
     selectProject(p.id);
   } catch (err) { $('#project-error').textContent = err.message; }
 };
+// Settings save on change (a picked option, or a text field when it loses focus or on Enter); there is no Save button.
+$('#workspace-form').onchange = (e) => e.currentTarget.requestSubmit();
+$('#roles').onchange = (e) => e.target.form?.requestSubmit();
 $('#roles').onsubmit = async (e) => {
   e.preventDefault();
   const form = e.target;
@@ -535,14 +970,20 @@ $('#resizer').onkeydown = (e) => {
 };
 
 (async () => {
+  Object.assign(prefs, await api('/api/prefs'));
+  state.project = pref.get('project', null);
+  state.page = pref.get('page', 'projects');
   if (pref.get('chat-width', null)) setChatWidth(Number(pref.get('chat-width', 380)));
   $('#app').dataset.sidebar = pref.get('sidebar', 'open');
   $('#toggle-sidebar').setAttribute('aria-expanded', String($('#app').dataset.sidebar === 'open'));
   await load();
   state.tasks = await api('/api/tasks');
-  setPage(state.page === 'tasks' ? 'tasks' : 'overview');
-  if (!state.projects.length) setTool('projects');
+  setPage(state.page === 'tasks' && state.projects.length ? 'tasks' : 'projects');
+  openSession(pref.get(`session.${state.project}`, '') || null);
+  api('/api/agents').then((agents) => { state.agents = agents; renderChat(); }).catch(() => {});
   setInterval(() => poll().catch(() => {}), 2000);
+  // The open session refreshes faster while its agent works, so the reply streams in.
+  setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
 })();
 </script>
 </body>

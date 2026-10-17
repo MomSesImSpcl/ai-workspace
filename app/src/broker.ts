@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { cancelRequested, liveUsage, loadTask, markBudgetStop, used } from './runtime.ts';
+import { cancelRequested, liveUsage, loadTask, markBudgetStop, taskFile, used } from './runtime.ts';
 import { appendJsonl, audit, home } from './store.ts';
 
 export interface Scope {
@@ -49,7 +49,7 @@ export function authorize(scope: Scope, tool: string, path?: string, needsWrite 
 // attempt. A re-run of an interrupted step finds its committed effects and skips them, in order.
 const occurrences = new Map<string, number>();
 export const newAttempt = () => occurrences.clear(); // one MCP server process = one attempt; tests reset here
-const ledgerPath = (taskId: string) => join(home(), 'tasks', `${taskId}.effects.jsonl`);
+const ledgerPath = (taskId: string) => taskFile(taskId, '.effects.jsonl');
 
 function committed(taskId: string): Map<string, string> {
   const path = ledgerPath(taskId);
