@@ -1,0 +1,3 @@
+# Sessions slice merged into main
+
+With the user's approval, `claude/chat-sessions-per-project-f82af3` was merged into `main` (merge commit recorded in Git as "Merge sessions slice and workspace improvements"), 40 commits: sessions slice 1 and the workspace improvements listed in progress, see history entries 2026-10-17-14 to -32. Checks on `main` after the merge: `npx tsc` clean, `npm test` 43/43. README updated for the merged features (storage layout, desktop app, sessions) as the working agreement's merge step requires. Open issues reviewed in the same step (see progress and the issue comments).
