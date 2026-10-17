@@ -14,7 +14,7 @@ export interface Session {
   role: string;
   integration: string;
   model?: string;
-  effort?: Effort; // unset: the agent's own default
+  effort?: string; // unset: the agent's own default; valid values come from the agent's catalog
   archived?: boolean;
   pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
@@ -28,7 +28,8 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'start'; integration: string }
   | { type: 'init'; model?: string; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
-  | { type: 'notice'; text: string; blocked?: boolean } // a message from the agent or its plugins, e.g. a hook that dropped the prompt
+  | { type: 'notice'; text: string; blocked?: boolean }
+  | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean }
   | { type: 'activity-done'; id: string; error?: boolean }
   | { type: 'approval'; id: string; tool: string; detail: string }
@@ -53,9 +54,15 @@ export interface TurnInput {
 
 // One agent product in a session: it runs with its own tools, settings and permissions (ADR 0004)
 // and reports the event contract. The runner records done, error and stopped.
+// What an agent offers, recorded when it is set up (onboarding-008): its models and, per model, the effort
+// levels it accepts. The composer and later the orchestrator choose only from this.
+export interface AgentModel { id: string; label: string; efforts: string[]; defaultEffort?: string }
+export interface Catalog { models: AgentModel[] } // id '' is the agent's own default model
+
 export interface SessionAgent {
   turn(input: TurnInput): Promise<{ vendorSessionId?: string; error?: string }>;
   permissions(root: string): { line: string; warn?: string };
+  catalog(): Catalog;
 }
 
 // A session's files live in its project's (or the global) storage folder, see store.ts.
@@ -103,9 +110,6 @@ export function loadSession(id: string): Session {
   if (!s) throw new Error(`Unknown session: ${id}`);
   return s;
 }
-
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-export type Effort = (typeof EFFORTS)[number];
 
 // Global sessions belong to no project; they run in the workspace folder (sessions-014).
 export const GLOBAL = '';
@@ -237,6 +241,7 @@ export interface Turn {
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean }[];
   approvals: { id: string; tool: string; detail: string; allow?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
+  switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
   usage: Usage;
@@ -266,6 +271,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     if (!t) continue;
     if (e.type === 'text') t.text += e.text;
     else if (e.type === 'notice') t.notices.push({ text: e.text, blocked: e.blocked });
+    else if (e.type === 'switch') t.switchedTo = { from: e.from, to: e.to, model: e.model };
     else if (e.type === 'init') Object.assign(t, { model: e.model, permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
     else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside });
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { conversation, type AgentAdapter, type StepResult } from '../runtime.ts';
-import { runLines, type Body, type SessionAgent } from '../sessions.ts';
+import { runLines, type Body, type Catalog, type SessionAgent } from '../sessions.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 
@@ -136,6 +136,34 @@ export function codexPermissions(): { line: string; warn?: string } {
   return { line, warn: sandbox === 'danger-full-access' ? 'Codex runs without a sandbox (danger-full-access)' : undefined };
 }
 
+// Codex lists its models and each model's reasoning levels itself (`codex debug models`); cached briefly
+// because it starts a process. Without it, only the configured default with Codex's basic levels.
+let codexModels: { at: number; catalog: Catalog } | undefined;
+interface CodexModel { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] }
+export function parseCodexModels(json: string, configured?: string): Catalog {
+  const list = (JSON.parse(json) as { models?: CodexModel[] }).models ?? [];
+  const shown = list.filter((m) => m.visibility !== 'hide');
+  const efforts = (m?: CodexModel) => m?.supported_reasoning_levels?.map((r) => r.effort) ?? ['low', 'medium', 'high'];
+  const own = list.find((m) => m.slug === configured);
+  return {
+    models: [
+      { id: '', label: `Default${configured ? ` (${configured})` : ''}`, efforts: efforts(own), defaultEffort: own?.default_reasoning_level },
+      ...shown.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, efforts: efforts(m), defaultEffort: m.default_reasoning_level })),
+    ],
+  };
+}
+export function codexCatalog(): Catalog {
+  if (codexModels && Date.now() - codexModels.at < 10 * 60_000) return codexModels.catalog;
+  const toml = existsSync(join(userCodexHome(), 'config.toml')) ? readFileSync(join(userCodexHome(), 'config.toml'), 'utf8') : '';
+  const configured = /^model\s*=\s*"([^"]*)"/m.exec(toml)?.[1];
+  const [bin, pre] = command();
+  const r = spawnSync(bin, [...pre, 'debug', 'models'], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  let catalog: Catalog;
+  try { catalog = parseCodexModels(r.stdout, configured); } catch { catalog = { models: [{ id: '', label: `Default${configured ? ` (${configured})` : ''}`, efforts: ['low', 'medium', 'high'] }] }; }
+  codexModels = { at: Date.now(), catalog };
+  return catalog;
+}
+
 export const codexSession: SessionAgent = {
   async turn({ session, root, prompt, history, emit, signal }) {
     const [bin, pre] = command();
@@ -143,8 +171,7 @@ export const codexSession: SessionAgent = {
     let done = false;
     let error: string | undefined;
     const { code, err } = await runLines(bin, [...pre, 'exec', '--json', '--skip-git-repo-check', '-C', root, ...(session.model ? ['-m', session.model] : []),
-      // Codex knows low, medium and high; the two higher workspace levels map to high.
-      ...(session.effort ? ['-c', `model_reasoning_effort="${session.effort === 'low' || session.effort === 'medium' ? session.effort : 'high'}"`] : []), text], { cwd: root, signal }, (line) => {
+      ...(session.effort ? ['-c', `model_reasoning_effort="${session.effort}"`] : []), text], { cwd: root, signal }, (line) => {
       let parsed;
       try { parsed = codexSessionEvents(line); } catch { return; }
       for (const ev of parsed.events) emit(ev);
@@ -155,4 +182,5 @@ export const codexSession: SessionAgent = {
     return { error: error ?? (done ? undefined : `codex exited ${code}: ${err.split('\n').pop() || 'no completed turn'}`) };
   },
   permissions: codexPermissions,
+  catalog: codexCatalog,
 };

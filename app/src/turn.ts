@@ -91,8 +91,9 @@ export async function hostSession(id: string): Promise<void> {
     while (existsSync(sessionFile(id, '.json'))) {
       if (pending(id)) {
         const session = loadSession(id);
-        // --effort is fixed per process: a changed level restarts it, resuming the same conversation.
-        if (proc && proc.effort !== session.effort) {
+        if (session.integration !== 'claude-code') break; // switched agents: a per-turn runner takes over
+        // Model and --effort are fixed per process: a change restarts it, resuming the same conversation.
+        if (proc && (proc.effort !== session.effort || proc.model !== session.model)) {
           proc.close();
           proc = undefined;
         }

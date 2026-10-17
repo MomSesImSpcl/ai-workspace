@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activityLabel, agentEnv, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
-import { codexSessionEvents } from '../src/adapters/codex.ts';
-import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, sessionRoot, setPinned, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
+import { codexSessionEvents, parseCodexModels } from '../src/adapters/codex.ts';
+import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, saveSession, sessionRoot, setPinned, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { listProjects, migrateStorage, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 const claude = { integration: 'claude-code' };
-const fake = (turn: SessionAgent['turn']): Record<string, SessionAgent> => ({ 'claude-code': { turn, permissions: () => ({ line: 'fake' }) } });
+const fake = (turn: SessionAgent['turn']): Record<string, SessionAgent> => ({ 'claude-code': { turn, permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }) } });
 
 test('sessions are listed only in their own project, newest activity first', async () => {
   const other = mkdtempSync(join(tmpdir(), 'ws-other-'));
@@ -275,4 +275,43 @@ test('storage mirrors the workspace and old flat folders are migrated without lo
   assert.equal(listSessions('TEST').some((s) => s.id === 'busy'), true);
   migrateStorage(); // idempotent
   assert.ok(existsSync(join(home, 'projects', 'A_ B', 'sessions', 'old1.jsonl')));
+});
+
+test('session agent config is checked against the catalog; a switch is marked and drops the old agent session', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const post = async (path: string, body: unknown) => {
+    const res = await fetch(base + path, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, data: await res.json() };
+  };
+  try {
+    const { data: s } = await post('/api/sessions', { projectId: 'TEST', role: 'Chat', model: 'opus', effort: 'max' });
+    assert.deepEqual([s.integration, s.model, s.effort], ['claude-code', 'opus', 'max']);
+    assert.equal((await post(`/api/sessions/${s.id}/config`, { effort: 'ultra' })).status, 400); // not a Claude Code level
+    assert.equal((await post(`/api/sessions/${s.id}/config`, { model: 'gpt-x' })).status, 400);
+    assert.equal((await post(`/api/sessions/${s.id}/config`, { integration: 'nope' })).status, 400);
+    addMessage(s.id, 'hi');
+    const saved = loadSession(s.id);
+    saved.vendorSessionId = 'old';
+    saveSession(saved);
+    const sw = await post(`/api/sessions/${s.id}/config`, { integration: 'codex' });
+    assert.equal(sw.status, 200);
+    assert.equal(loadSession(s.id).vendorSessionId, undefined);
+    assert.equal(loadSession(s.id).model, undefined); // the old agent's model does not carry over
+    assert.deepEqual(turns(readEvents(s.id), false)[0].switchedTo, { from: 'claude-code', to: 'codex', model: undefined });
+  } finally {
+    server.close();
+  }
+});
+
+test('codex model list is read from codex debug models, hidden models left out', () => {
+  const json = JSON.stringify({ models: [
+    { slug: 'm1', display_name: 'M1', visibility: 'list', default_reasoning_level: 'low', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'ultra' }] },
+    { slug: 'hidden', visibility: 'hide', supported_reasoning_levels: [{ effort: 'low' }] },
+  ] });
+  const c = parseCodexModels(json, 'm1');
+  assert.deepEqual(c.models.map((m) => m.id), ['', 'm1']);
+  assert.equal(c.models[0].label, 'Default (m1)');
+  assert.deepEqual(c.models[0].efforts, ['low', 'ultra']);
 });

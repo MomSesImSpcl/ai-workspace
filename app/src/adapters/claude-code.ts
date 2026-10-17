@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { addUsage, writeLiveUsage, type AgentAdapter, type StepResult, type Usage } from '../runtime.ts';
-import { type Body, type Session, type SessionAgent, type TurnInput } from '../sessions.ts';
+import { type Body, type Catalog, type Session, type SessionAgent, type TurnInput } from '../sessions.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 const TURNS_PER_STEP = 8;
@@ -202,6 +202,7 @@ export class ClaudeProcess {
   private err = '';
   fresh = true; // started without --resume: the next prompt must carry the earlier conversation
   effort?: string; // the level this process was started with; a change needs a new process
+  model?: string; // the model it was started with; likewise
   sessionId?: string;
 
   private session: Session;
@@ -222,6 +223,7 @@ export class ClaudeProcess {
     if (this.session.model) args.push('--model', this.session.model);
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     this.effort = this.session.effort;
+    this.model = this.session.model;
     if (this.effort) args.push('--effort', this.effort);
     args.push('--append-system-prompt', `AI Workspace session: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.`);
     if (resume) args.push('--resume', resume);
@@ -322,6 +324,15 @@ export class ClaudeProcess {
 
 // A single turn in its own process (used by tests and as the SessionAgent contract); the session host
 // keeps one ClaudeProcess for many turns instead.
+// Claude Code's documented model aliases (claude --help); the user's own default comes from their settings.
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+export function claudeCatalog(): Catalog {
+  let own: string | undefined;
+  try { own = (JSON.parse(readFileSync(join(claudeHome(), 'settings.json'), 'utf8')) as { model?: string }).model; } catch { /* no settings */ }
+  const models = [['', `Default${own ? ` (${own})` : ''}`], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
+  return { models: models.map(([id, label]) => ({ id: id!, label: label!, efforts: CLAUDE_EFFORTS })) };
+}
+
 export const claudeSession: SessionAgent = {
   async turn(input) {
     const proc = new ClaudeProcess(input.session, input.root);
@@ -335,4 +346,5 @@ export const claudeSession: SessionAgent = {
     }
   },
   permissions: claudePermissions,
+  catalog: claudeCatalog,
 };

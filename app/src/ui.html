@@ -121,6 +121,8 @@
   .chat-state:empty { display: none; }
   .chat-composer { display: grid; gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); }
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
+  .pickers { flex-wrap: nowrap; gap: 6px; }
+  .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -262,8 +264,12 @@
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><label class="field" style="display:flex;align-items:center;gap:6px">Effort<select id="effort" aria-label="Effort level">
-          <option value="">Default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra</option><option value="max">Max</option></select></label><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
+        <div class="row pickers">
+          <select id="agent" aria-label="Agent" title="Agent"></select>
+          <select id="model" aria-label="Model" title="Model"></select>
+          <select id="effort" aria-label="Effort level" title="Effort level"></select>
+        </div>
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
@@ -348,7 +354,7 @@ const pref = {
     api('/api/prefs', { key: k, value: v }).catch(() => {});
   },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, agents: {}, draft: null, session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -452,6 +458,26 @@ const sessionRows = (list, group) => list.map((s) => `<div class="session-row" d
     ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
     <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('');
 
+const EFFORT_LABELS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', ultra: 'Ultra' };
+const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+function pickerValues(s) {
+  if (s) return { integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
+  const chat = state.roles.Chat ?? { integration: 'claude-code' };
+  return state.draft ?? { integration: chat.integration, model: chat.model ?? '', effort: '' };
+}
+function renderPickers(s) {
+  if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
+  const v = pickerValues(s);
+  const catalog = state.agents[v.integration];
+  $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option(v.integration, v.integration, true);
+  const models = catalog?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+  $('#model').innerHTML = models.map((m) => option(m.id, m.label, m.id === v.model)).join('');
+  const efforts = (models.find((m) => m.id === v.model) ?? models[0]).efforts;
+  $('#effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
+  const working = !!s?.working;
+  for (const id of ['agent', 'model', 'effort']) $(`#${id}`).disabled = working || !catalog;
+}
+
 function renderSessions() {
   if (dragged) return; // a re-render during a drag would drop the dragged row
   const q = $('#session-filter').value.trim().toLowerCase();
@@ -483,8 +509,9 @@ function turnHtml(t) {
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
   const used = t.usage.inputTokens + t.usage.outputTokens;
+  const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${switched}`;
 }
 
 let shown = '';
@@ -510,7 +537,7 @@ function renderChat() {
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
-  if (document.activeElement?.id !== 'effort') $('#effort').value = s ? s.effort ?? '' : state.newEffort ?? '';
+  renderPickers(s);
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns]);
@@ -696,7 +723,16 @@ $('#session-filter').oninput = renderSessions;
 $('#show-archived').onchange = renderSessions;
 $('#stop').onclick = () => sessionAction('stop');
 // The level applies from the next message; a running reply keeps the level it started with.
-$('#effort').onchange = (e) => (state.session ? sessionAction('effort', { effort: e.target.value }) : (state.newEffort = e.target.value));
+async function pickerChanged(which) {
+  const s = state.sessionData?.session.id === state.session ? state.sessionData.session : null;
+  const v = { ...pickerValues(s), [which]: $(`#${which}`).value };
+  if (which === 'agent') v.integration = $('#agent').value, v.model = '', v.effort = '';
+  if (which === 'model') v.effort = '';
+  if (!s) { state.draft = v; return renderPickers(null); }
+  if (which === 'agent' && !(await ask(`Switch this session to ${v.integration}?`, `${v.integration} gets the conversation so far as text; it cannot resume ${s.integration}'s own session. The chat marks the switch.`, 'Switch'))) return renderPickers(s);
+  await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort });
+}
+for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
 
 // Styled confirmation (the native confirm() dialog does not match the workspace).
 function ask(title, text, ok, danger = false) {
@@ -858,8 +894,9 @@ $('#new').onsubmit = async (e) => {
   const f = new FormData(e.target);
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
-    const effort = $('#effort').value;
-    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', effort } : { projectId: state.project, role: 'Chat', effort })).id;
+    const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', ...config } : { projectId: state.project, role: 'Chat', ...config })).id;
+    state.draft = null;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';
@@ -943,6 +980,7 @@ $('#resizer').onkeydown = (e) => {
   state.tasks = await api('/api/tasks');
   setPage(state.page === 'tasks' && state.projects.length ? 'tasks' : 'projects');
   openSession(pref.get(`session.${state.project}`, '') || null);
+  api('/api/agents').then((agents) => { state.agents = agents; renderChat(); }).catch(() => {});
   setInterval(() => poll().catch(() => {}), 2000);
   // The open session refreshes faster while its agent works, so the reply streams in.
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);

@@ -4,8 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { addMessage, EFFORTS, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
-import { sessionAgent, startTurn } from './turn.ts';
+import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
@@ -77,12 +77,23 @@ function sessionView(s: Session) {
   return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
 }
 
-// '' or null clears the level, so the agent's own default applies.
-const effort = (v: unknown) => {
-  if (v === '' || v === null) return undefined;
-  if (!EFFORTS.includes(v as never)) throw new HttpError(400, `effort must be one of ${EFFORTS.join(', ')}`);
-  return v as (typeof EFFORTS)[number];
-};
+// Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
+// effort means the agent's own default.
+function agentConfig(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
+  const integration = b.integration === undefined ? current.integration : b.integration;
+  if (typeof integration !== 'string' || !sessionAgents[integration]) throw new HttpError(400, `agent must be one of ${Object.keys(sessionAgents).join(', ')}`);
+  const catalog = sessionAgents[integration]!.catalog();
+  const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
+  const model = pick(b.model, integration === current.integration ? current.model : undefined);
+  const entry = catalog.models.find((m) => m.id === (model ?? ''));
+  if (model !== undefined && (typeof model !== 'string' || !entry)) throw new HttpError(400, `model must be one of ${catalog.models.map((m) => m.id || 'default').join(', ')}`);
+  let effort = pick(b.effort, current.effort);
+  if (effort !== undefined && !(entry ?? catalog.models[0])?.efforts.includes(effort as string)) {
+    if (b.effort !== undefined) throw new HttpError(400, `effort must be one of ${(entry ?? catalog.models[0])?.efforts.join(', ')}`);
+    effort = undefined; // a kept level the new agent or model does not offer falls back to its default
+  }
+  return { integration, model: model as string | undefined, effort: effort as string | undefined };
+}
 
 const text = (v: unknown, name: string) => {
   if (typeof v !== 'string' || !v.trim()) throw new HttpError(400, `${name} is required`);
@@ -106,11 +117,10 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const role = text(b.role, 'role');
     const assignment = assignmentFor(role);
     sessionAgent(assignment.integration);
-    const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, assignment);
-    if (b.effort !== undefined) {
-      s.effort = effort(b.effort);
-      saveSession(s);
-    }
+    const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
+    const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
+    s.effort = config.effort;
+    saveSession(s);
     return sessionView(s);
   }
   const s = loadSession(id);
@@ -127,8 +137,16 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   } else if (action === 'rename') {
     s.title = text(b.title, 'title').slice(0, 120);
     saveSession(s);
-  } else if (action === 'effort') {
-    s.effort = effort(b.effort);
+  } else if (action === 'config') {
+    if (sessionWorking(id)) throw new HttpError(409, 'the agent is working; stop it or wait for the reply');
+    const config = agentConfig(b, s);
+    // A switch hands the conversation over as text: the new agent cannot resume the old one's session.
+    if (config.integration !== s.integration) {
+      const n = turns(readEvents(id), false).at(-1)?.n ?? 0;
+      emit(id, n, { type: 'switch', from: s.integration, to: config.integration, model: config.model });
+      s.vendorSessionId = undefined;
+    }
+    Object.assign(s, config);
     saveSession(s);
   } else if (action === 'pin') {
     setPinned(id, b.pinned === true);
@@ -162,6 +180,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
     return getRoles();
   }
+  if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});
   if (req.method === 'POST' && kind === 'prefs') {
     const b = await body(req);
