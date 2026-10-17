@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activityLabel, agentEnv, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
 import { codexSessionEvents } from '../src/adapters/codex.ts';
-import { addMessage, createSession, emit, listSessions, loadSession, readEvents, requestStop, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, sessionRoot, setPinned, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { listProjects, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
@@ -233,4 +233,21 @@ test('view state is stored in workspace storage and survives a new server (new p
       server.close();
     }
   }
+});
+
+test('global sessions run in the workspace folder; pinned sessions list first in their own order', () => {
+  assert.throws(() => createSession(GLOBAL, 'Chat', claude), /workspace folder/);
+  setWorkspaceRoot(root);
+  const g = createSession(GLOBAL, 'Chat', claude);
+  assert.equal(sessionRoot(g), root);
+  assert.deepEqual(listSessions(GLOBAL).map((s) => s.id), [g.id]);
+  assert.equal(listSessions('TEST').length, 0);
+  const [a, b, c] = ['a', 'b', 'c'].map(() => createSession('TEST', 'Chat', claude));
+  setPinned(a.id, true);
+  setPinned(c.id, true);
+  assert.deepEqual(listSessions('TEST').map((s) => s.id).slice(0, 2), [a.id, c.id]);
+  reorderPinned([c.id, a.id]);
+  assert.deepEqual(listSessions('TEST').map((s) => s.id), [c.id, a.id, b.id]);
+  setPinned(c.id, false);
+  assert.equal(listSessions('TEST')[0].id, a.id);
 });

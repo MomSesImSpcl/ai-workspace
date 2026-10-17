@@ -1,0 +1,5 @@
+# Global sessions and pinned sessions
+
+The session column now has a Global section below the project's sessions, with + New global session; global sessions run in the workspace folder (sessions-014, changed with the user from the earlier General space in an empty folder). Sessions can be pinned and unpinned from their menu; pinned ones list first, are marked 📌, and can be reordered by drag and drop within their section (sessions-026). Tests 34/34; pin, drag reorder and the new-global flow checked in the browser pane. Not done: a real agent turn in a global session (uses the same runner with the workspace folder as working directory, covered by a unit test of the folder choice). Branch `claude/chat-sessions-per-project-f82af3`.
+
+Files: `app/src/sessions.ts` (`GLOBAL`, `sessionRoot`, `pinOrder`, `setPinned`, `reorderPinned`), `app/src/turn.ts`, `app/src/ui.ts` (`?global=1`, `global: true` on create, `/pin`, `POST /api/sessions/order`), `app/src/ui.html`, test in `app/test/sessions.test.ts`.

@@ -73,6 +73,10 @@
   .session-item span:not(.dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-item small { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
   .session-row { position: relative; display: flex; align-items: center; }
+  .session-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .session-row[draggable=true] .session-item { cursor: grab; }
+  .pin { color: var(--text-muted); font-size: 10px; }
+  .list-head { display: flex; align-items: center; justify-content: space-between; margin: 12px 2px 4px; }
   .session-row .session-item { padding-right: 30px; }
   .menu-btn { position: absolute; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); cursor: pointer; opacity: 0; }
   .session-row:hover .menu-btn, .menu-btn:focus-visible, .menu-btn[aria-expanded=true] { opacity: 1; }
@@ -231,6 +235,7 @@
         <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
       <div class="menu" id="session-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="pin">Pin</button>
         <button role="menuitem" data-mact="rename">Rename</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
@@ -332,7 +337,7 @@ const pref = {
     api('/api/prefs', { key: k, value: v }).catch(() => {});
   },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -428,14 +433,27 @@ const took = (t) => {
 };
 const sessionState = (s) => s.working ? '<span class="dot s-running"></span>' : s.state === 'interrupted' || s.state === 'stopped' || s.state === 'error' ? '<small>⚠</small>' : '';
 
+const allSessions = () => [...state.sessions, ...state.globals];
+const isGlobal = (s) => s.projectId === '';
+
+// Pinned sessions come first (the server sorts them) and can be dragged to reorder.
+const sessionRows = (list, group) => list.map((s) => `<div class="session-row" data-row="${esc(s.id)}" data-group="${group}" ${s.pinOrder !== undefined ? 'draggable="true"' : ''}><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
+    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
+    <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('');
+
 function renderSessions() {
+  if (dragged) return; // a re-render during a drag would drop the dragged row
   const q = $('#session-filter').value.trim().toLowerCase();
   const archived = $('#show-archived').checked;
-  const list = state.sessions.filter((s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived));
-  $('#session-list').innerHTML = list.map((s) => `<div class="session-row" data-row="${esc(s.id)}"><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
-    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : ''}</small></button>
-    <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('')
-    || `<p class="empty" style="margin:4px 0">${current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'}</p>`;
+  const keep = (s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived);
+  const mine = state.sessions.filter(keep);
+  const globals = state.globals.filter(keep);
+  const empty = (text) => `<p class="empty" style="margin:4px 2px">${text}</p>`;
+  $('#session-list').innerHTML = (sessionRows(mine, 'project')
+    || empty(current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'))
+    + `<div class="list-head"><h2 class="eyebrow" style="margin:0">Global</h2></div>
+    <button class="btn small" id="new-global" type="button" style="margin-bottom:4px" ${state.workspaceRoot ? '' : 'disabled title="Set the workspace folder in Settings first"'}>+ New global session</button>`
+    + (sessionRows(globals, 'global') || empty(q || archived ? 'No matching sessions.' : 'Global sessions run in the workspace folder, outside any one project.'));
 }
 
 function activityList(t) {
@@ -470,33 +488,36 @@ function renderChat() {
       $('#rename').select();
     }
   } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
-    : '<span>New session: your first message starts it</span>';
+    : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
   const loaded = setup ? `<br>Loaded from ${esc(s.integration)}'s own setup: ${setup.plugins?.length ? `plugins ${esc(setup.plugins.join(', '))}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${failed.length ? ` · <span class="warn">⚠ not connected: ${esc(failed.map((m) => `${m.name} (${m.status})`).join(', '))}</span>` : ''}${setup.skills ? ` · ${setup.skills} skills` : ''}` : '';
   $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}${loaded}` : '';
-  $('#send').disabled = !current() || working;
+  const global = s ? isGlobal(s) : state.newGlobal;
+  $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
-  const key = JSON.stringify([state.session, !!current(), d?.turns]);
+  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns]);
   if (key === shown) return; // keep the reader's scroll position between polls
   shown = key;
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.innerHTML = d?.turns.map(turnHtml).join('')
-    || `<p class="empty">${current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects, right rail).'}</p>`;
+    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
 async function loadSessions() {
   state.sessions = state.project ? await api(`/api/sessions?project=${encodeURIComponent(state.project)}`) : [];
-  if (state.session && !state.sessions.some((s) => s.id === state.session)) state.session = null;
+  state.globals = await api('/api/sessions?global=1');
+  if (state.session && !allSessions().some((s) => s.id === state.session)) state.session = null;
   state.sessionData = state.session ? await api(`/api/sessions/${state.session}`) : null;
 }
 
-function openSession(id) {
+function openSession(id, newGlobal = false) {
   state.session = id;
+  state.newGlobal = !id && newGlobal;
   state.renaming = false;
   pref.set(`session.${state.project}`, id ?? '');
   shown = '';
@@ -598,6 +619,43 @@ const newSession = () => {
 $('#new-task-btn').onclick = newSession;
 $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
 $('#new-session').onclick = newSession;
+$('#session-list').addEventListener('click', (e) => {
+  if (!e.target.closest('#new-global')) return;
+  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
+  openSession(null, true);
+  $('[name=text]').focus();
+});
+let dragged = null;
+const pinnedRow = (e) => e.target.closest('.session-row[draggable=true]');
+$('#session-list').addEventListener('dragstart', (e) => {
+  const row = pinnedRow(e);
+  if (!row) return;
+  dragged = row;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', row.dataset.row);
+});
+$('#session-list').addEventListener('dragover', (e) => {
+  const row = pinnedRow(e);
+  if (!row || !dragged || row.dataset.group !== dragged.dataset.group) return;
+  e.preventDefault();
+  for (const r of $$('.drop-before')) r.classList.remove('drop-before');
+  if (row !== dragged) row.classList.add('drop-before');
+});
+$('#session-list').addEventListener('dragend', () => {
+  dragged = null;
+  for (const r of $$('.drop-before')) r.classList.remove('drop-before');
+});
+$('#session-list').addEventListener('drop', async (e) => {
+  const row = pinnedRow(e);
+  if (!row || !dragged || row === dragged || row.dataset.group !== dragged.dataset.group) return;
+  e.preventDefault();
+  const ids = $$(`.session-row[draggable=true][data-group=${row.dataset.group}]`).map((r) => r.dataset.row).filter((id) => id !== dragged.dataset.row);
+  ids.splice(ids.indexOf(row.dataset.row), 0, dragged.dataset.row);
+  dragged = null;
+  try { await api('/api/sessions/order', { ids }); } catch (err) { $('#new-error').textContent = err.message; }
+  await loadSessions();
+  render();
+});
 $('#session-filter').oninput = renderSessions;
 $('#show-archived').onchange = renderSessions;
 $('#stop').onclick = () => sessionAction('stop');
@@ -622,7 +680,7 @@ function ask(title, text, ok, danger = false) {
   });
 }
 
-const menuItem = (kind, id) => (kind === 'project' ? state.projects : state.sessions).find((v) => v.id === id);
+const menuItem = (kind, id) => (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id);
 function openMenu(kind, id, x, y) {
   const s = menuItem(kind, id);
   if (!s) return;
@@ -630,6 +688,8 @@ function openMenu(kind, id, x, y) {
   state.menu = { kind, id };
   const menu = $(`#${kind}-menu`);
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
+  const pin = menu.querySelector('[data-mact=pin]');
+  if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -665,6 +725,7 @@ async function menuAction(act, id) {
   closeMenu();
   const s = menuItem('session', id);
   if (!s) return;
+  if (act === 'pin') return sessionAction('pin', { pinned: s.pinOrder === undefined }, id);
   if (act === 'rename') {
     if (state.session !== id) { state.session = id; await loadSessions(); }
     state.renaming = true;
@@ -758,8 +819,8 @@ $('#new').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   try {
-    if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const id = state.session ?? (await api('/api/sessions', { projectId: state.project, role: 'Chat' })).id;
+    if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat' } : { projectId: state.project, role: 'Chat' })).id;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';

@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appendJsonl, audit, getProject, home, readJson, writeJson } from './store.ts';
+import { appendJsonl, audit, getProject, getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
 import { addUsage, type Usage } from './runtime.ts';
 
 // A session is a conversation in one project (sessions-001/002). Its history is an append-only
@@ -15,6 +15,7 @@ export interface Session {
   integration: string;
   model?: string;
   archived?: boolean;
+  pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
   createdAt: string;
   updatedAt: string;
@@ -100,15 +101,48 @@ export function loadSession(id: string): Session {
   return s;
 }
 
+// Global sessions belong to no project; they run in the workspace folder (sessions-014).
+export const GLOBAL = '';
+
+export function sessionRoot(s: Pick<Session, 'projectId'>): string {
+  if (s.projectId !== GLOBAL) return getProject(s.projectId).root;
+  const root = getWorkspaceRoot();
+  if (!root) throw new Error('Session is global: set the workspace folder in Settings first');
+  return root;
+}
+
+// Pinned first (in their pin order), then newest activity first.
 export function listSessions(projectId: string): Session[] {
   if (!existsSync(dir())) return [];
   return readdirSync(dir()).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5)))
-    .filter((s) => s.projectId === projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .filter((s) => s.projectId === projectId)
+    .sort((a, b) => (a.pinOrder ?? Infinity) - (b.pinOrder ?? Infinity) || b.updatedAt.localeCompare(a.updatedAt));
+}
+
+// Pinning does not count as activity, so updatedAt stays as it was.
+function savePin(s: Session, pinOrder: number | undefined): void {
+  s.pinOrder = pinOrder;
+  writeJson(sessionPath(s.id), s);
+}
+
+export function setPinned(id: string, pinned: boolean): Session {
+  const s = loadSession(id);
+  const last = Math.max(-1, ...listSessions(s.projectId).map((x) => x.pinOrder ?? -1));
+  savePin(s, pinned ? (s.pinOrder ?? last + 1) : undefined);
+  return s;
+}
+
+// Drag and drop: the pinned sessions of one list in their new order.
+export function reorderPinned(ids: string[]): void {
+  ids.forEach((id, i) => {
+    const s = loadSession(id);
+    if (s.pinOrder !== undefined) savePin(s, i);
+  });
 }
 
 // The agent and model come from the role's assignment (Settings), like tasks.
 export function createSession(projectId: string, role: string, assignment: { integration: string; model?: string }): Session {
-  getProject(projectId);
+  sessionRoot({ projectId });
   const now = new Date().toISOString();
   const s: Session = { id: randomUUID().slice(0, 8), projectId, title: 'New session', role, ...assignment, createdAt: now, updatedAt: now };
   saveSession(s);

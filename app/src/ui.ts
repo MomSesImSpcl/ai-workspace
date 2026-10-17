@@ -4,10 +4,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { addMessage, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -82,19 +82,24 @@ const text = (v: unknown, name: string) => {
 };
 
 async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?: string): Promise<unknown> {
-  if (req.method === 'GET' && !id) return listSessions(text(url.searchParams.get('project'), 'project')).map(sessionView);
+  if (req.method === 'GET' && !id) return listSessions(url.searchParams.get('global') ? GLOBAL : text(url.searchParams.get('project'), 'project')).map(sessionView);
   if (req.method === 'GET' && !action) {
     const s = loadSession(id!);
     const working = turnRunning(s.id);
-    return { session: sessionView(s), turns: turns(readEvents(s.id), working), permissions: sessionAgent(s.integration).permissions(getProject(s.projectId).root) };
+    return { session: sessionView(s), turns: turns(readEvents(s.id), working), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
   }
   if (req.method !== 'POST') throw new HttpError(404, 'not found');
   const b = await body(req);
+  if (id === 'order') {
+    if (!Array.isArray(b.ids) || !b.ids.every((v) => typeof v === 'string' && /^[\w-]+$/.test(v))) throw new HttpError(400, 'ids must be session ids');
+    reorderPinned(b.ids as string[]);
+    return { ok: true };
+  }
   if (!id) {
     const role = text(b.role, 'role');
     const assignment = assignmentFor(role);
     sessionAgent(assignment.integration);
-    return sessionView(createSession(text(b.projectId, 'projectId'), role, assignment));
+    return sessionView(createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, assignment));
   }
   const s = loadSession(id);
   if (action === 'message') {
@@ -110,6 +115,8 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   } else if (action === 'rename') {
     s.title = text(b.title, 'title').slice(0, 120);
     saveSession(s);
+  } else if (action === 'pin') {
+    setPinned(id, b.pinned === true);
   } else if (action === 'archive') {
     s.archived = b.archived === true;
     saveSession(s);
