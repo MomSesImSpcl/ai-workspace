@@ -3,9 +3,11 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getRoles, integrations, newRoleTask, setRole } from './roles.ts';
+import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
+import { addMessage, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
+import { sessionAgent, startTurn } from './turn.ts';
 import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { home, listProjects, registerProject } from './store.ts';
+import { getProject, home, listProjects, registerProject } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -66,10 +68,62 @@ function view(task: Task) {
   return { ...task, messages: conversation(task), runnerAlive: task.status === 'running' && runnerAlive(task.id) };
 }
 
+// shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
+function sessionView(s: Session) {
+  const working = turnRunning(s.id);
+  const last = turns(readEvents(s.id), working).at(-1);
+  return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
+}
+
+const text = (v: unknown, name: string) => {
+  if (typeof v !== 'string' || !v.trim()) throw new HttpError(400, `${name} is required`);
+  return v.trim();
+};
+
+async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?: string): Promise<unknown> {
+  if (req.method === 'GET' && !id) return listSessions(text(url.searchParams.get('project'), 'project')).map(sessionView);
+  if (req.method === 'GET' && !action) {
+    const s = loadSession(id!);
+    const working = turnRunning(s.id);
+    return { session: sessionView(s), turns: turns(readEvents(s.id), working), permissions: sessionAgent(s.integration).permissions(getProject(s.projectId).root) };
+  }
+  if (req.method !== 'POST') throw new HttpError(404, 'not found');
+  const b = await body(req);
+  if (!id) {
+    const role = text(b.role, 'role');
+    const assignment = assignmentFor(role);
+    sessionAgent(assignment.integration);
+    return sessionView(createSession(text(b.projectId, 'projectId'), role, assignment));
+  }
+  const s = loadSession(id);
+  if (action === 'message') {
+    addMessage(id, text(b.text, 'text'));
+    startTurn(id);
+  } else if (action === 'stop') {
+    if (turnRunning(id)) requestStop(id);
+  } else if (action === 'approve') {
+    const last = turns(readEvents(id), turnRunning(id)).at(-1);
+    const pending = last?.state === 'working' && last.approvals.find((a) => a.id === b.approval && a.allow === undefined);
+    if (!pending || typeof b.allow !== 'boolean') throw new HttpError(409, 'no such pending approval');
+    emit(id, last.n, { type: 'approval-answer', id: pending.id, allow: b.allow });
+  } else if (action === 'rename') {
+    s.title = text(b.title, 'title').slice(0, 120);
+    saveSession(s);
+  } else if (action === 'archive') {
+    s.archived = b.archived === true;
+    saveSession(s);
+  } else if (action === 'delete') {
+    deleteSession(id);
+    return { deleted: id };
+  } else throw new HttpError(404, 'not found');
+  return sessionView(loadSession(id));
+}
+
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const [, api, kind, id, action] = url.pathname.split('/');
   if (api !== 'api') throw new HttpError(404, 'not found');
-  if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad task id');
+  if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad id');
+  if (kind === 'sessions') return sessionRoute(req, url, id, action);
   if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
   if (req.method === 'GET' && kind === 'tasks') {
@@ -131,7 +185,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^No assignment|no runnable adapter|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

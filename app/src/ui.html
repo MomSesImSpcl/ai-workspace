@@ -57,7 +57,26 @@
   .app[data-sidebar=collapsed] .body { grid-template-columns: 0 minmax(0,1fr) auto 48px; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
-  /* Chat column: the selected task's conversation, full height. */
+  /* Chat column: the project's sessions above the open session, full height. */
+  .sessions { display: grid; gap: 6px; padding: 10px 15px; border-bottom: 1px solid var(--hairline); }
+  .sessions .row { align-items: center; }
+  .session-list { display: grid; gap: 2px; max-height: 28vh; overflow: auto; }
+  .session-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 9px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
+  .session-item:hover { background: var(--surface-2); }
+  .session-item[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
+  .session-item span:not(.dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-item small { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+  .badge { padding: 0 6px; border-radius: 9px; background: var(--amber); color: #1a1918; font-size: 10px; font-weight: 700; }
+  .perm { padding: 6px 18px 0; font-size: 11px; color: var(--text-muted); }
+  .perm .warn, .flag { color: var(--amber); font-weight: 600; }
+  .turn-activity { align-self: stretch; font-size: 12px; color: var(--text-dim); border-left: 2px solid var(--hairline-strong); padding: 2px 0 2px 10px; }
+  .turn-activity summary { cursor: pointer; color: var(--text-muted); }
+  .turn-activity ol { margin: 4px 0 0; padding-left: 18px; }
+  .turn-activity li.err { color: var(--red); }
+  .turn-activity li.run::marker { color: var(--blue); }
+  .marker { margin-top: 4px; color: var(--amber); font-weight: 600; }
+  .approval { align-self: stretch; padding: 10px 12px; border: 1px solid var(--accent-edge); border-radius: 10px; background: var(--accent-dim); display: grid; gap: 6px; }
+  .approval code, .turn-activity code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
   .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--hairline); }
   .sidebar { position: relative; }
   .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
@@ -188,17 +207,24 @@
         <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
         <button class="link-btn" data-tool="projects">Switch ↗</button>
       </div>
-      <div class="chat-title" id="chat-title"></div>
+      <div class="sessions">
+        <div class="row">
+          <label class="field" style="flex:1">Agent for a new session<select id="session-role"></select></label>
+          <button class="btn small" id="new-session" type="button">New session</button>
+        </div>
+        <div class="row">
+          <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions" style="flex:1">
+          <label class="check"><input id="show-archived" type="checkbox"> Archived</label>
+        </div>
+        <div class="session-list" id="session-list"></div>
+      </div>
+      <div class="chat-title row" id="chat-title" style="justify-content:space-between;align-items:center"></div>
+      <div class="perm" id="perm"></div>
       <div class="messages" id="messages" aria-live="polite"></div>
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
-        <textarea name="goal" required aria-label="Message"></textarea>
-        <div class="row" id="new-options">
-          <label class="field">Role<select name="role"></select></label>
-          <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
-          <label class="check"><input name="write" type="checkbox"> Allow writes</label>
-        </div>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><button class="btn primary small" id="send">Send</button></div>
+        <textarea name="text" required aria-label="Message"></textarea>
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
@@ -208,7 +234,17 @@
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:24px">Delegated work for this project. Select a task to open its conversation in the chat. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <p class="lede" style="margin-bottom:24px">Delegated work for this project. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <form class="card" id="new-task" style="display:grid;gap:8px;margin-bottom:20px">
+          <textarea name="goal" required aria-label="Task goal" placeholder="What should the agent do?"></textarea>
+          <div class="row">
+            <label class="field">Role<select name="role"></select></label>
+            <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
+            <label class="check"><input name="write" type="checkbox"> Allow writes</label>
+            <button class="btn primary small">Start task</button>
+          </div>
+          <p class="error" id="task-error" role="alert"></p>
+        </form>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -255,7 +291,7 @@ const pref = {
   get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'overview'), tool: null, selected: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'overview'), tool: null, selected: null, sessions: [], session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -303,7 +339,7 @@ function selectProject(id) {
   state.project = id;
   state.selected = null;
   pref.set('project', id);
-  render();
+  openSession(pref.get(`session.${id}`, '') || null);
   renderDrawer();
 }
 
@@ -345,31 +381,98 @@ function renderOverview() {
       <div><strong>${cache.toLocaleString()}</strong><span>prompt-cache tokens</span></div>
     </div>
     <div class="section-head"><h2>Recent tasks</h2><span>${mine.length ? 'latest first' : ''}</span></div>
-    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one in the chat.</p>'}</div>`;
+    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one from Tasks.</p>'}</div>`;
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
   <span class="goal">${esc(t.goal)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
 
-// The chat shows the selected task's conversation; with none selected, the next message starts a task.
+// Chat column: the project's sessions and the open session's turns, built from its event log.
+const code = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+const took = (t) => {
+  const s = Math.round((new Date(t.endedAt) - new Date(t.startedAt)) / 1000);
+  return s < 60 ? `${s}s` : `${Math.round(s / 60)} min`;
+};
+const sessionState = (s) => s.working ? '<span class="dot s-running"></span>' : s.state === 'interrupted' || s.state === 'stopped' || s.state === 'error' ? '<small>⚠</small>' : '';
+
+function renderSessions() {
+  const q = $('#session-filter').value.trim().toLowerCase();
+  const archived = $('#show-archived').checked;
+  const list = state.sessions.filter((s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived));
+  $('#session-list').innerHTML = list.map((s) => `<button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
+    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived · ' : ''}${esc(s.integration)}</small></button>`).join('')
+    || `<p class="empty" style="margin:4px 0">${current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'}</p>`;
+}
+
+function activityList(t) {
+  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
+  const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
+  return `<ol>${items}${answered}</ol>`;
+}
+
+// Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
+function turnHtml(t) {
+  const steps = t.activity.length;
+  const activity = !steps && !t.marker && !t.approvals.length ? ''
+    : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
+    : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
+  const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>
+    <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
+  const used = t.usage.inputTokens + t.usage.outputTokens;
+  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${cards}
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}`;
+}
+
 let shown = '';
 function renderChat() {
-  const t = state.tasks.find((x) => x.id === state.selected);
-  const busy = t?.status === 'running' && t.runnerAlive;
-  $('#chat-title').textContent = t ? `Task ${t.id} · ${t.role} · ${t.write ? 'writes allowed' : 'read-only'}` : 'New chat: your first message becomes the task goal';
-  $('#new-options').hidden = !!t;
-  $('#send').disabled = !current() || busy || t?.status === 'cancelled';
-  $('[name=goal]').placeholder = t ? 'Reply to continue this task. Enter sends, Shift+Enter adds a line.' : 'What should the agent do? Enter sends, Shift+Enter adds a line.';
-  $('#chat-state').innerHTML = !t ? '' : busy ? `<span class="dot s-running"></span> Working… ${summary(t)}`
-    : t.status === 'running' ? 'Runner stopped. Resume it from Tasks.'
-    : ['paused', 'failed', 'cancelled'].includes(t.status) ? `${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}` : '';
-  const messages = t?.messages ?? [];
-  const key = `${t?.id}:${messages.length}:${!!current()}`;
+  renderSessions();
+  const d = state.sessionData?.session.id === state.session ? state.sessionData : null;
+  const s = d?.session;
+  const working = !!s?.working;
+  if (s && state.renaming) {
+    if (document.activeElement?.id !== 'rename') {
+      $('#chat-title').innerHTML = `<form id="rename-form" class="row" style="flex:1"><input id="rename" value="${esc(s.title)}" aria-label="Session name" style="flex:1"><button class="btn small">Save</button></form>`;
+      $('#rename').select();
+    }
+  } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b><span class="row" style="flex:none">
+      <button class="link-btn" data-sact="rename">Rename</button><button class="link-btn" data-sact="archive">${s.archived ? 'Restore' : 'Archive'}</button><button class="link-btn" data-sact="delete">Delete</button></span>`
+    : '<span>New session: your first message starts it</span>';
+  $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}` : '';
+  $('#send').disabled = !current() || working;
+  $('#stop').hidden = !working;
+  $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
+  $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
+  const key = JSON.stringify([state.session, !!current(), d?.turns]);
   if (key === shown) return; // keep the reader's scroll position between polls
   shown = key;
-  $('#messages').innerHTML = messages.map((m) => `<div class="msg ${m.from === 'user' ? 'user' : 'agent'}">${esc(m.text)}<time>${new Date(m.at).toLocaleTimeString()}</time></div>`).join('')
-    || `<p class="empty">${current() ? 'Describe a task below to start it.' : 'Add a project first (Projects, right rail).'}</p>`;
-  $('#messages').scrollTop = $('#messages').scrollHeight;
+  const box = $('#messages');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = d?.turns.map(turnHtml).join('')
+    || `<p class="empty">${current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects, right rail).'}</p>`;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function loadSessions() {
+  state.sessions = state.project ? await api(`/api/sessions?project=${encodeURIComponent(state.project)}`) : [];
+  if (state.session && !state.sessions.some((s) => s.id === state.session)) state.session = null;
+  state.sessionData = state.session ? await api(`/api/sessions/${state.session}`) : null;
+}
+
+function openSession(id) {
+  state.session = id;
+  state.renaming = false;
+  pref.set(`session.${state.project}`, id ?? '');
+  shown = '';
+  loadSessions().then(render).catch(() => {});
+}
+
+async function sessionAction(act, body = {}) {
+  try {
+    await api(`/api/sessions/${state.session}/${act}`, body);
+    $('#new-error').textContent = '';
+  } catch (err) { $('#new-error').textContent = err.message; }
+  await loadSessions();
+  render();
 }
 
 async function renderTasks() {
@@ -394,7 +497,7 @@ async function renderTasks() {
       <button class="btn small" data-act="cancel" ${done ? 'disabled' : ''}>Cancel</button>
     </div>
     <p class="error" id="detail-error" role="alert"></p>
-    ${t.result ? `<h3>Result</h3><pre>${esc(t.result)}</pre>` : ''}
+    <h3>Conversation</h3><div class="messages" style="padding:0">${t.messages.map((m) => `<div class="msg ${m.from === 'user' ? 'user' : 'agent'}">${esc(m.text)}<time>${new Date(m.at).toLocaleString()}</time></div>`).join('')}</div>
     ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
     <h3>Audit</h3><pre>${esc(events.map((e) => `${e.at.slice(11, 19)} ${e.kind} ${e.event ?? e.tool ?? ''}${e.path ? ' ' + e.path : ''}${e.allowed === false ? ' DENIED: ' + e.reason : ''}${e.reason && e.allowed === undefined ? ' — ' + e.reason : ''}${e.step ? ' step ' + e.step : ''}`).join('\n')) || 'none'}</pre>
     <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
@@ -426,11 +529,14 @@ async function load() {
   const meta = await api('/api/meta');
   Object.assign(state, meta);
   if (!state.projects.some((p) => p.id === state.project)) state.project = state.projects[0]?.id ?? null;
-  $('[name=role]').innerHTML = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}</option>`).join('');
+  const roleOptions = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}${a.model ? ` (${esc(a.model)})` : ''}</option>`).join('');
+  $('[name=role]').innerHTML = roleOptions;
+  $('#session-role').innerHTML = roleOptions;
 }
 
 async function poll() {
   state.tasks = await api('/api/tasks');
+  await loadSessions();
   render();
 }
 
@@ -446,16 +552,38 @@ for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
 $('#close-drawer').onclick = () => setTool(state.tool);
 const newTask = () => {
   state.selected = null;
-  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
-  render();
+  setPage('tasks');
   $('[name=goal]').focus();
 };
-$('#new-task-btn').onclick = newTask;
+// A new session is created with its first message, so empty sessions do not pile up.
+const newSession = () => {
+  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
+  openSession(null);
+  $('[name=text]').focus();
+};
+$('#new-task-btn').onclick = newSession;
+$('#new-session').onclick = newSession;
+$('#session-filter').oninput = renderSessions;
+$('#show-archived').onchange = renderSessions;
+$('#stop').onclick = () => sessionAction('stop');
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project]');
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-sact],[data-approve]');
   if (!el) return;
   if (el.dataset.project) return selectProject(el.dataset.project);
+  if (el.dataset.session) return openSession(el.dataset.session);
+  if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
+  if (el.dataset.sact === 'archive') return sessionAction('archive', { archived: !state.sessionData.session.archived });
+  if (el.dataset.sact === 'rename') {
+    state.renaming = true;
+    renderChat();
+    return $('#rename').focus();
+  }
+  if (el.dataset.sact === 'delete') {
+    if (!confirm(`Delete "${state.sessionData.session.title}" permanently? Its history is removed; tasks it started are kept in the Tasks view. Archive keeps it instead.`)) return;
+    await sessionAction('delete');
+    return openSession(null);
+  }
   if (el.dataset.action === 'new-task') return newTask();
   if (el.dataset.action === 'view-tasks') return setPage('tasks');
   if (el.dataset.action === 'add-project') return state.tool !== 'projects' && setTool('projects');
@@ -468,8 +596,33 @@ document.addEventListener('click', async (e) => {
   if (state.page !== 'tasks') setPage('tasks'); else render();
 });
 
+// Rename edits the title in place (Electron has no window.prompt); Escape or leaving the field cancels.
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'rename-form') return;
+  e.preventDefault();
+  const title = $('#rename').value;
+  state.renaming = false;
+  if (title.trim()) sessionAction('rename', { title }); else renderChat();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'rename' && e.key === 'Escape') { state.renaming = false; renderChat(); }
+});
+
+$('#new-task').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    if (!state.project) throw new Error('Add a project first (Projects, right rail).');
+    const t = await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
+    state.selected = t.id;
+    e.target.goal.value = '';
+    $('#task-error').textContent = '';
+    await poll();
+  } catch (err) { $('#task-error').textContent = err.message; }
+};
+
 // Enter sends; Shift+Enter adds a line break.
-$('[name=goal]').onkeydown = (e) => {
+$('[name=text]').onkeydown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };
 $('#new').onsubmit = async (e) => {
@@ -477,13 +630,11 @@ $('#new').onsubmit = async (e) => {
   const f = new FormData(e.target);
   try {
     if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const t = state.selected
-      ? await api(`/api/tasks/${state.selected}/reply`, { text: f.get('goal') })
-      : await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
-    state.selected = t.id;
-    e.target.goal.value = '';
+    const id = state.session ?? (await api('/api/sessions', { projectId: state.project, role: $('#session-role').value })).id;
+    await api(`/api/sessions/${id}/message`, { text: f.get('text') });
+    e.target.text.value = '';
     $('#new-error').textContent = '';
-    await poll();
+    openSession(id);
   } catch (err) { $('#new-error').textContent = err.message; }
 };
 
@@ -542,7 +693,10 @@ $('#resizer').onkeydown = (e) => {
   state.tasks = await api('/api/tasks');
   setPage(state.page === 'tasks' ? 'tasks' : 'overview');
   if (!state.projects.length) setTool('projects');
+  openSession(pref.get(`session.${state.project}`, '') || null);
   setInterval(() => poll().catch(() => {}), 2000);
+  // The open session refreshes faster while its agent works, so the reply streams in.
+  setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
 })();
 </script>
 </body>
