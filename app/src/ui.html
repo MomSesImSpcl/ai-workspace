@@ -206,7 +206,7 @@
     <button class="icon-btn" id="toggle-sidebar" aria-label="Toggle chat" aria-expanded="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg>
     </button>
-    <nav class="crumbs" aria-label="Breadcrumb"><span>Workspace</span><i>/</i><button class="crumb-btn" id="crumb" type="button">No project</button></nav>
+    <nav class="crumbs" aria-label="Breadcrumb"><button class="crumb-btn" id="crumb-workspace" type="button" style="font-weight:400;color:var(--text-dim)">Workspace</button><i>/</i><button class="crumb-btn" id="crumb" type="button">No project</button></nav>
     <div class="nav" aria-label="Pages">
       <button data-page="projects">Projects</button>
       <button data-page="tasks">Tasks</button>
@@ -288,6 +288,10 @@
     <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title">
       <header><h2 id="drawer-title"></h2><button class="icon-btn" id="close-drawer" aria-label="Close panel">✕</button></header>
       <div id="drawer-settings" hidden>
+        <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
+          <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
+          <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
+          <div class="row"><button class="btn small">Save</button><span class="meta" id="workspace-saved"></span></div></form>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
@@ -363,6 +367,9 @@ function selectProject(id) {
 
 function renderShell() {
   const p = current();
+  $('#crumb-workspace').title = state.workspaceRoot ? `${state.workspaceRoot}${window.desktop ? '\nClick to open the folder' : ''}` : 'Set the workspace folder in Settings';
+  $('#crumb-workspace').disabled = !state.workspaceRoot || !window.desktop;
+  if (document.activeElement?.name !== 'root') $('[name=root]').value = state.workspaceRoot ?? '';
   $('#crumb').textContent = p?.id ?? 'No project';
   $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
   $('#crumb').disabled = !p || !window.desktop;
@@ -705,9 +712,24 @@ $('#new').onsubmit = async (e) => {
 // Browsers never reveal a folder's full path; the desktop app's native dialog does.
 $('[name=path]').onclick = async (e) => {
   if (!window.desktop) return;
-  const path = await window.desktop.pickFolder();
+  const path = await window.desktop.pickFolder('Select the project folder', state.workspaceRoot ?? undefined);
   if (path) e.target.value = path;
 };
+$('[name=root]').onclick = async (e) => {
+  if (!window.desktop) return;
+  const path = await window.desktop.pickFolder('Select the workspace folder', state.workspaceRoot ?? undefined);
+  if (path) e.target.value = path;
+};
+$('#workspace-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/workspace', { root: new FormData(e.target).get('root') });
+    await load();
+    render();
+    $('#workspace-saved').textContent = 'Saved';
+  } catch (err) { $('#workspace-saved').textContent = err.message; }
+};
+$('#crumb-workspace').onclick = () => state.workspaceRoot && window.desktop?.openFolder(state.workspaceRoot);
 $('#project').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);

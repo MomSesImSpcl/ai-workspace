@@ -50,6 +50,18 @@ export function registerProject(root: string, id = basename(root)): Project {
   return project;
 }
 
+// The workspace's root folder: where its projects usually live (identity-projects 1.4). Optional;
+// projects outside it stay allowed.
+const workspacePath = () => join(home(), 'workspace.json');
+export const getWorkspaceRoot = (): string | undefined => readJson<{ root?: string }>(workspacePath(), {}).root;
+
+export function setWorkspaceRoot(root: string): string {
+  if (!isAbsolute(root)) throw new Error(`Workspace folder must be absolute: ${root}`);
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`Not a directory: ${root}`);
+  writeJson(workspacePath(), { root });
+  return root;
+}
+
 export function getProject(id: string): Project {
   const project = listProjects().find((p) => p.id === id);
   if (!project) throw new Error(`Unknown project: ${id}`);

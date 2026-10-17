@@ -50,8 +50,10 @@ function createWindow(url) {
   return win;
 }
 
-ipcMain.handle('pick-folder', async (event) => {
-  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Select the project folder', properties: ['openDirectory'] });
+// Starts in the given folder (the workspace root) when it exists.
+ipcMain.handle('pick-folder', async (event, title, start) => {
+  const defaultPath = typeof start === 'string' && existsSync(start) ? start : undefined;
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: typeof title === 'string' ? title : 'Select a folder', defaultPath, properties: ['openDirectory'] });
   return result.canceled ? null : result.filePaths[0];
 });
 

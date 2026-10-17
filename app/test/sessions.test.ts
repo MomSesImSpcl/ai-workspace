@@ -165,3 +165,19 @@ test('variables of a Claude Code host are dropped so the settings env of the use
   assert.deepEqual(agentEnv({ PATH: 'p', ANTHROPIC_BASE_URL: 'x' }), { PATH: 'p', ANTHROPIC_BASE_URL: 'x' });
   assert.deepEqual(agentEnv({ PATH: 'p', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'd', ANTHROPIC_BASE_URL: 'x' }), { PATH: 'p' });
 });
+
+test('workspace folder is stored only when it is an existing absolute folder', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const set = (root: string) => fetch(`${base}/api/workspace`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ root }) });
+  try {
+    assert.equal((await (await fetch(`${base}/api/meta`)).json()).workspaceRoot, null);
+    assert.equal((await set('relative/dir')).status, 400);
+    assert.equal((await set(join(root, 'missing'))).status, 400);
+    assert.equal((await set(root)).status, 200);
+    assert.equal((await (await fetch(`${base}/api/meta`)).json()).workspaceRoot, root);
+  } finally {
+    server.close();
+  }
+});

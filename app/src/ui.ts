@@ -7,7 +7,7 @@ import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './r
 import { addMessage, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { getProject, home, listProjects, registerProject } from './store.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, registerProject, setWorkspaceRoot } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -124,7 +124,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (api !== 'api') throw new HttpError(404, 'not found');
   if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations };
+  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
   if (req.method === 'GET' && kind === 'tasks') {
     const task = loadTask(id);
@@ -136,6 +136,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (b.model !== undefined && typeof b.model !== 'string') throw new HttpError(400, 'model must be a string');
     setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
     return getRoles();
+  }
+  if (req.method === 'POST' && kind === 'workspace') {
+    const b = await body(req);
+    if (typeof b.root !== 'string' || !b.root.trim()) throw new HttpError(400, 'root is required');
+    return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects') {
     const b = await body(req);
@@ -185,7 +190,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Workspace folder |^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });
