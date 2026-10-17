@@ -5,11 +5,11 @@
 
 | Concern | Technologies discussed / candidates | Selection note |
 |---|---|---|
-| Desktop shell | **Tauri 2**, Rust; alternatively Electron or native UI | Tauri is attractive, not mandatory. Keep desktop OS glue thin. *Desktop client chose:* Electron; [ADR 0003](architecture/decisions/0003-electron-workspace-shell.md). |
+| Desktop shell | **Chosen: Electron** ([ADR 0003](architecture/decisions/0003-electron-workspace-shell.md)). Considered: Tauri 2, native UI | Keeps the stack in Node and gives a native folder dialog; Tauri would add a Rust toolchain and a different webview per OS to test, and its smaller size does not matter for a personal tool. Keep desktop OS glue thin. |
 | Web/mobile UI | **React + TypeScript**, Vite, responsive PWA | Component sharing is useful; other frameworks acceptable. |
-| Workspace/control-plane backend | **Go** or **ASP.NET Core/.NET (C#)** | Both discussed; neither is mandated. Prefer a modular monolith first if suitable. *Core slice 1 chose:* TypeScript on Node 24 for the core CLI; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
+| Workspace/control-plane backend | **Chosen: TypeScript on Node 24**, no build step ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). Considered: Go, ASP.NET Core/.NET (C#) | First-class MCP and Claude Agent SDKs, and one language for core, desktop and browser UI. Modular monolith. |
 | Workstation agent/runner | Go worker, .NET Worker Service, Rust helpers | Cross-platform process supervision, secure IPC and straightforward deployment matter most. |
-| Durable workflows | **Temporal** or simpler DB-backed workflow engine | Evaluate operational overhead; Temporal is a candidate, not foundational requirement. *Core slice 1 chose:* atomic JSON task files, no workflow engine; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
+| Durable workflows | **Chosen: atomic JSON task files**, no workflow engine ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). Considered: Temporal, DB-backed workflow engine | Enough for one local user with restart-safe tasks and no extra service to run; revisit with concurrency or multiple users. |
 | Agent orchestration integration | **Hermes Agent** | Concrete use case and adoption remain open; see the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
 | Long-term memory engine | **Hindsight** | Concrete use case and adoption remain open; resolve `knowledge-001` and source ACLs through the separate [evaluation and integration feature](features/hermes-hindsight/SUMMARY.md). |
 | Persistent relational state | **PostgreSQL** | Solid default; alternative must provide migrations, durability and correct transactions. |
@@ -24,7 +24,7 @@
 | TypeScript/JavaScript, HTML, CSS analysis ([code-index 7.2.1](features/code-index/SPEC.md#721-language-analysis)) | **TypeScript Compiler API + Language Service** or `ts-morph`; `vscode-html-languageservice` with `parse5` or `htmlparser2`; `vscode-css-languageservice` with PostCSS and `postcss-selector-parser`; LSP or Tree-sitter for other languages | Tree-sitter gives syntax only, not type resolution. |
 | Runtime UI verification ([ui-verification](features/ui-verification/SPEC.md)) | **Playwright**, Chromium DevTools Protocol | Must drive an Electron instance alongside the user's own. |
 | Local/ML workers | Python, PyTorch/Transformers, model servers | Python is useful for AI/CV/3D without being the whole platform backend. |
-| AI gateway | Custom interface/adapters, appropriate gateway libraries | Feature fidelity, data privacy, credentials and portability matter. *Core slice 1 chose:* agent CLIs (Claude Code, Codex) behind a workspace adapter interface; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
+| AI gateway | **Chosen: agent CLIs (Claude Code, Codex) behind a workspace adapter interface** ([ADR 0001](architecture/decisions/0001-core-slice-stack.md)). Considered: gateway libraries, paid provider APIs | Runs on the user's existing subscriptions instead of paid APIs, and any agent can take any role. |
 | App integrations | MCP, Unity Editor APIs, Blender Python, external service APIs | Semantic typed capabilities above tool-specific adapters. |
 | Provisioning | WinGet/PowerShell, apt/dnf/pacman, Homebrew, npm/pip/uv/NuGet/UPM | Registry-authorized installs only; versions and checksums pinned where appropriate. |
 | Import/render cache | Unity Accelerator or suitable artifact cache | Optional optimization for repeated worker worktrees; check current compatibility/licensing. |
