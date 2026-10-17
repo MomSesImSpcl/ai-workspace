@@ -1,13 +1,8 @@
 import { join } from 'node:path';
-import { getProject, home, readJson, writeJson } from './store.ts';
-import { createTask, type AgentAdapter, type Task } from './runtime.ts';
-import { claudeCode } from './adapters/claude-code.ts';
-import { codex } from './adapters/codex.ts';
+import { home, readJson, writeJson } from './store.ts';
 
-// Integrations the core can actually run. Assignments may name others (e.g. a manual
-// browser handoff), but running them fails explicitly until an adapter exists (routing-001).
-const adapters: Record<string, AgentAdapter> = { 'claude-code': claudeCode, codex };
-export const integrations = [...Object.keys(adapters), 'manual-browser'];
+// Assignments may name integrations the core cannot run (e.g. a manual browser handoff); running
+// them fails explicitly until an adapter exists (routing-001).
 
 export interface Assignment {
   integration: string;
@@ -35,18 +30,4 @@ export function assignmentFor(role: string): Assignment {
   const assignment = getRoles()[role];
   if (!assignment) throw new Error(`No assignment for role: ${role}`);
   return assignment;
-}
-
-export function adapterFor(integration: string): AgentAdapter {
-  const adapter = adapters[integration];
-  if (!adapter) throw new Error(`Integration "${integration}" has no runnable adapter yet`);
-  return adapter;
-}
-
-// Creates a top-level task for a role, failing before creation if it could not run.
-export function newRoleTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'write' | 'tokenBudget'>): Task {
-  getProject(fields.projectId);
-  const { integration, model } = assignmentFor(fields.role);
-  adapterFor(integration);
-  return createTask({ ...fields, integration, model });
 }

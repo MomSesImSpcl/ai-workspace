@@ -1,12 +1,13 @@
-// Stdio MCP server for Claude Code's --permission-prompt-tool in a session: every "ask" becomes an
-// approval card in the chat, and the user's answer goes back to the agent (sessions-019).
+// Stdio MCP server of the workspace for one session or task. `approve` is Claude Code's
+// --permission-prompt-tool: every "ask" becomes an approval card in the chat, and the user's answer goes
+// back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001).
 // Usage: node src/approval-server.ts <sessionId>. One server serves all turns of a long-lived agent process.
-import { setTimeout as sleep } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { emit, readEvents, stopRequested } from './sessions.ts';
+import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
+import { delegate } from './tasks.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
 const currentTurn = () => readEvents(sessionId).findLast((e) => e.type === 'user')?.turn ?? 0;
@@ -17,26 +18,36 @@ function approvalDetail(input: Record<string, unknown>): string {
   return String(d ?? JSON.stringify(input)).slice(0, 400);
 }
 
-async function answer(id: string): Promise<boolean | null> {
-  for (;;) {
-    const a = readEvents(sessionId).find((e) => e.type === 'approval-answer' && e.id === id);
-    if (a?.type === 'approval-answer') return a.allow;
-    if (stopRequested(sessionId)) return null;
-    await sleep(400);
-  }
-}
-
-const server = new McpServer({ name: 'ai-workspace-approvals', version: '0.1.0' });
+const server = new McpServer({ name: 'ai-workspace', version: '0.1.0' });
 server.registerTool(
   'approve',
   { description: 'Asks the user in the workspace chat whether a tool call may run', inputSchema: { tool_name: z.string(), input: z.record(z.string(), z.unknown()), tool_use_id: z.string().optional() } },
   async (a) => {
     const id = a.tool_use_id ?? randomUUID();
-    emit(sessionId, currentTurn(), { type: 'approval', id, tool: a.tool_name, detail: approvalDetail(a.input) });
-    const allow = await answer(id);
+    const repeat = repeatsFor(turns(readEvents(sessionId), true)).get(fingerprint(a.tool_name, a.input));
+    emit(sessionId, currentTurn(), { type: 'approval', id, tool: a.tool_name, detail: approvalDetail(a.input), repeat });
+    const allow = await awaitAnswer(sessionId, id);
     const reply = allow ? { behavior: 'allow', updatedInput: a.input } : { behavior: 'deny', message: allow === null ? 'The user stopped the turn.' : 'The user denied this in the workspace.' };
     return { content: [{ type: 'text' as const, text: JSON.stringify(reply) }] };
   },
 );
+
+const task = loadSession(sessionId).task;
+if (task && !task.parentId) {
+  server.registerTool(
+    'delegate',
+    {
+      description: 'Runs a self-contained subtask with the agent assigned to a workspace role (default Implementation) in this project, and returns its final reply. Blocks until the subtask ends. The subtask gets at most the remaining token budget.',
+      inputSchema: { goal: z.string().describe('Self-contained instructions for the subtask'), role: z.string().optional() },
+    },
+    async (a) => {
+      try {
+        return { content: [{ type: 'text' as const, text: await delegate(sessionId, a.goal, a.role) }] };
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
+      }
+    },
+  );
+}
 
 await server.connect(new StdioServerTransport());

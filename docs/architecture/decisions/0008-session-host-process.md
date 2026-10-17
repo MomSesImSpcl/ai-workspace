@@ -14,7 +14,7 @@ With a new `claude -p` process per turn, plugins and hooks lost their in-memory 
 - **Stop:** Claude Code's own interrupt (`control_request` `interrupt` on stdin) ends the turn and keeps the process; if no result follows within 10 s, the process tree is ended.
 - **Crash:** a turn that a dead host started but did not end is recorded as interrupted by the next host, never run again.
 - **Approvals:** one approval server per agent process; it takes the current turn from the event log.
-- Codex stays one process per turn until it moves to `codex app-server` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)).
+- Codex stays one process per turn until it moves to `codex app-server` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)). Superseded 2026-10-17 by [ADR 0009](0009-tasks-are-sessions.md): Codex also keeps one `codex app-server` process per session.
 
 ## Consequences
 

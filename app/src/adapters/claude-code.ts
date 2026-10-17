@@ -4,11 +4,10 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { addUsage, writeLiveUsage, type AgentAdapter, type StepResult, type Usage } from '../runtime.ts';
-import { type Body, type Catalog, type Session, type SessionAgent, type TurnInput } from '../sessions.ts';
+import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage } from '../sessions.ts';
 
-const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
-const TURNS_PER_STEP = 8;
+// Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
+// workspace server, which shows them as approval cards (sessions-019) and offers tasks `delegate`.
 
 interface ClaudeResult {
   subtype: string;
@@ -27,75 +26,15 @@ const tokens = (u: ClaudeUsage): Usage => ({
   cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
 });
 
-// Live usage from stream-json: one entry per assistant message id (later events of the same id supersede).
-export function streamUsage(lines: string[]): Usage {
-  const byMessage = new Map<string, ClaudeUsage>();
-  for (const line of lines) {
-    if (!line.startsWith('{')) continue;
-    const e = JSON.parse(line) as { type: string; message?: { id?: string; usage?: ClaudeUsage } };
-    if (e.type === 'assistant' && e.message?.id && e.message.usage) byMessage.set(e.message.id, e.message.usage);
-  }
-  return [...byMessage.values()].map(tokens).reduce(addUsage, { inputTokens: 0, outputTokens: 0 });
+export function parseResult(line: string): { text?: string; error?: string; usage: Usage } {
+  const r = JSON.parse(line) as ClaudeResult;
+  const usage = { ...tokens(r.usage ?? {}), costUsd: r.total_cost_usd };
+  if (r.is_error || r.subtype !== 'success') return { error: r.result || r.subtype, usage };
+  return { text: r.result, usage };
 }
 
-export function parseResult(stdout: string): StepResult {
-  const r = JSON.parse(stdout) as ClaudeResult;
-  const u = r.usage ?? {};
-  const usage = {
-    ...tokens(u),
-    costUsd: r.total_cost_usd,
-  };
-  const adapterState = { sessionId: r.session_id };
-  if (r.subtype === 'error_max_turns') return { done: false, usage, adapterState };
-  if (r.is_error || r.subtype !== 'success') return { done: false, error: r.result ?? r.subtype, usage, adapterState };
-  return { done: true, text: r.result, usage, adapterState };
-}
-
-// Claude Code in print mode with every built-in tool disabled: file access only through the
-// workspace MCP server, so the broker enforces scope and audits each call. No user/project
-// settings are loaded: user rules, hooks and model aliases must not steer a workspace task.
-export const claudeCode: AgentAdapter = {
-  step({ task, root }) {
-    const mcpConfig = JSON.stringify({
-      mcpServers: { ws: { command: process.execPath, args: [mcpServer, task.id], env: { AI_WORKSPACE_HOME: home() } } },
-    });
-    const sessionId = task.adapterState?.sessionId as string | undefined;
-    const args = ['-p', sessionId ? (task.prompt ?? 'Continue the task.') : task.goal, '--output-format', 'stream-json', '--verbose', '--tools', '', '--mcp-config', mcpConfig, '--strict-mcp-config', '--setting-sources', '', '--allowedTools', 'mcp__ws', '--max-turns', String(TURNS_PER_STEP)];
-    if (task.model) args.push('--model', task.model);
-    if (sessionId) args.push('--resume', sessionId);
-    else args.push('--append-system-prompt', 'Use only the mcp__ws tools for file access. Paths are relative to the project root.');
-    return new Promise((resolvePromise, reject) => {
-      const child = spawn(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, MCP_TOOL_TIMEOUT: '3600000' }, windowsHide: true });
-      let out = '';
-      let err = '';
-      let pending = '';
-      const lines: string[] = [];
-      child.stdout.on('data', (d) => {
-        out += d;
-        pending += d;
-        const parts = pending.split('\n');
-        pending = parts.pop() ?? '';
-        lines.push(...parts);
-        if (parts.some((l) => l.includes('"type":"assistant"'))) writeLiveUsage(task.id, streamUsage(lines));
-      });
-      child.stderr.on('data', (d) => (err += d));
-      child.on('error', reject);
-      child.on('close', (code) => {
-        try {
-          const result = out.split('\n').findLast((l) => l.startsWith('{') && (JSON.parse(l) as { type?: string }).type === 'result');
-          resolvePromise(parseResult(result ?? ''));
-        } catch {
-          reject(new Error(`claude exited ${code}: ${err.trim() || out.trim()}`));
-        }
-      });
-    });
-  },
-};
-
-// --- Sessions (ADR 0004): Claude Code with its own tools, settings and permission rules. Its "ask"
-// prompts go to the workspace approval tool, which shows them as approval cards (sessions-019).
-
-const approvalServer = fileURLToPath(new URL('../approval-server.ts', import.meta.url));
+const workspaceServer = fileURLToPath(new URL('../approval-server.ts', import.meta.url));
+const repeatHook = fileURLToPath(new URL('../repeat-hook.ts', import.meta.url));
 
 const outsideRoot = (root: string, p: string) => {
   const r = relative(root, resolve(root, p));
@@ -117,6 +56,7 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   if (name === 'WebSearch') return { label: `Searching the web: ${s('query')}` };
   if (name === 'Task' || name === 'Agent') return { label: `Delegating: ${s('description')}` };
   if (name === 'TodoWrite') return { label: 'Updating the to-do list' };
+  if (name === 'mcp__aiws__delegate') return { label: `Subtask: ${s('goal')}` };
   return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}` };
 }
 
@@ -134,26 +74,29 @@ interface StreamLine {
   mcp_servers?: { name: string; status: string }[];
   skills?: unknown[];
   event?: { type: string; delta?: { type: string; text?: string } };
-  message?: { content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean }[] };
+  message?: { id?: string; usage?: ClaudeUsage; content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean }[] };
 }
 
 // Maps one stream-json line to contract events; text arrives as deltas (--include-partial-messages).
-export function sessionEvents(line: string, root: string): { events: Body[]; sessionId?: string; result?: StepResult } {
+// `usage` is one assistant message's usage so far (later lines of the same message supersede it).
+export function sessionEvents(line: string, root: string): { events: Body[]; sessionId?: string; result?: ReturnType<typeof parseResult>; usage?: { id: string; usage: Usage } } {
   if (!line.startsWith('{')) return { events: [] };
   const e = JSON.parse(line) as StreamLine;
   if (e.type === 'system' && e.subtype === 'init') {
     const paths = Array.isArray(e.memory_paths) ? e.memory_paths : e.memory_paths && typeof e.memory_paths === 'object' ? Object.values(e.memory_paths) : [];
     const ruleFiles = paths.map((p) => (typeof p === 'string' ? p : String((p as { path?: string }).path ?? JSON.stringify(p))));
-    // Built-in plugins ship with Claude Code; the workspace's own approval server is not the user's.
+    // Built-in plugins ship with Claude Code; the workspace's own server (aiws) is not the user's. Claude Code drops a server named "workspace".
     const plugins = e.plugins?.filter((p) => p.path !== 'builtin').map((p) => p.name);
-    const mcp = e.mcp_servers?.filter((m) => m.name !== 'wsapprove').map(({ name, status }) => ({ name, status }));
+    const mcp = e.mcp_servers?.filter((m) => m.name !== 'aiws').map(({ name, status }) => ({ name, status }));
     return { events: [{ type: 'init', model: e.model, permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
   }
   // Warnings Claude Code shows in its own UI, for example a plugin hook that dropped the prompt.
   if (e.type === 'system' && e.subtype === 'informational' && e.content) return { events: [{ type: 'notice', text: e.content, blocked: e.prevent_continuation || undefined }] };
   if (e.type === 'stream_event' && e.event?.type === 'content_block_delta' && e.event.delta?.type === 'text_delta') return { events: [{ type: 'text', text: e.event.delta.text ?? '' }] };
   if (e.type === 'assistant') {
-    return { events: (e.message?.content ?? []).filter((b) => b.type === 'tool_use' && b.id).map((b) => ({ type: 'activity' as const, id: b.id!, ...activityLabel(b.name ?? '', b.input ?? {}, root) })) };
+    const events = (e.message?.content ?? []).filter((b) => b.type === 'tool_use' && b.id)
+      .map((b) => ({ type: 'activity' as const, id: b.id!, ...activityLabel(b.name ?? '', b.input ?? {}, root), fp: fingerprint(b.name ?? '', b.input ?? {}) }));
+    return { events, usage: e.message?.id && e.message.usage ? { id: e.message.id, usage: tokens(e.message.usage) } : undefined };
   }
   if (e.type === 'user') {
     return { events: (e.message?.content ?? []).filter((b) => b.type === 'tool_result' && b.tool_use_id).map((b) => ({ type: 'activity-done' as const, id: b.tool_use_id!, error: b.is_error || undefined })) };
@@ -191,18 +134,20 @@ export function agentEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(CLAUDECODE$|CLAUDE_|ANTHROPIC_)/.test(k)));
 }
 
-type TurnEnd = { vendorSessionId?: string; error?: string; staleHint?: boolean };
+// Hook commands run in a shell; forward slashes and quotes work in cmd, PowerShell and sh alike.
+const shellPath = (p: string) => `"${p.replaceAll('\\', '/')}"`;
 
 // One Claude Code process for a whole session: messages go in over stdin as stream-json, so plugins
 // and hooks keep their in-memory state between turns, as in an interactive Claude Code (issue #15).
-export class ClaudeProcess {
+export class ClaudeProcess implements AgentProcess {
   private child?: ChildProcessWithoutNullStreams;
   private onLine?: (line: string) => void;
   private onExit?: (code: number | null) => void;
   private err = '';
   fresh = true; // started without --resume: the next prompt must carry the earlier conversation
-  effort?: string; // the level this process was started with; a change needs a new process
-  model?: string; // the model it was started with; likewise
+  readonly effort?: string; // what this process was started with; a change needs a new process
+  readonly model?: string;
+  readonly permissionMode?: string;
   sessionId?: string;
 
   private session: Session;
@@ -211,6 +156,9 @@ export class ClaudeProcess {
   constructor(session: Session, root: string) {
     this.session = session;
     this.root = root;
+    this.effort = session.effort;
+    this.model = session.model;
+    this.permissionMode = session.permissionMode;
   }
 
   get alive() {
@@ -218,14 +166,20 @@ export class ClaudeProcess {
   }
 
   private start(resume?: string): void {
-    const mcpConfig = JSON.stringify({ mcpServers: { wsapprove: { command: process.execPath, args: [approvalServer, this.session.id], env: { AI_WORKSPACE_HOME: home() } } } });
-    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__wsapprove__approve'];
-    if (this.session.model) args.push('--model', this.session.model);
+    const { session } = this;
+    const mcpConfig = JSON.stringify({ mcpServers: { aiws: { command: process.execPath, args: [workspaceServer, session.id], env: { AI_WORKSPACE_HOME: home() } } } });
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__aiws__approve'];
+    if (this.model) args.push('--model', this.model);
+    if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
+    if (session.task) {
+      // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
+      if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
+      const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
+      args.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [hook] }] } }));
+    }
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
-    this.effort = this.session.effort;
-    this.model = this.session.model;
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace session: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task && !session.task.parentId ? ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.' : ''}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
@@ -233,7 +187,8 @@ export class ClaudeProcess {
     // CLAUDE_BIN may name a script (tests use a fake CLI), which runs with this Node.
     const bin = process.env.CLAUDE_BIN ?? 'claude';
     const [cmd, pre] = /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin]] : [bin, []];
-    const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '86400000' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    // Approvals wait for the user without a time limit (runtime-002): the longest timeout Node allows.
+    const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '2147483647' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;
@@ -267,8 +222,9 @@ export class ClaudeProcess {
     setTimeout(() => child && child.exitCode === null && this.kill(), 5000).unref();
   }
 
-  // Runs one turn. Stop sends Claude Code's own interrupt; if it does not end the turn soon, the process is ended.
-  turn(input: Pick<TurnInput, 'prompt' | 'history' | 'emit' | 'signal'>): Promise<TurnEnd> {
+  // Runs one turn. Stop sends Claude Code's own interrupt; if it does not end the turn soon, the process is
+  // ended. A 'kill' abort (task cancel, budget) ends the process tree at once (runtime-005).
+  turn(input: TurnInput): Promise<TurnEnd> {
     if (!this.alive) this.start(this.session.vendorSessionId);
     const { emit, signal } = input;
     const resumed = !this.fresh;
@@ -276,6 +232,7 @@ export class ClaudeProcess {
     this.fresh = false;
     let text = '';
     let sawText = false;
+    const messages = new Map<string, Usage>();
     const flush = () => {
       if (text) emit({ type: 'text', text });
       text = '';
@@ -293,6 +250,11 @@ export class ClaudeProcess {
         resolve({ vendorSessionId: this.sessionId, ...r });
       };
       const interrupt = () => {
+        if (signal.reason === 'kill') {
+          this.kill();
+          emit({ type: 'usage', usage: [...messages.values()].reduce(addUsage, { inputTokens: 0, outputTokens: 0 }) });
+          return end({});
+        }
         this.send({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } });
         killTimer = setTimeout(() => { this.kill(); end({}); }, 10000);
       };
@@ -304,6 +266,10 @@ export class ClaudeProcess {
           if (ev.type === 'text') { text += ev.text; sawText = true; continue; }
           flush();
           emit(ev);
+        }
+        if (parsed.usage) {
+          messages.set(parsed.usage.id, parsed.usage.usage);
+          input.live?.([...messages.values()].reduce(addUsage, { inputTokens: 0, outputTokens: 0 }));
         }
         if (parsed.result) {
           emit({ type: 'usage', usage: parsed.result.usage });
@@ -317,34 +283,58 @@ export class ClaudeProcess {
         end({ error, staleHint: resumed && !sawText && /no conversation found/i.test(this.err) });
       };
       signal.addEventListener('abort', interrupt, { once: true });
+      if (signal.aborted) return interrupt();
       this.send({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] } });
     });
   }
 }
 
-// A single turn in its own process (used by tests and as the SessionAgent contract); the session host
-// keeps one ClaudeProcess for many turns instead.
-// Claude Code's documented model aliases (claude --help); the user's own default comes from their settings.
+// Claude Code's documented model aliases and permission modes (claude --help); the user's own defaults come from their settings.
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export function claudeCatalog(): Catalog {
   let own: string | undefined;
   try { own = (JSON.parse(readFileSync(join(claudeHome(), 'settings.json'), 'utf8')) as { model?: string }).model; } catch { /* no settings */ }
   const models = [['', `Default${own ? ` (${own})` : ''}`], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
-  return { models: models.map(([id, label]) => ({ id: id!, label: label!, efforts: CLAUDE_EFFORTS })) };
+  return {
+    models: models.map(([id, label]) => ({ id: id!, label: label!, efforts: CLAUDE_EFFORTS })),
+    modes: [
+      { id: '', label: "Claude Code's settings" },
+      { id: 'manual', label: 'Ask before acting (manual)' },
+      { id: 'acceptEdits', label: 'Accept edits (acceptEdits)' },
+      { id: 'auto', label: 'Auto (auto)' },
+      { id: 'plan', label: 'Plan only (plan)' },
+      { id: 'dontAsk', label: 'Deny what is not allowed (dontAsk)' },
+      { id: 'bypassPermissions', label: 'Skip all checks (bypassPermissions)', warn: true },
+    ],
+  };
+}
+
+// A process whose resumed vendor session is gone starts again from the workspace history.
+class ClaudeAgent implements AgentProcess {
+  private proc: ClaudeProcess;
+  private session: Session;
+  private root: string;
+  constructor(session: Session, root: string) {
+    this.session = session;
+    this.root = root;
+    this.proc = new ClaudeProcess(session, root);
+  }
+  get model() { return this.proc.model; }
+  get effort() { return this.proc.effort; }
+  get permissionMode() { return this.proc.permissionMode; }
+  async turn(input: TurnInput): Promise<TurnEnd> {
+    const r = await this.proc.turn(input);
+    if (!r.staleHint) return r;
+    this.session.vendorSessionId = undefined;
+    this.proc.close();
+    this.proc = new ClaudeProcess(this.session, this.root);
+    return this.proc.turn(input);
+  }
+  close() { this.proc.close(); }
 }
 
 export const claudeSession: SessionAgent = {
-  async turn(input) {
-    const proc = new ClaudeProcess(input.session, input.root);
-    try {
-      const first = await proc.turn(input);
-      if (!first.staleHint) return first;
-      input.session.vendorSessionId = undefined;
-      return await new ClaudeProcess(input.session, input.root).turn(input);
-    } finally {
-      proc.close();
-    }
-  },
+  open: (session, root) => new ClaudeAgent(session, root),
   permissions: claudePermissions,
   catalog: claudeCatalog,
 };

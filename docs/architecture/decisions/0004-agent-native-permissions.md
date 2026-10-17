@@ -1,6 +1,6 @@
 # ADR 0004 — Agents use their own tools and permissions; the workspace observes
 
-Status: accepted (2026-10-17, chosen by the user); implemented for sessions in [ADR 0005](0005-session-turn-runner.md), not yet for tasks. Supersedes the "file access only through the broker" and "no user settings" parts of [ADR 0001](0001-core-slice-stack.md); its task runtime, adapters-as-products and delegation decisions still hold. Specified in [sessions](../../features/sessions/SPEC.md) and [version-control](../../features/version-control/SPEC.md).
+Status: accepted (2026-10-17, chosen by the user); implemented for sessions in [ADR 0005](0005-session-turn-runner.md) and for tasks in [ADR 0009](0009-tasks-are-sessions.md). Supersedes the "file access only through the broker" and "no user settings" parts of [ADR 0001](0001-core-slice-stack.md); its task runtime, adapters-as-products and delegation decisions still hold. Specified in [sessions](../../features/sessions/SPEC.md) and [version-control](../../features/version-control/SPEC.md).
 
 ## Context
 

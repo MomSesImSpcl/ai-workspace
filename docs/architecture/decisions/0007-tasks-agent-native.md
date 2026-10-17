@@ -1,6 +1,6 @@
 # ADR 0007 — Tasks run agent-native: approvals, permission mode, repeat detection
 
-Status: accepted (2026-10-17, chosen by the user); not implemented. Applies [ADR 0004](0004-agent-native-permissions.md) to delegated tasks and supersedes, for tasks, ADR 0001's write grant, effect ledger and per-call budget check. Capability rules from [ADR 0006](0006-agent-capability-contract.md). Specified in [task-runtime 4.7](../../features/task-runtime/SPEC.md#47-agent-native-tasks).
+Status: accepted (2026-10-17, chosen by the user); implemented 2026-10-17 as background sessions ([ADR 0009](0009-tasks-are-sessions.md)). Applies [ADR 0004](0004-agent-native-permissions.md) to delegated tasks and supersedes, for tasks, ADR 0001's write grant, effect ledger and per-call budget check. Capability rules from [ADR 0006](0006-agent-capability-contract.md). Specified in [task-runtime 4.7](../../features/task-runtime/SPEC.md#47-agent-native-tasks).
 
 ## Decision
 

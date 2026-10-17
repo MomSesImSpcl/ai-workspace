@@ -1,9 +1,33 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, writeJson } from './store.ts';
-import { addUsage, type Usage } from './runtime.ts';
+import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
+
+export interface Usage {
+  inputTokens: number; // includes cachedInputTokens and cacheWriteTokens
+  cachedInputTokens?: number; // input served from the provider's prompt cache, mostly the agent's fixed prompt
+  cacheWriteTokens?: number; // input written to the prompt cache (the fixed prompt on a first or expired call), not task work
+  outputTokens: number;
+  costUsd?: number; // reported by the provider; subscription agents may report an estimate or nothing
+}
+
+// Prompt-cache traffic (read + write): mostly the agent's fixed prompt, shown apart from the work itself.
+export const cacheTokens = (u: Usage) => (u.cachedInputTokens ?? 0) + (u.cacheWriteTokens ?? 0);
+export const used = (u: Usage) => u.inputTokens + u.outputTokens;
+
+export function addUsage(a: Usage, b: Usage): Usage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens: (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0),
+    cacheWriteTokens: (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0),
+    costUsd: a.costUsd === undefined && b.costUsd === undefined ? undefined : (a.costUsd ?? 0) + (b.costUsd ?? 0),
+  };
+}
+
+// Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
+export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
 
 // A session is a conversation in one project (sessions-001/002). Its history is an append-only
 // event log in workspace storage (sessions-003/020); the chat display is built from it.
@@ -18,8 +42,16 @@ export interface Session {
   archived?: boolean;
   pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
+  permissionMode?: string; // the agent's own mode for this session (catalog `modes`); unset: the agent's settings
+  task?: TaskSpec; // set for a task: delegated background work with a token cap (task-runtime 4.7)
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskSpec {
+  tokenBudget: number;
+  parentId?: string; // a subtask started by the parent's `delegate` call
+  cancelled?: boolean;
 }
 
 // The one event contract every adapter reports (sessions-020). `turn` numbers the user's messages.
@@ -30,37 +62,47 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'text'; text: string }
   | { type: 'notice'; text: string; blocked?: boolean }
   | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
-  | { type: 'activity'; id: string; label: string; outside?: boolean }
+  | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string }
   | { type: 'activity-done'; id: string; error?: boolean }
-  | { type: 'approval'; id: string; tool: string; detail: string }
+  | { type: 'approval'; id: string; tool: string; detail: string; repeat?: string }
   | { type: 'approval-answer'; id: string; allow: boolean }
   | { type: 'usage'; usage: Usage }
   | { type: 'done' }
   | { type: 'error'; message: string }
-  | { type: 'stopped' }
+  | { type: 'stopped'; reason?: string } // reason: the workspace stopped it (budget, a repeat), not the user
   | { type: 'interrupted'; step: number; label?: string }
 );
 export type Body = SessionEvent extends infer E ? (E extends SessionEvent ? Omit<E, 'at' | 'turn'> : never) : never;
 
 export interface TurnInput {
-  session: Session;
-  root: string;
-  turn: number;
   prompt: string;
-  history: string; // earlier turns as text, for agents that cannot resume their own conversation
+  history: string; // earlier turns as text, for an agent that cannot resume its own conversation
   emit: (body: Body) => void;
-  signal: AbortSignal; // aborted on Stop
+  signal: AbortSignal; // aborted on Stop; reason 'kill' ends the process tree at once instead of interrupting
+  live?: (usage: Usage) => void; // the turn's usage so far, as the agent streams it (budget, runtime-005)
+  repeats?: Map<string, string>; // fingerprints the interrupted attempt completed, with their step label
 }
 
-// One agent product in a session: it runs with its own tools, settings and permissions (ADR 0004)
-// and reports the event contract. The runner records done, error and stopped.
+export interface TurnEnd { vendorSessionId?: string; error?: string; staleHint?: boolean; stopped?: string }
+
+// One running agent for a session: started with its own tools, settings and permissions (ADR 0004),
+// it answers many turns and reports the event contract. The runner records done, error and stopped.
+export interface AgentProcess {
+  readonly model?: string;
+  readonly effort?: string;
+  readonly permissionMode?: string; // what it was started with; a change needs a new process
+  turn(input: TurnInput): Promise<TurnEnd>;
+  close(): void;
+}
+
 // What an agent offers, recorded when it is set up (onboarding-008): its models and, per model, the effort
-// levels it accepts. The composer and later the orchestrator choose only from this.
+// levels it accepts, and its own permission modes. The composer and later the orchestrator choose only from this.
 export interface AgentModel { id: string; label: string; efforts: string[]; defaultEffort?: string }
-export interface Catalog { models: AgentModel[] } // id '' is the agent's own default model
+export interface AgentMode { id: string; label: string; warn?: boolean } // warn: skips every check
+export interface Catalog { models: AgentModel[]; modes?: AgentMode[] } // id '' is the agent's own default
 
 export interface SessionAgent {
-  turn(input: TurnInput): Promise<{ vendorSessionId?: string; error?: string }>;
+  open(session: Session, root: string): AgentProcess;
   permissions(root: string): { line: string; warn?: string };
   catalog(): Catalog;
 }
@@ -121,12 +163,16 @@ export function sessionRoot(s: Pick<Session, 'projectId'>): string {
   return root;
 }
 
-// Pinned first (in their pin order), then newest activity first.
+const inDirs = (dirs: string[]) => dirs.filter((d) => existsSync(d)).flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))));
+
+// Every session and task in storage.
+export const allSessions = () => inDirs(storageDirs('sessions'));
+
+// The chat list: pinned first (in their pin order), then newest activity first. Tasks are listed apart.
 export function listSessions(projectId: string): Session[] {
   // The flat legacy folder still holds items whose runner was alive during migration.
-  const dirs = [join(projectStorage(projectId), 'sessions'), join(home(), 'sessions')].filter((d) => existsSync(d));
-  return dirs.flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))))
-    .filter((s) => s.projectId === projectId)
+  return inDirs([join(projectStorage(projectId), 'sessions'), join(home(), 'sessions')])
+    .filter((s) => s.projectId === projectId && !s.task)
     .sort((a, b) => (a.pinOrder ?? Infinity) - (b.pinOrder ?? Infinity) || b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -232,18 +278,29 @@ export const requestStop = (id: string) => writeJson(stopPath(id), true);
 export const stopRequested = (id: string) => existsSync(stopPath(id));
 export const clearStop = (id: string) => rmSync(stopPath(id), { force: true });
 
+// The user's answer to an approval card; null when the turn was stopped first. No time limit (runtime-002).
+export async function awaitAnswer(id: string, approvalId: string): Promise<boolean | null> {
+  for (;;) {
+    const a = readEvents(id).find((e) => e.type === 'approval-answer' && e.id === approvalId);
+    if (a?.type === 'approval-answer') return a.allow;
+    if (stopRequested(id)) return null;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+
 export type TurnState = 'working' | 'done' | 'error' | 'stopped' | 'interrupted';
 
 export interface Turn {
   n: number;
   user: string;
   text: string;
-  activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean }[];
-  approvals: { id: string; tool: string; detail: string; allow?: boolean }[];
+  activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean; fp?: string }[];
+  approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
   switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
+  reason?: string; // why the workspace stopped the turn (budget, a possible repeat)
   usage: Usage;
   model?: string;
   permissionMode?: string;
@@ -273,12 +330,12 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'notice') t.notices.push({ text: e.text, blocked: e.blocked });
     else if (e.type === 'switch') t.switchedTo = { from: e.from, to: e.to, model: e.model };
     else if (e.type === 'init') Object.assign(t, { model: e.model, permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
-    else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside });
+    else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside, fp: e.fp });
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
-    else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail });
+    else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail, repeat: e.repeat });
     else if (e.type === 'approval-answer') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { allow: e.allow });
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
-    else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at });
+    else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
     else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });
   }
   const last = out.at(-1);
@@ -290,7 +347,18 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
 function marker(t: Turn): string {
   const done = t.activity.filter((a) => a.done);
   const what = t.state === 'stopped' ? 'Stopped' : t.state === 'error' ? 'Failed' : 'Interrupted';
-  return done.length ? `${what} after step ${done.length}: ${done.at(-1)!.label}` : `${what} before the first step`;
+  const at = done.length ? `${what} after step ${done.length}: ${done.at(-1)!.label}` : `${what} before the first step`;
+  return t.reason ? `${at} (${t.reason})` : at;
+}
+
+// Tool calls the previous attempt completed, when it was interrupted (the runner died): a matching call
+// in the re-run is a possible repeat (runtime-004). Keyed by fingerprint, valued by the step it was.
+export function repeatsFor(ts: Turn[]): Map<string, string> {
+  const prev = ts.at(-2);
+  const out = new Map<string, string>();
+  if (prev?.state !== 'interrupted') return out;
+  prev.activity.forEach((a, i) => a.done && !a.error && a.fp && out.set(a.fp, `step ${i + 1}: ${a.label}`));
+  return out;
 }
 
 // The conversation as text, for agents that cannot resume their own (Codex exec, an expired hint).
@@ -303,6 +371,7 @@ export function transcript(ts: Turn[]): string {
 export function addMessage(id: string, text: string): number {
   const s = loadSession(id);
   if (sessionWorking(id)) throw new Error('Session is already working');
+  if (s.task?.cancelled) throw new Error('Task is cancelled');
   const events = readEvents(id);
   const ts = turns(events, false);
   const last = ts.at(-1);

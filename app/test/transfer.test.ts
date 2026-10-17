@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { addMessage, createSession, GLOBAL, listSessions, readEvents } from '../src/sessions.ts';
-import { createTask, listTasks } from '../src/runtime.ts';
+import { createTask, listTasks } from '../src/tasks.ts';
 import { getProject, home, listProjects, registerProject, setWorkspaceRoot } from '../src/store.ts';
 import { exportStorage, importStorage } from '../src/transfer.ts';
 
@@ -28,8 +28,8 @@ function machineA(): { file: string; sessionId: string } {
   const s = createSession('app', 'Chat', claude);
   addMessage(s.id, 'hello from A');
   createSession(GLOBAL, 'Chat', claude);
-  const t = createTask({ projectId: 'app', goal: 'g', role: 'Implementation', integration: 'claude-code', write: false, tokenBudget: 1000 });
-  writeFileSync(join(home(), 'projects', 'app', 'tasks', `${t.id}.pid`), '123'); // runner file: must not travel
+  const t = createTask({ projectId: 'app', goal: 'g', role: 'Implementation', tokenBudget: 1000 });
+  writeFileSync(join(home(), 'projects', 'app', 'sessions', `${t.id}.pid`), '123'); // runner file: must not travel
   mkdirSync(join(home(), 'codex'), { recursive: true });
   writeFileSync(join(home(), 'codex', 'auth.json'), '{"token":"secret"}'); // credentials: must not travel
   const file = join(base, 'export.aiworkspace');

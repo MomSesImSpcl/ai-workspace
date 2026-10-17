@@ -55,8 +55,9 @@ export function importStorage(source: string): { sessions: number; tasks: number
     if (existsSync(full)) continue;
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, Buffer.from(data, 'base64'));
-    if (/\/sessions\/[^/.]+\.json$|^sessions\/[^/.]+\.json$/.test(path)) sessions++;
-    if (/\/tasks\/[^/.]+\.json$|^tasks\/[^/.]+\.json$/.test(path)) tasks++;
+    // A task is a session with a task spec (task-runtime 4.7); old exports still hold tasks/ files.
+    if (/(^|\/)sessions\/[^/.]+\.json$/.test(path)) (JSON.parse(Buffer.from(data, 'base64').toString('utf8')) as { task?: unknown }).task ? tasks++ : sessions++;
+    if (/(^|\/)tasks\/[^/.]+\.json$/.test(path)) tasks++;
   }
 
   // Projects: link each to a folder on this computer, or keep it archived until its folder is added (transfer-004).

@@ -1,28 +1,18 @@
-import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { assignmentFor, getRoles, setRole } from './roles.ts';
+import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
+import { cancelTask, childrenOf, createTask, listTasks, resumeTask, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
-import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
-const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
-const logPath = (id: string) => taskFile(id, '.log');
 const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
-
-// Each task runs in its own detached `ws resume` process, so closing the UI never stops it.
-function startRunner(task: Task): void {
-  const log = openSync(logPath(task.id), 'a');
-  const child = spawn(process.execPath, [cli, 'resume', task.id], { detached: true, stdio: ['ignore', log, log], windowsHide: true });
-  closeSync(log);
-  if (child.pid) markRunner(task.id, child.pid); // at once, so a second resume sees the runner
-  child.unref();
-}
+// Integrations a role may name; only those with a session agent can run.
+const integrations = [...Object.keys(sessionAgents), 'manual-browser'];
 
 function tail(path: string, bytes = 8192): string {
   if (!existsSync(path)) return '';
@@ -32,13 +22,6 @@ function tail(path: string, bytes = 8192): string {
   readSync(fd, buf, 0, buf.length, size - buf.length);
   closeSync(fd);
   return buf.toString('utf8');
-}
-
-// shortcut: scans the whole audit log per request; upgrade to an index when it grows large.
-function events(id: string): unknown[] {
-  const path = join(home(), 'audit.jsonl');
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.taskId === id || e.childId === id);
 }
 
 class HttpError extends Error {
@@ -66,8 +49,11 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   return value;
 }
 
-function view(task: Task) {
-  return { ...task, messages: conversation(task), runnerAlive: task.status === 'running' && runnerAlive(task.id) };
+// shortcut: folds every task's log per list request, like sessions; upgrade to a summary file when logs grow large.
+function taskView(s: Session) {
+  const ts = turns(readEvents(s.id), turnRunning(s.id));
+  const last = ts.at(-1);
+  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0) };
 }
 
 // shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
@@ -168,10 +154,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
   if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
-  if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
+  if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
-    const task = loadTask(id);
-    return { task: view(task), children: listTasks().filter((t) => t.parentId === id).map(view), events: events(id), log: tail(logPath(id)) };
+    const s = loadSession(id);
+    if (!s.task) throw new HttpError(404, 'not a task');
+    return { task: taskView(s), turns: turns(readEvents(id), turnRunning(id)), children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
@@ -210,30 +197,20 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   }
   if (req.method === 'POST' && kind === 'tasks' && !id) {
     const b = await body(req);
-    if (typeof b.goal !== 'string' || !b.goal.trim()) throw new HttpError(400, 'goal is required');
-    if (typeof b.projectId !== 'string' || typeof b.role !== 'string') throw new HttpError(400, 'projectId and role are required');
-    const task = newRoleTask({ projectId: b.projectId, goal: b.goal.trim(), role: b.role, write: b.write === true, tokenBudget: budget(b.budget) });
-    startRunner(task);
-    return view(task);
+    const goal = text(b.goal, 'goal');
+    getProject(text(b.projectId, 'projectId'));
+    if (b.permissionMode !== undefined && typeof b.permissionMode !== 'string') throw new HttpError(400, 'permissionMode must be a string');
+    const task = createTask({ projectId: b.projectId as string, goal, role: text(b.role, 'role'), tokenBudget: budget(b.budget), permissionMode: b.permissionMode as string | undefined });
+    startTurn(task.id);
+    return taskView(task);
   }
-  if (req.method === 'POST' && kind === 'tasks' && action === 'resume') {
+  if (req.method === 'POST' && kind === 'tasks' && (action === 'resume' || action === 'reply')) {
     const b = await body(req);
-    const task = loadTask(id);
-    if (terminal(task.status)) throw new HttpError(409, `task is ${task.status}`);
-    if (runnerAlive(id)) throw new HttpError(409, 'task is already running');
-    if (b.budget !== undefined) task.tokenBudget = budget(b.budget);
-    saveTask(task);
-    startRunner(task);
-    return view(task);
+    const task = resumeTask(id, b.budget === undefined ? undefined : budget(b.budget), action === 'reply' ? text(b.text, 'text') : undefined);
+    if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
+    return taskView(task);
   }
-  if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
-    const b = await body(req);
-    if (typeof b.text !== 'string' || !b.text.trim()) throw new HttpError(400, 'text is required');
-    const task = replyTask(id, b.text.trim());
-    startRunner(task);
-    return view(task);
-  }
-  if (req.method === 'POST' && kind === 'tasks' && action === 'cancel') return view(cancelTask(id));
+  if (req.method === 'POST' && kind === 'tasks' && action === 'cancel') return taskView(cancelTask(id));
   throw new HttpError(404, 'not found');
 }
 
@@ -251,7 +228,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^Subtask |^No assignment|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

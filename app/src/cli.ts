@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { adapterFor, getRoles, newRoleTask, setRole } from './roles.ts';
-import { cacheTokens, cancelTask, listTasks, loadTask, runTask, saveTask, type Task } from './runtime.ts';
+import { getRoles, setRole } from './roles.ts';
+import { cacheTokens, loadSession, readEvents, turnRunning, turns, type Session } from './sessions.ts';
+import { cancelTask, createTask, listTasks, migrateTasks, resumeTask, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { getProject, listProjects, migrateStorage, registerProject } from './store.ts';
 
 function budget(value: string | undefined, fallback: number): number {
@@ -14,7 +15,7 @@ function budget(value: string | undefined, fallback: number): number {
 const usage = `Usage:
   ws project add <path> [--id <id>]
   ws project list
-  ws run <goal> --project <id> [--role Implementation] [--budget <tokens>] [--write]
+  ws run <goal> --project <id> [--role Implementation] [--budget <tokens>] [--mode <permission mode>]
   ws resume <taskId> [--budget <tokens>]
   ws status [taskId]
   ws cancel <taskId>
@@ -28,27 +29,34 @@ const { positionals, values } = parseArgs({
     project: { type: 'string' },
     role: { type: 'string', default: 'Implementation' },
     budget: { type: 'string' },
-    write: { type: 'boolean', default: false },
+    mode: { type: 'string' },
     port: { type: 'string', default: '4317' },
   },
 });
 
-function show(task: Task): void {
-  const tokens = task.usage.inputTokens + task.usage.outputTokens;
-  const cached = cacheTokens(task.usage);
-  const cost = task.usage.costUsd === undefined ? '' : ` cost≈$${task.usage.costUsd.toFixed(4)} (provider-reported)`;
-  console.log(`${task.id} ${task.status}${task.reason ? ` (${task.reason})` : ''} steps=${task.steps} tokens=${tokens}/${task.tokenBudget} (work=${tokens - cached} cached=${cached})${cost} integration=${task.integration}`);
-  if (task.result) console.log(task.result);
+function show(s: Session): void {
+  const ts = turns(readEvents(s.id), turnRunning(s.id));
+  const u = usageOf(s.id);
+  const tokens = u.inputTokens + u.outputTokens;
+  const cached = cacheTokens(u);
+  const last = ts.at(-1);
+  const cost = u.costUsd === undefined ? '' : ` cost≈$${u.costUsd.toFixed(4)} (provider-reported)`;
+  console.log(`${s.id} ${taskStatus(s, ts)}${last?.marker ? ` (${last.marker})` : ''} tokens=${taskUsed(s)}/${s.task!.tokenBudget} (work=${tokens - cached} cached=${cached})${cost} integration=${s.integration}`);
+  if (last?.text) console.log(last.text);
 }
 
-async function run(task: Task): Promise<void> {
-  const result = await runTask(task.id, adapterFor(task.integration), getProject(task.projectId).root);
-  show(result);
-  if (result.status === 'failed') process.exitCode = 1;
+// Runs the task's pending turn in this process, so the terminal shows it to the end.
+async function run(id: string): Promise<void> {
+  const { runTurn } = await import('./turn.ts');
+  await runTurn(id);
+  const s = loadSession(id);
+  show(s);
+  if (taskStatus(s, turns(readEvents(id), false)) === 'failed') process.exitCode = 1;
 }
 
 const [cmd, ...rest] = positionals;
 migrateStorage();
+migrateTasks();
 try {
   if (cmd === 'project' && rest[0] === 'add' && rest[1]) {
     const p = registerProject(resolve(rest[1]), values.id);
@@ -56,20 +64,19 @@ try {
   } else if (cmd === 'project' && rest[0] === 'list') {
     for (const p of listProjects()) console.log(`${p.id} ${p.root}`);
   } else if (cmd === 'run' && rest[0] && values.project) {
-    await run(newRoleTask({ projectId: values.project, goal: rest.join(' '), role: values.role, write: values.write, tokenBudget: budget(values.budget, 200000) }));
+    getProject(values.project);
+    await run(createTask({ projectId: values.project, goal: rest.join(' '), role: values.role, tokenBudget: budget(values.budget, 200000), permissionMode: values.mode }).id);
   } else if (cmd === 'resume' && rest[0]) {
-    const task = loadTask(rest[0]);
-    if (values.budget) task.tokenBudget = budget(values.budget, task.tokenBudget);
-    saveTask(task);
-    await run(task);
+    resumeTask(rest[0], values.budget ? budget(values.budget, 0) : undefined);
+    await run(rest[0]);
   } else if (cmd === 'status') {
-    if (rest[0]) show(loadTask(rest[0]));
-    else for (const task of listTasks()) show(task);
+    if (rest[0]) show(loadSession(rest[0]));
+    else for (const s of listTasks()) show(s);
   } else if (cmd === 'cancel' && rest[0]) {
     show(cancelTask(rest[0]));
   } else if (cmd === 'turn' && rest[0]) {
-    const { runSession } = await import('./turn.ts');
-    await runSession(rest[0]);
+    const { hostSession } = await import('./turn.ts');
+    await hostSession(rest[0]);
   } else if (cmd === 'ui') {
     const { serve } = await import('./ui.ts');
     const server = serve(Number(values.port));

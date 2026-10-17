@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activityLabel, agentEnv, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
-import { codexSessionEvents, parseCodexModels } from '../src/adapters/codex.ts';
-import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, saveSession, sessionRoot, setPinned, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
+import { codexActivity, parseCodexModels } from '../src/adapters/codex.ts';
+import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, saveSession, sessionRoot, setPinned, turnPrompt, turns, fingerprint, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { listProjects, migrateStorage, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 const claude = { integration: 'claude-code' };
-const fake = (turn: SessionAgent['turn']): Record<string, SessionAgent> => ({ 'claude-code': { turn, permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }) } });
+const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }) } });
 
 test('sessions are listed only in their own project, newest activity first', async () => {
   const other = mkdtempSync(join(tmpdir(), 'ws-other-'));
@@ -99,19 +99,20 @@ test('agent errors end the turn as failed and keep the activity', async () => {
 
 test('claude stream lines map to the event contract', () => {
   const init = sessionEvents(JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1', permissionMode: 'default', memory_paths: { auto: 'C:/u/memory/' },
-    plugins: [{ name: 'caveman', path: 'C:/p' }, { name: 'cc-plugin-telemetry', path: 'builtin' }], mcp_servers: [{ name: 'caveman', status: 'connected' }, { name: 'wsapprove', status: 'connected' }], skills: ['a', 'b'] }), root);
+    plugins: [{ name: 'caveman', path: 'C:/p' }, { name: 'cc-plugin-telemetry', path: 'builtin' }], mcp_servers: [{ name: 'caveman', status: 'connected' }, { name: 'aiws', status: 'connected' }], skills: ['a', 'b'] }), root);
   assert.deepEqual(init.events, [{ type: 'init', model: undefined, permissionMode: 'default', ruleFiles: ['C:/u/memory/'], plugins: ['caveman'], mcp: [{ name: 'caveman', status: 'connected' }], skills: 2 }]);
   assert.equal(init.sessionId, 's1');
   const delta = sessionEvents(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } } }), root);
   assert.deepEqual(delta.events, [{ type: 'text', text: 'Hi' }]);
   const use = sessionEvents(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }] } }), root);
-  assert.deepEqual(use.events, [{ type: 'activity', id: 't1', label: 'Running `npm test`' }]);
+  assert.deepEqual(use.events, [{ type: 'activity', id: 't1', label: 'Running `npm test`', fp: fingerprint('Bash', { command: 'npm test' }) }]);
   const res = sessionEvents(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true }] } }), root);
   assert.deepEqual(res.events, [{ type: 'activity-done', id: 't1', error: true }]);
   const dropped = sessionEvents(JSON.stringify({ type: 'system', subtype: 'informational', content: 'Prompt dropped by a hook: x', level: 'warning', prevent_continuation: true }), root);
   assert.deepEqual(dropped.events, [{ type: 'notice', text: 'Prompt dropped by a hook: x', blocked: true }]);
   const done = sessionEvents(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', session_id: 's1', usage: { input_tokens: 5, output_tokens: 1 } }), root);
-  assert.equal(done.result?.done, true);
+  assert.equal(done.result?.text, 'ok');
+  assert.equal(done.result?.error, undefined);
 });
 
 test('edits outside the project folder are flagged; paths inside are shown relative', () => {
@@ -120,12 +121,11 @@ test('edits outside the project folder are flagged; paths inside are shown relat
   assert.equal(activityLabel('mcp__ws__delegate', {}, root).label, 'Using ws delegate');
 });
 
-test('codex exec items map to activity and text; turn.completed ends the turn', () => {
-  const cmd = codexSessionEvents(JSON.stringify({ type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'ls', exit_code: 1 } }));
-  assert.deepEqual(cmd.events, [{ type: 'activity', id: 'i1', label: 'Running `ls`' }, { type: 'activity-done', id: 'i1', error: true }]);
-  assert.deepEqual(codexSessionEvents(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'hi' } })).events, [{ type: 'text', text: 'hi' }]);
-  assert.equal(codexSessionEvents(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 3, output_tokens: 1 } })).done, true);
-  assert.equal(codexSessionEvents(JSON.stringify({ type: 'turn.failed', error: { message: 'limit' } })).error, 'limit');
+test('codex app-server items map to activity rows with fingerprints; other items are not tool calls', () => {
+  assert.deepEqual(codexActivity({ type: 'commandExecution', id: 'i1', command: 'ls' }), { label: 'Running `ls`', fp: fingerprint('commandExecution', 'ls') });
+  assert.equal(codexActivity({ type: 'fileChange', id: 'i2', changes: [{ path: 'a.ts' }] })?.label, 'Editing `a.ts`');
+  assert.equal(codexActivity({ type: 'mcpToolCall', id: 'i3', server: 'aiws', tool: 'delegate', arguments: { goal: 'x' } })?.label, 'Subtask');
+  assert.equal(codexActivity({ type: 'agentMessage', id: 'i4', text: 'hi' }), null);
 });
 
 test('claude permission summary merges user and project settings and warns on bypass', () => {
