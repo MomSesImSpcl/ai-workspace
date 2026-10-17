@@ -10,6 +10,8 @@ Everything the workspace needs to build, run or develop, kept current during dev
 
 ## Agent integrations (optional, user's choice)
 
+How each integration implements the workspace's capabilities is tracked in the [integration matrix](INTEGRATIONS.md).
+
 The user assigns any agent to any role ([routing-001](features/model-routing/SPEC.md#role-and-agent-assignments)), so no agent CLI is a direct dependency. Only the integrations assigned to roles that are actually used must be installed and logged in; at least one runnable integration is needed to run tasks. A prerequisite check should test the assigned ones and mark the rest optional.
 
 | Integration | Default role | Last tested | Install / setup | Notes |
