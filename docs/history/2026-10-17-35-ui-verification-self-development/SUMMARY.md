@@ -1,0 +1,3 @@
+# Features: runtime UI verification and self-development
+
+Specified with the user, not started: [ui-verification](../../features/ui-verification/SUMMARY.md) (uiverify-001–007: isolated test instance with own storage and port, DOM/computed style/console/screenshot checks, labeled runtime results) and [self-development](../../features/self-development/SUMMARY.md) (selfdev-001–007: worktree per change, running instance untouched, checks and UI verification in the worktree, approval before merge, restart that keeps sessions, fallback to the last working version). Split out of the language-intelligence proposal (lang-intel-009, 010).
