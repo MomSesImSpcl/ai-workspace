@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activityLabel, agentEnv, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
@@ -8,7 +8,7 @@ import { codexSessionEvents } from '../src/adapters/codex.ts';
 import { addMessage, createSession, emit, listSessions, loadSession, readEvents, requestStop, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
-import { registerProject } from '../src/store.ts';
+import { listProjects, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
 
 let root = '';
 beforeEach(() => {
@@ -200,4 +200,22 @@ test('archiving a project hides it and keeps its data; ids with spaces work', as
   } finally {
     server.close();
   }
+});
+
+test('removing an archived project drops only its reference; workspace subfolders not yet added are listed', async () => {
+  const ws = mkdtempSync(join(tmpdir(), 'ws-root-'));
+  mkdirSync(join(ws, 'alpha'));
+  mkdirSync(join(ws, 'beta'));
+  mkdirSync(join(ws, '.hidden'));
+  setWorkspaceRoot(ws);
+  registerProject(join(ws, 'alpha'), 'alpha');
+  assert.deepEqual(unaddedFolders(), [join(ws, 'beta')]);
+  const s = createSession('alpha', 'Implementation', claude);
+  assert.throws(() => removeProject('alpha'), /must be archived/);
+  setProjectArchived('alpha', true);
+  removeProject('alpha');
+  assert.equal(listProjects().some((p) => p.id === 'alpha'), false);
+  assert.ok(existsSync(join(ws, 'alpha'))); // folder untouched
+  assert.equal(loadSession(s.id).projectId, 'alpha'); // history kept
+  assert.deepEqual(unaddedFolders().sort(), [join(ws, 'alpha'), join(ws, 'beta')]);
 });

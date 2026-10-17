@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync, existsSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 // Workspace state lives outside projects: project content is untrusted for privilege decisions.
 export function home(): string {
@@ -68,6 +68,24 @@ export function setProjectArchived(id: string, archived: boolean): Project {
   const project = { ...getProject(id), archived: archived || undefined };
   addProject(project);
   return project;
+}
+
+// Removes only the workspace's reference to an archived project. Its folder and the sessions, tasks
+// and logs stored under its id stay; adding the folder again with the same name brings them back.
+export function removeProject(id: string): void {
+  if (!getProject(id).archived) throw new Error('Project must be archived before it is removed');
+  writeJson(projectsPath(), listProjects().filter((p) => p.id !== id));
+}
+
+// Subfolders of the workspace folder that are not projects yet (hidden folders left out).
+export function unaddedFolders(): string[] {
+  const root = getWorkspaceRoot();
+  if (!root || !existsSync(root)) return [];
+  const known = new Set(listProjects().map((p) => resolve(p.root).toLowerCase()));
+  return readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .map((e) => join(root, e.name))
+    .filter((f) => !known.has(resolve(f).toLowerCase()));
 }
 
 export function getProject(id: string): Project {
