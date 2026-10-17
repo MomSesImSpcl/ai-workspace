@@ -259,7 +259,7 @@
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row"><label class="field" style="flex-direction:row;align-items:center;gap:6px">Effort<select id="effort" aria-label="Effort level">
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><label class="field" style="display:flex;align-items:center;gap:6px">Effort<select id="effort" aria-label="Effort level">
           <option value="">Default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra</option><option value="max">Max</option></select></label><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
