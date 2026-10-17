@@ -25,7 +25,7 @@ Requirements below refine 7.2. Priority stated by the user (2026-10-17): TypeScr
 - **code-index-008 — Change impact:** For a symbol or UI element, return known references, imports, related styles/handlers and likely affected components and tests, with evidence and uncertainty. Results are advisory, not proof of all runtime dependencies.
 - **code-index-009 — Degradation:** When a parser or language service is unavailable, report the limitation and return allowed fallback results (structural or text search, another adapter) instead of omitting them silently. Avoid full rescans; respect CPU and memory budgets.
 
-Nonbinding candidates, to assess for license, security and fit when implemented: TypeScript Compiler API / Language Service (or `ts-morph`); `vscode-html-languageservice` with `parse5` or `htmlparser2`; `vscode-css-languageservice` with PostCSS and `postcss-selector-parser`; Roslyn for C#; LSP or Tree-sitter for other languages (Tree-sitter gives syntax, not type resolution).
+Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
 
 **Non-goals:** replacing the shared retrieval service, memory, tests or human review; resolving all dynamic JS/DOM or CSS cascade behavior statically; a mandatory new database, AST format, language-server host, editor UI or daemon.
 

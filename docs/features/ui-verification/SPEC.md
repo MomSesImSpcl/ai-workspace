@@ -27,4 +27,4 @@ Agent dependence: agents reach these tools through the workspace MCP server, lik
 ## Non-goals and open decisions
 
 - Not a general web-automation or scraping tool; not a replacement for unit tests or human review. Using websites on the user's behalf belongs to [integrated-browser](../integrated-browser/SPEC.md).
-- Open: Playwright, Chromium DevTools Protocol or both for Electron (nonbinding candidates); format of saved checks; whether visual comparison is in the first slice.
+- Open: which [technology candidate](../../TECHNOLOGY_CANDIDATES.md) drives Electron; format of saved checks; whether visual comparison is in the first slice.

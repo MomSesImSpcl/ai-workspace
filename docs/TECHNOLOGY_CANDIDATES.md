@@ -5,7 +5,7 @@
 
 | Concern | Technologies discussed / candidates | Selection note |
 |---|---|---|
-| Desktop shell | **Tauri 2**, Rust; alternatively Electron or native UI | Tauri is attractive, not mandatory. Keep desktop OS glue thin. |
+| Desktop shell | **Tauri 2**, Rust; alternatively Electron or native UI | Tauri is attractive, not mandatory. Keep desktop OS glue thin. *Desktop client chose:* Electron; [ADR 0003](architecture/decisions/0003-electron-workspace-shell.md). |
 | Web/mobile UI | **React + TypeScript**, Vite, responsive PWA | Component sharing is useful; other frameworks acceptable. |
 | Workspace/control-plane backend | **Go** or **ASP.NET Core/.NET (C#)** | Both discussed; neither is mandated. Prefer a modular monolith first if suitable. *Core slice 1 chose:* TypeScript on Node 24 for the core CLI; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
 | Workstation agent/runner | Go worker, .NET Worker Service, Rust helpers | Cross-platform process supervision, secure IPC and straightforward deployment matter most. |
@@ -21,6 +21,8 @@
 | Project/versioning | Git/GitHub, `git worktree`, GitHub App/API | GitHub access is specified for GitHub-hosted projects; exact integration mechanism remains design choice. |
 | Project/skill policy files | Markdown, YAML, JSON, `SKILL.md` | Versioned, inspectable schemas; no executable authority from untrusted files. |
 | Code semantic index | Roslyn, MSBuild, compiler APIs | C# domain module; not a reason to force whole backend into C#. |
+| TypeScript/JavaScript, HTML, CSS analysis ([code-index 7.2.1](features/code-index/SPEC.md#721-language-analysis)) | **TypeScript Compiler API + Language Service** or `ts-morph`; `vscode-html-languageservice` with `parse5` or `htmlparser2`; `vscode-css-languageservice` with PostCSS and `postcss-selector-parser`; LSP or Tree-sitter for other languages | Tree-sitter gives syntax only, not type resolution. |
+| Runtime UI verification ([ui-verification](features/ui-verification/SPEC.md)) | **Playwright**, Chromium DevTools Protocol | Must drive an Electron instance alongside the user's own. |
 | Local/ML workers | Python, PyTorch/Transformers, model servers | Python is useful for AI/CV/3D without being the whole platform backend. |
 | AI gateway | Custom interface/adapters, appropriate gateway libraries | Feature fidelity, data privacy, credentials and portability matter. *Core slice 1 chose:* agent CLIs (Claude Code, Codex) behind a workspace adapter interface; [ADR 0001](architecture/decisions/0001-core-slice-stack.md). |
 | App integrations | MCP, Unity Editor APIs, Blender Python, external service APIs | Semantic typed capabilities above tool-specific adapters. |
