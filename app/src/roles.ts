@@ -18,6 +18,7 @@ const defaults: Record<string, Assignment> = {
   ArchitectureReasoning: { integration: 'manual-browser' },
   Orchestration: { integration: 'codex' },
   Implementation: { integration: 'claude-code' },
+  Chat: { integration: 'claude-code' }, // agent for new chat sessions
 };
 
 const rolesPath = () => join(home(), 'roles.json');

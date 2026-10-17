@@ -20,7 +20,7 @@
     --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
     --radius-sm: 7px; --radius: 10px; --radius-lg: 14px;
     --t: 160ms cubic-bezier(.4,0,.2,1);
-    --sidebar-w: 380px; --drawer-w: 300px;
+    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 300px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
   * { box-sizing: border-box; }
@@ -48,19 +48,22 @@
   .icon-btn:hover { background: var(--surface-2); color: var(--text); }
   .crumbs { display: flex; gap: 9px; align-items: center; font-size: 14px; min-width: 0; }
   .crumbs span { color: var(--text-dim); } .crumbs i { color: var(--text-muted); font-style: normal; }
-  .crumbs b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumbs b, .crumb-btn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb-btn { padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 6px; background: none; font-size: 14px; cursor: pointer; }
+  .crumb-btn:hover:not(:disabled) { background: var(--surface-2); }
   .toolbar .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   .pill { font-size: 11px; color: var(--text-dim); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
   .pill .dot { margin-right: 6px; }
 
-  .body { display: grid; grid-template-columns: var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
-  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 minmax(0,1fr) auto 48px; }
+  .body { display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
+  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) auto 48px; }
+  .app[data-sidebar=collapsed] .sessions-col { visibility: hidden; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
   /* Chat column: the project's sessions above the open session, full height. */
-  .sessions { display: grid; gap: 6px; padding: 10px 15px; border-bottom: 1px solid var(--hairline); }
-  .sessions .row { align-items: center; }
-  .session-list { display: grid; gap: 2px; max-height: 28vh; overflow: auto; }
+  .sessions-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 10px; background: var(--rail); border-right: 1px solid var(--hairline); }
+  .sessions-col .row { align-items: center; }
+  .session-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
   .session-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 9px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
   .session-item:hover { background: var(--surface-2); }
   .session-item[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
@@ -189,9 +192,9 @@
     <button class="icon-btn" id="toggle-sidebar" aria-label="Toggle chat" aria-expanded="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg>
     </button>
-    <nav class="crumbs" aria-label="Breadcrumb"><span>Workspace</span><i>/</i><b id="crumb">No project</b></nav>
+    <nav class="crumbs" aria-label="Breadcrumb"><span>Workspace</span><i>/</i><button class="crumb-btn" id="crumb" type="button">No project</button></nav>
     <div class="nav" aria-label="Pages">
-      <button data-page="overview">Overview</button>
+      <button data-page="projects">Projects</button>
       <button data-page="tasks">Tasks</button>
     </div>
     <div class="right">
@@ -201,22 +204,18 @@
   </div>
 
   <div class="body">
+    <aside class="sessions-col" aria-label="Sessions">
+      <button class="btn small" id="new-session" type="button">+ New session</button>
+      <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions">
+      <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
+      <div class="session-list" id="session-list"></div>
+      <small class="meta" id="session-agent"></small>
+    </aside>
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
         <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
-        <button class="link-btn" data-tool="projects">Switch ↗</button>
-      </div>
-      <div class="sessions">
-        <div class="row">
-          <label class="field" style="flex:1">Agent for a new session<select id="session-role"></select></label>
-          <button class="btn small" id="new-session" type="button">New session</button>
-        </div>
-        <div class="row">
-          <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions" style="flex:1">
-          <label class="check"><input id="show-archived" type="checkbox"> Archived</label>
-        </div>
-        <div class="session-list" id="session-list"></div>
+        <button class="link-btn" data-page="projects">Switch ↗</button>
       </div>
       <div class="chat-title row" id="chat-title" style="justify-content:space-between;align-items:center"></div>
       <div class="perm" id="perm"></div>
@@ -230,7 +229,19 @@
     </aside>
 
     <main class="content" id="content">
-      <section class="page" id="page-overview" hidden></section>
+      <section class="page" id="page-projects" hidden>
+        <div class="topline"><div class="eyebrow">Workspace</div></div>
+        <h1 class="display">Projects</h1>
+        <p class="lede" style="margin-bottom:24px">Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.</p>
+        <div class="task-list" id="project-list"></div>
+        <form class="card" id="project" style="display:grid;gap:8px;margin-top:20px">
+          <h3 style="margin:0">Add project</h3>
+          <label class="field">Folder<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
+          <label class="field">Name (optional, defaults to the folder name)<input name="id"></label>
+          <div class="row"><button class="btn primary small">Add project</button></div>
+          <p class="error" id="project-error" role="alert"></p>
+        </form>
+      </section>
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
@@ -254,26 +265,13 @@
 
     <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title">
       <header><h2 id="drawer-title"></h2><button class="icon-btn" id="close-drawer" aria-label="Close panel">✕</button></header>
-      <div id="drawer-projects" hidden>
-        <div id="project-list" style="display:grid;gap:4px;margin-bottom:18px"></div>
-        <h3>Add project</h3>
-        <form id="project">
-          <label class="field">Folder<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
-          <label class="field">Name (optional, defaults to the folder name)<input name="id"></label>
-          <button class="btn primary small">Add project</button>
-          <p class="error" id="project-error" role="alert"></p>
-        </form>
-      </div>
       <div id="drawer-settings" hidden>
-        <p class="meta" style="margin:0 0 6px">Which agent runs each role. New tasks use these; running tasks keep theirs.</p>
+        <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
     </aside>
 
     <nav class="rail" aria-label="Tools">
-      <button data-tool="projects" aria-pressed="false">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3.2l1.6 1.8h6.2A1.5 1.5 0 0 1 16 7.3v6.2A1.5 1.5 0 0 1 14.5 15h-11A1.5 1.5 0 0 1 2 13.5z"/></svg><span>Projects</span>
-      </button>
       <button data-tool="settings" aria-pressed="false">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 5h12M3 9h12M3 13h12"/><circle cx="7" cy="5" r="1.6" fill="var(--rail)"/><circle cx="12" cy="9" r="1.6" fill="var(--rail)"/><circle cx="6" cy="13" r="1.6" fill="var(--rail)"/></svg><span>Settings</span>
       </button>
@@ -291,7 +289,7 @@ const pref = {
   get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'overview'), tool: null, selected: null, sessions: [], session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, sessions: [], session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -320,7 +318,7 @@ function setPage(page) {
     if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   }
-  $('#page-overview').hidden = page !== 'overview';
+  $('#page-projects').hidden = page !== 'projects';
   $('#page-tasks').hidden = page !== 'tasks';
   render();
 }
@@ -328,9 +326,8 @@ function setPage(page) {
 function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
   $('#drawer').hidden = !state.tool;
-  $('#drawer-projects').hidden = state.tool !== 'projects';
   $('#drawer-settings').hidden = state.tool !== 'settings';
-  $('#drawer-title').textContent = { projects: 'Projects', settings: 'Settings' }[state.tool] ?? '';
+  $('#drawer-title').textContent = { settings: 'Settings' }[state.tool] ?? '';
   for (const b of $$('.rail button')) b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool));
   renderDrawer();
 }
@@ -340,14 +337,17 @@ function selectProject(id) {
   state.selected = null;
   pref.set('project', id);
   openSession(pref.get(`session.${id}`, '') || null);
-  renderDrawer();
 }
 
 function renderShell() {
   const p = current();
   $('#crumb').textContent = p?.id ?? 'No project';
+  $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
+  $('#crumb').disabled = !p || !window.desktop;
   $('#project-name').textContent = p?.id ?? 'No project';
   $('#project-root').textContent = p?.root ?? 'Add one from Projects';
+  const chat = state.roles.Chat;
+  $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
   $('#mark').textContent = p?.id[0] ?? '?';
   $('#new-task-btn').disabled = !p;
   const running = state.tasks.filter((t) => t.status === 'running' && t.runnerAlive).length;
@@ -356,32 +356,15 @@ function renderShell() {
   $('#foot-status').innerHTML = p ? `<span class="dot s-running"></span> ${mine.filter((t) => t.status === 'running').length} running · ${mine.length} tasks` : '';
 }
 
-function renderOverview() {
-  const p = current();
-  if (!p) {
-    $('#page-overview').innerHTML = `<div class="topline"><div class="eyebrow">Workspace</div></div>
-      <h1 class="display">Start with a project.</h1>
-      <p class="lede">A project is a folder the agents may read, and write to when you allow it. Everything they do is audited.</p>
-      <div class="actions"><button class="btn primary" data-action="add-project">Add project →</button></div>`;
-    return;
-  }
-  const mine = projectTasks();
-  const count = (s) => mine.filter((t) => t.status === s).length;
-  const all = state.tasks.filter((t) => t.projectId === p.id); // includes subtasks, whose usage is already in their parent
-  const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
-  const cache = mine.reduce((n, t) => n + cached(t), 0);
-  $('#page-overview').innerHTML = `<div class="topline"><div class="eyebrow">Project / ${esc(p.id)}</div><span class="pill">${all.length - mine.length} subtasks</span></div>
-    <h1 class="display">${esc(p.id)}</h1>
-    <p class="lede">${esc(p.root)}</p>
-    <div class="actions"><button class="btn primary" data-action="new-task">New task →</button><button class="btn" data-action="view-tasks">View tasks</button></div>
-    <div class="stats">
-      <div><strong>${mine.length}</strong><span>tasks · ${count('completed')} completed</span></div>
-      <div><strong>${count('running')}</strong><span>running · ${count('paused')} paused</span></div>
-      <div><strong>${work.toLocaleString()}</strong><span>work tokens</span></div>
-      <div><strong>${cache.toLocaleString()}</strong><span>prompt-cache tokens</span></div>
-    </div>
-    <div class="section-head"><h2>Recent tasks</h2><span>${mine.length ? 'latest first' : ''}</span></div>
-    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one from Tasks.</p>'}</div>`;
+function renderProjects() {
+  $('#project-list').innerHTML = state.projects.map((p) => {
+    const mine = state.tasks.filter((t) => t.projectId === p.id && !t.parentId);
+    const running = mine.filter((t) => t.status === 'running' && t.runnerAlive).length;
+    const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
+    return `<button class="task-row" data-project="${esc(p.id)}" aria-current="${p.id === state.project}">
+      <span class="goal">${esc(p.id)}</span><span class="meta">${esc(p.root)}</span>
+      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} work tokens</span></button>`;
+  }).join('') || '<p class="empty">No projects yet. Add a folder below to start.</p>';
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
@@ -507,9 +490,6 @@ async function renderTasks() {
 }
 
 function renderDrawer() {
-  if (state.tool === 'projects') {
-    $('#project-list').innerHTML = state.projects.map((p) => `<button class="project-item" data-project="${esc(p.id)}" aria-current="${p.id === state.project}"><span>${esc(p.id)}</span><small>${esc(p.root)}</small></button>`).join('') || '<p class="empty">No projects yet.</p>';
-  }
   if (state.tool === 'settings') {
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
@@ -524,7 +504,7 @@ function renderDrawer() {
 function render() {
   renderShell();
   renderChat();
-  if (state.page === 'overview') renderOverview();
+  if (state.page === 'projects') renderProjects();
   else renderTasks().catch((e) => { $('#detail').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
 }
 
@@ -534,7 +514,6 @@ async function load() {
   if (!state.projects.some((p) => p.id === state.project)) state.project = state.projects[0]?.id ?? null;
   const roleOptions = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}${a.model ? ` (${esc(a.model)})` : ''}</option>`).join('');
   $('[name=role]').innerHTML = roleOptions;
-  $('#session-role').innerHTML = roleOptions;
 }
 
 async function poll() {
@@ -565,14 +544,16 @@ const newSession = () => {
   $('[name=text]').focus();
 };
 $('#new-task-btn').onclick = newSession;
+$('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
 $('#new-session').onclick = newSession;
 $('#session-filter').oninput = renderSessions;
 $('#show-archived').onchange = renderSessions;
 $('#stop').onclick = () => sessionAction('stop');
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-sact],[data-approve]');
+  const el = e.target.closest('.chat-head [data-page],[data-id],[data-action],[data-act],[data-project],[data-session],[data-sact],[data-approve]');
   if (!el) return;
+  if (el.dataset.page) return setPage(el.dataset.page);
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
   if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
@@ -589,7 +570,6 @@ document.addEventListener('click', async (e) => {
   }
   if (el.dataset.action === 'new-task') return newTask();
   if (el.dataset.action === 'view-tasks') return setPage('tasks');
-  if (el.dataset.action === 'add-project') return state.tool !== 'projects' && setTool('projects');
   if (el.dataset.act) {
     try { await api(`/api/tasks/${state.selected}/${el.dataset.act}`, el.dataset.act === 'resume' && $('#budget-more').value ? { budget: Number($('#budget-more').value) } : {}); await poll(); }
     catch (err) { $('#detail-error').textContent = err.message; }
@@ -633,7 +613,7 @@ $('#new').onsubmit = async (e) => {
   const f = new FormData(e.target);
   try {
     if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const id = state.session ?? (await api('/api/sessions', { projectId: state.project, role: $('#session-role').value })).id;
+    const id = state.session ?? (await api('/api/sessions', { projectId: state.project, role: 'Chat' })).id;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';
@@ -694,8 +674,7 @@ $('#resizer').onkeydown = (e) => {
   $('#toggle-sidebar').setAttribute('aria-expanded', String($('#app').dataset.sidebar === 'open'));
   await load();
   state.tasks = await api('/api/tasks');
-  setPage(state.page === 'tasks' ? 'tasks' : 'overview');
-  if (!state.projects.length) setTool('projects');
+  setPage(state.page === 'tasks' && state.projects.length ? 'tasks' : 'projects');
   openSession(pref.get(`session.${state.project}`, '') || null);
   setInterval(() => poll().catch(() => {}), 2000);
   // The open session refreshes faster while its agent works, so the reply streams in.

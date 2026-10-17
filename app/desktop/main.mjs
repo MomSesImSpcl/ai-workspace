@@ -3,6 +3,7 @@
 // tasks keep running in their own processes.
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const appDir = fileURLToPath(new URL('..', import.meta.url));
@@ -52,6 +53,12 @@ function createWindow(url) {
 ipcMain.handle('pick-folder', async (event) => {
   const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Select the project folder', properties: ['openDirectory'] });
   return result.canceled ? null : result.filePaths[0];
+});
+
+// Only existing folders, so the page cannot make the shell open files or URLs.
+ipcMain.handle('open-folder', (_event, path) => {
+  if (typeof path !== 'string' || !existsSync(path) || !statSync(path).isDirectory()) return 'not a folder';
+  return shell.openPath(path);
 });
 
 const appUserModelId = 'AIWorkspace.Desktop';
