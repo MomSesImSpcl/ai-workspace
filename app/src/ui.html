@@ -238,7 +238,6 @@
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
         <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
-        <button class="link-btn" data-page="projects">Switch ↗</button>
       </div>
       <div class="chat-title row" id="chat-title" style="justify-content:space-between;align-items:center"></div>
       <div class="perm" id="perm"></div>
@@ -645,9 +644,8 @@ document.addEventListener('click', async (e) => {
     return openMenu(menuBtn.dataset.menu, r.left, r.bottom + 4);
   }
   if (!e.target.closest('#session-menu')) closeMenu();
-  const el = e.target.closest('.chat-head [data-page],[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
   if (!el) return;
-  if (el.dataset.page) return setPage(el.dataset.page);
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
   if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
