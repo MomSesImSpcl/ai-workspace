@@ -5,3 +5,4 @@
 - Limit: one weighting for every provider and model (Codex/OpenAI has no write premium); the real cost depends on the plan.
 - Not reduced: the size of the fixed prompt itself; measuring its split is a separate step.
 - Branch `claude/tasks-feature-b7694b`.
+- Follow-up specified (2026-10-18, user request): onboarding-009 records each agent's token cost weights at setup; not implemented.

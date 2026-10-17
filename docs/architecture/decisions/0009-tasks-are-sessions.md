@@ -20,5 +20,5 @@ Sessions already had everything ADR 0007 asks of tasks: the agent's own setup, a
 
 - One runtime for chat and background work; tasks gain live activity, Stop, approval cards and the agent's plugins and hooks.
 - The workspace no longer confines tasks to the project folder or prevents repeated writes; it shows, holds or stops (ADR 0007).
-- The cap is enforced per model call: the call that crosses it still completes (overshoot of at most one call, [#1](https://github.com/MomSesImSpcl/ai-workspace/issues/1)). Tokens count at real cost (2026-10-18): prompt-cache reads at 10 %, cache writes at 125 % of an input token, for the cap and every display; one weighting for all providers.
+- The cap is enforced per model call: the call that crosses it still completes (overshoot of at most one call, [#1](https://github.com/MomSesImSpcl/ai-workspace/issues/1)). Tokens count at real cost (2026-10-18): prompt-cache reads at 10 %, cache writes at 125 % of an input token, for the cap and every display; one weighting for all providers until per-agent weights come from onboarding ([onboarding-009](../../features/onboarding/SPEC.md#requirements)).
 - Codex repeat detection depends on Codex reporting the same command text both times (it wraps commands in the shell call on Windows).
