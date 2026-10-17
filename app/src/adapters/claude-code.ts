@@ -20,6 +20,7 @@ const tokens = (u: ClaudeUsage): Usage => ({
   inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
   outputTokens: u.output_tokens ?? 0,
   cachedInputTokens: u.cache_read_input_tokens ?? 0,
+  cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
 });
 
 // Live usage from stream-json: one entry per assistant message id (later events of the same id supersede).

@@ -6,8 +6,9 @@ import { audit, home, readJson, writeJson } from './store.ts';
 export type Status = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 export interface Usage {
-  inputTokens: number; // includes cachedInputTokens
+  inputTokens: number; // includes cachedInputTokens and cacheWriteTokens
   cachedInputTokens?: number; // input served from the provider's prompt cache, mostly the agent's fixed prompt
+  cacheWriteTokens?: number; // input written to the prompt cache (the fixed prompt on a first or expired call), not task work
   outputTokens: number;
   costUsd?: number; // reported by the provider; subscription agents may report an estimate or nothing
 }
@@ -108,6 +109,9 @@ export function replyTask(id: string, text: string): Task {
   return task;
 }
 
+// Prompt-cache traffic (read + write): mostly the agent's fixed prompt, shown apart from the task's own work.
+export const cacheTokens = (u: Usage) => (u.cachedInputTokens ?? 0) + (u.cacheWriteTokens ?? 0);
+
 export const used = (u: Usage) => u.inputTokens + u.outputTokens;
 
 export function addUsage(a: Usage, b: Usage): Usage {
@@ -115,6 +119,7 @@ export function addUsage(a: Usage, b: Usage): Usage {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     cachedInputTokens: (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0),
+    cacheWriteTokens: (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0),
     costUsd: a.costUsd === undefined && b.costUsd === undefined ? undefined : (a.costUsd ?? 0) + (b.costUsd ?? 0),
   };
 }

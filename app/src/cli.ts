@@ -2,7 +2,7 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { adapterFor, getRoles, newRoleTask, setRole } from './roles.ts';
-import { cancelTask, listTasks, loadTask, runTask, saveTask, type Task } from './runtime.ts';
+import { cacheTokens, cancelTask, listTasks, loadTask, runTask, saveTask, type Task } from './runtime.ts';
 import { getProject, listProjects, registerProject } from './store.ts';
 
 function budget(value: string | undefined, fallback: number): number {
@@ -35,7 +35,7 @@ const { positionals, values } = parseArgs({
 
 function show(task: Task): void {
   const tokens = task.usage.inputTokens + task.usage.outputTokens;
-  const cached = task.usage.cachedInputTokens ?? 0;
+  const cached = cacheTokens(task.usage);
   const cost = task.usage.costUsd === undefined ? '' : ` cost≈$${task.usage.costUsd.toFixed(4)} (provider-reported)`;
   console.log(`${task.id} ${task.status}${task.reason ? ` (${task.reason})` : ''} steps=${task.steps} tokens=${tokens}/${task.tokenBudget} (work=${tokens - cached} cached=${cached})${cost} integration=${task.integration}`);
   if (task.result) console.log(task.result);

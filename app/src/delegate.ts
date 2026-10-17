@@ -30,6 +30,7 @@ export async function delegate(parentId: string, goal: string, role = 'Implement
   p.usage.inputTokens += child.usage.inputTokens - before.inputTokens;
   p.usage.outputTokens += child.usage.outputTokens - before.outputTokens;
   p.usage.cachedInputTokens = (p.usage.cachedInputTokens ?? 0) + (child.usage.cachedInputTokens ?? 0) - (before.cachedInputTokens ?? 0);
+  p.usage.cacheWriteTokens = (p.usage.cacheWriteTokens ?? 0) + (child.usage.cacheWriteTokens ?? 0) - (before.cacheWriteTokens ?? 0);
   saveTask(p);
   return child;
 }

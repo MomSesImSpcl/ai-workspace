@@ -9,10 +9,10 @@
   /* Design tokens, dark only. */
   :root {
     color-scheme: dark;
-    --bg: #0a0a0c; --panel: #131316; --sidebar: #14151a; --rail: #101115; --elevated: #1a1b22;
+    --bg: #262624; --panel: #1f1e1d; --sidebar: #1f1e1d; --rail: #1a1918; --elevated: #30302e; --field: #30302e; --code: #1a1918;
     --surface: rgba(255,255,255,.03); --surface-2: rgba(255,255,255,.055);
-    --text: #ececf1; --text-dim: #9a9aa6; --text-muted: #5c5c68;
-    --pink: #f0a0b0; --pink-bright: #ffc2cf; --pink-dim: rgba(240,160,176,.07); --pink-edge: rgba(240,160,176,.14);
+    --text: #faf9f5; --text-dim: #c2c0b6; --text-muted: #85837d;
+    --accent: #d97757; --accent-bright: #e8957a; --accent-strong: #c6613f; --accent-dim: rgba(217,119,87,.12); --accent-edge: rgba(217,119,87,.32); --on-accent: #ffffff;
     --green: #6ee7a0; --amber: #eab56e; --blue: #7eb8ff; --red: #e87070;
     --hairline: rgba(255,255,255,.07); --hairline-strong: rgba(255,255,255,.13);
     --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -27,7 +27,7 @@
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--font-body); overflow: hidden; }
   button, input, select, textarea { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid rgba(240,160,176,.55); outline-offset: 1px; }
+  :focus-visible { outline: 2px solid var(--accent-edge); outline-offset: 1px; }
   [hidden] { display: none !important; }
   ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
@@ -39,7 +39,7 @@
   .titlebar { display: flex; align-items: center; gap: 9px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--hairline); -webkit-app-region: drag; user-select: none; }
   html[data-platform=win32] .titlebar, html[data-platform=linux] .titlebar { padding-right: 150px; }
   html[data-platform=darwin] .titlebar { padding-left: 80px; }
-  .titlebar .logo { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--pink-bright), var(--pink) 60%, #b07080); }
+  .titlebar .logo { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--accent-bright), var(--accent) 60%, #a8502f); }
   .titlebar b { font-weight: 500; } .titlebar span { color: var(--text-dim); }
   .titlebar .hint { margin-left: auto; font-size: 11px; color: var(--text-muted); }
 
@@ -59,11 +59,14 @@
 
   /* Chat column: the selected task's conversation, full height. */
   .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--hairline); }
+  .sidebar { position: relative; }
+  .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
+  .resizer:hover, .resizer.dragging, .resizer:focus-visible { background: var(--accent-edge); outline: none; }
   .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 15px 12px; border-bottom: 1px solid var(--hairline); }
   .chat-title { padding: 10px 18px 0; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .messages { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 15px; }
   .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
-  .msg.user { align-self: flex-end; background: var(--pink-dim); border: 1px solid var(--pink-edge); color: #f2ced8; }
+  .msg.user { align-self: flex-end; background: var(--elevated); border: 1px solid var(--hairline-strong); }
   .msg.agent { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--hairline); }
   .msg time { display: block; font-size: 10px; color: var(--text-muted); margin-top: 4px; }
   .chat-state { font-size: 11px; color: var(--text-dim); }
@@ -76,30 +79,30 @@
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .identity small { display: block; font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav { display: flex; gap: 4px; }
-  .nav button { display: flex; align-items: center; gap: 8px; padding: 6px 11px; border: 1px solid transparent; border-radius: 9px; background: none; color: #a29baa; font-size: 12px; font-weight: 500; cursor: pointer; transition: background var(--t), color var(--t); }
-  .nav button span { font-size: 10px; color: #736c7c; }
+  .nav button { display: flex; align-items: center; gap: 8px; padding: 6px 11px; border: 1px solid transparent; border-radius: 9px; background: none; color: var(--text-dim); font-size: 12px; font-weight: 500; cursor: pointer; transition: background var(--t), color var(--t); }
+  .nav button span { font-size: 10px; color: var(--text-muted); }
   .nav button:hover { background: rgba(255,255,255,.02); color: var(--text); }
-  .nav button[aria-current=page] { background: var(--pink-dim); border-color: var(--pink-edge); color: #f2ced8; }
-  .nav button[aria-current=page] span { color: #e7a5b6; }
+  .nav button[aria-current=page] { background: var(--accent-dim); border-color: var(--accent-edge); color: var(--text); }
+  .nav button[aria-current=page] span { color: var(--accent); }
   .link-btn { border: 0; background: none; padding: 0; color: var(--text-dim); font-size: 11px; text-align: left; cursor: pointer; }
-  .link-btn:hover { color: var(--pink); }
+  .link-btn:hover { color: var(--accent); }
 
   /* Main content */
   .content { overflow: auto; min-width: 0; }
   .page { max-width: 1180px; margin: 0 auto; padding: 26px clamp(20px, 3.4vw, 52px) 56px; }
-  .eyebrow { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #938b9d; }
+  .eyebrow { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
   .topline { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 30px; }
   h1.display { font-family: var(--font-display); font-weight: 500; font-size: clamp(32px, 3.8vw, 52px); line-height: 1.06; letter-spacing: -.03em; margin: 0 0 12px; overflow-wrap: anywhere; }
   .lede { color: var(--text-dim); font-size: 13px; margin: 0; max-width: 70ch; overflow-wrap: anywhere; }
   .actions { display: flex; gap: 10px; margin: 26px 0 30px; flex-wrap: wrap; }
-  .btn { font-size: 12px; padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: rgba(255,255,255,.015); color: #d3d0d9; cursor: pointer; transition: filter var(--t), background var(--t); }
+  .btn { font-size: 12px; padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: rgba(255,255,255,.015); color: var(--text-dim); cursor: pointer; transition: filter var(--t), background var(--t); }
   .btn:hover:not(:disabled) { filter: brightness(1.15); }
-  .btn.primary { background: #efd4db; border-color: #efd4db; color: #33232d; }
+  .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn.small { padding: 6px 11px; }
   .stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; padding: 22px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
   .stats strong { display: block; font-size: 28px; font-weight: 600; letter-spacing: -.04em; }
-  .stats span { font-size: 11px; color: #a29baa; }
+  .stats span { font-size: 11px; color: var(--text-dim); }
   .section-head { display: flex; justify-content: space-between; align-items: baseline; margin: 36px 0 14px; }
   .section-head h2 { font-size: 17px; font-weight: 600; margin: 0; }
   .section-head span { font-size: 10px; color: var(--text-muted); }
@@ -107,7 +110,7 @@
   .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; }
   .task-row { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); cursor: pointer; transition: background var(--t), border-color var(--t); }
   .task-row:hover { background: var(--surface-2); }
-  .task-row[aria-current=true] { background: var(--pink-dim); border-color: var(--pink-edge); }
+  .task-row[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .task-list { display: grid; gap: 8px; }
   .goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 11px; color: var(--text-dim); }
@@ -123,7 +126,7 @@
 
   /* Tasks page */
   .field { display: grid; gap: 4px; font-size: 11px; color: var(--text-dim); min-width: 0; }
-  input, select, textarea { background: #0e0f12; border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); padding: 8px 10px; min-width: 0; }
+  input, select, textarea { background: var(--field); border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); padding: 8px 10px; min-width: 0; }
   textarea { resize: vertical; width: 100%; }
   .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
   .row > .field { flex: 1 1 140px; }
@@ -133,8 +136,8 @@
   .detail h2 { font-size: 18px; margin: 0 0 14px; overflow-wrap: anywhere; }
   dl { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 14px; margin: 0; font-size: 12px; }
   dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; }
-  h3 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #938b9d; font-weight: 500; margin: 22px 0 8px; }
-  pre { margin: 0; padding: 12px; background: #0c0d10; border: 1px solid var(--hairline); border-radius: 8px; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+  h3 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; margin: 22px 0 8px; }
+  pre { margin: 0; padding: 12px; background: var(--code); border: 1px solid var(--hairline); border-radius: 8px; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
   .error { color: var(--red); font-size: 12px; min-height: 1em; margin: 0; }
 
   /* Drawer and utility rail */
@@ -145,14 +148,14 @@
   .project-item { display: flex; flex-direction: column; width: 100%; text-align: left; gap: 2px; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
   .project-item small { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .project-item:hover { background: var(--surface-2); }
-  .project-item[aria-current=true] { background: var(--pink-dim); border-color: var(--pink-edge); }
+  .project-item[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .role { display: grid; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
   .role b { font-size: 12px; }
   .rail { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 9px 0 12px; background: var(--rail); border-left: 1px solid rgba(255,255,255,.035); }
-  .rail button { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 44px; min-height: 50px; padding: 6px 0; border: 0; border-radius: 7px; background: none; color: #817b8c; cursor: pointer; transition: background var(--t), color var(--t); }
+  .rail button { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 44px; min-height: 50px; padding: 6px 0; border: 0; border-radius: 7px; background: none; color: var(--text-dim); cursor: pointer; transition: background var(--t), color var(--t); }
   .rail button span { font-size: 8px; font-weight: 500; }
-  .rail button:hover { background: rgba(255,255,255,.02); color: #dfc4d2; }
-  .rail button[aria-pressed=true] { background: rgba(240,160,176,.05); color: var(--pink); }
+  .rail button:hover { background: rgba(255,255,255,.02); color: var(--text); }
+  .rail button[aria-pressed=true] { background: var(--accent-dim); color: var(--accent); }
 
   @media (max-width: 1100px) { :root { --sidebar-w: 310px; } .split { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
   /* Narrow window: the drawer floats over the content instead of squeezing it. */
@@ -180,6 +183,7 @@
 
   <div class="body">
     <aside class="sidebar" id="sidebar" aria-label="Chat">
+      <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
         <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
         <button class="link-btn" data-tool="projects">Switch ↗</button>
@@ -262,10 +266,10 @@ async function api(path, body) {
 
 // Cached input is mostly the agent's fixed prompt; the rest is what the work itself cost.
 const tokens = (t) => t.usage.inputTokens + t.usage.outputTokens;
-const cached = (t) => t.usage.cachedInputTokens ?? 0;
+const cached = (t) => (t.usage.cachedInputTokens ?? 0) + (t.usage.cacheWriteTokens ?? 0); // prompt-cache reads + writes
 const spent = (t) => t.usage.cachedInputTokens === undefined // tasks recorded before the split
   ? tokens(t).toLocaleString()
-  : `${(tokens(t) - cached(t)).toLocaleString()} work + ${cached(t).toLocaleString()} cached`;
+  : `${(tokens(t) - cached(t)).toLocaleString()} work + ${cached(t).toLocaleString()} prompt cache`;
 const summary = (t) => `step ${t.steps} · ${spent(t)} / ${t.tokenBudget.toLocaleString()} tokens · ${esc(t.integration)}`;
 // A running task whose runner process is gone (crash, reboot) can be resumed.
 const label = (t) => t.status === 'running' && !t.runnerAlive ? 'running (runner stopped)' : t.status;
@@ -338,7 +342,7 @@ function renderOverview() {
       <div><strong>${mine.length}</strong><span>tasks · ${count('completed')} completed</span></div>
       <div><strong>${count('running')}</strong><span>running · ${count('paused')} paused</span></div>
       <div><strong>${work.toLocaleString()}</strong><span>work tokens</span></div>
-      <div><strong>${cache.toLocaleString()}</strong><span>cached tokens</span></div>
+      <div><strong>${cache.toLocaleString()}</strong><span>prompt-cache tokens</span></div>
     </div>
     <div class="section-head"><h2>Recent tasks</h2><span>${mine.length ? 'latest first' : ''}</span></div>
     <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one in the chat.</p>'}</div>`;
@@ -511,7 +515,27 @@ $('#roles').onsubmit = async (e) => {
   } catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
 };
 
+// Drag (or arrow keys on the handle) to resize the chat column, between 280px and 70% of the window.
+const setChatWidth = (px) => {
+  const w = Math.round(Math.min(Math.max(px, 280), innerWidth * 0.7));
+  document.documentElement.style.setProperty('--sidebar-w', `${w}px`);
+  pref.set('chat-width', String(w));
+};
+$('#resizer').onpointerdown = (e) => {
+  e.preventDefault();
+  $('#resizer').setPointerCapture(e.pointerId);
+  $('#resizer').classList.add('dragging');
+  const left = $('#sidebar').getBoundingClientRect().left;
+  $('#resizer').onpointermove = (m) => setChatWidth(m.clientX - left);
+  $('#resizer').onpointerup = () => { $('#resizer').onpointermove = null; $('#resizer').classList.remove('dragging'); };
+};
+$('#resizer').onkeydown = (e) => {
+  const step = { ArrowLeft: -20, ArrowRight: 20 }[e.key];
+  if (step) { e.preventDefault(); setChatWidth($('#sidebar').getBoundingClientRect().width + step); }
+};
+
 (async () => {
+  if (pref.get('chat-width', null)) setChatWidth(Number(pref.get('chat-width', 380)));
   $('#app').dataset.sidebar = pref.get('sidebar', 'open');
   $('#toggle-sidebar').setAttribute('aria-expanded', String($('#app').dataset.sidebar === 'open'));
   await load();

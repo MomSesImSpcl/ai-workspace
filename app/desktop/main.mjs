@@ -29,10 +29,10 @@ function createWindow(url) {
     minWidth: 760,
     minHeight: 480,
     title: 'AI Workspace',
-    backgroundColor: '#0a0a0c',
+    backgroundColor: '#262624',
     titleBarStyle: 'hidden',
     // Native window buttons drawn over our titlebar (Windows/Linux); macOS keeps its traffic lights.
-    titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#131316', symbolColor: '#9a9aa6', height: 42 },
+    titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#1f1e1d', symbolColor: '#c2c0b6', height: 42 },
     webPreferences: { preload: fileURLToPath(new URL('preload.cjs', import.meta.url)), contextIsolation: true, sandbox: true },
   });
   // The window only ever shows the local workspace page; links elsewhere open in the browser.
