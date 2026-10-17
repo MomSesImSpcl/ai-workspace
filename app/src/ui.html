@@ -20,7 +20,7 @@
     --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
     --radius-sm: 7px; --radius: 10px; --radius-lg: 14px;
     --t: 160ms cubic-bezier(.4,0,.2,1);
-    --sidebar-w: 204px; --drawer-w: 300px;
+    --sidebar-w: 380px; --drawer-w: 300px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
   * { box-sizing: border-box; }
@@ -57,20 +57,30 @@
   .app[data-sidebar=collapsed] .body { grid-template-columns: 0 minmax(0,1fr) auto 48px; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
-  /* Project navigation */
-  .sidebar { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding: 26px 15px 18px; background: var(--sidebar); border-right: 1px solid var(--hairline); }
+  /* Chat column: the selected task's conversation, full height. */
+  .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--hairline); }
+  .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 15px 12px; border-bottom: 1px solid var(--hairline); }
+  .chat-title { padding: 10px 18px 0; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .messages { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 15px; }
+  .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+  .msg.user { align-self: flex-end; background: var(--pink-dim); border: 1px solid var(--pink-edge); color: #f2ced8; }
+  .msg.agent { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--hairline); }
+  .msg time { display: block; font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+  .chat-state { font-size: 11px; color: var(--text-dim); }
+  .chat-state:empty { display: none; }
+  .chat-composer { display: grid; gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); }
+  .chat-composer textarea { min-height: 64px; max-height: 40vh; }
+  .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
   .brand-mark { display: grid; place-content: center; flex: none; width: 38px; height: 40px; border-radius: 11px; border: 1px solid rgba(228,189,104,.19); background: rgba(228,189,104,.06); color: #e4bd68; font-weight: 700; font-size: 18px; text-transform: uppercase; }
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .identity small { display: block; font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .label { font-size: 9px; letter-spacing: .13em; text-transform: uppercase; color: #817987; margin: 40px 12px 12px; }
-  .nav { display: grid; gap: 7px; }
-  .nav button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 12px 11px; border: 1px solid transparent; border-radius: 9px; background: none; color: #a29baa; font-size: 12px; font-weight: 500; cursor: pointer; transition: background var(--t), color var(--t); }
+  .nav { display: flex; gap: 4px; }
+  .nav button { display: flex; align-items: center; gap: 8px; padding: 6px 11px; border: 1px solid transparent; border-radius: 9px; background: none; color: #a29baa; font-size: 12px; font-weight: 500; cursor: pointer; transition: background var(--t), color var(--t); }
   .nav button span { font-size: 10px; color: #736c7c; }
   .nav button:hover { background: rgba(255,255,255,.02); color: var(--text); }
   .nav button[aria-current=page] { background: var(--pink-dim); border-color: var(--pink-edge); color: #f2ced8; }
   .nav button[aria-current=page] span { color: #e7a5b6; }
-  .sidebar-foot { margin-top: auto; padding: 32px 8px 0; font-size: 11px; color: var(--text-dim); display: grid; gap: 6px; }
   .link-btn { border: 0; background: none; padding: 0; color: var(--text-dim); font-size: 11px; text-align: left; cursor: pointer; }
   .link-btn:hover { color: var(--pink); }
 
@@ -112,8 +122,6 @@
   .s-cancelled, .s-pending { color: var(--text-dim); }
 
   /* Tasks page */
-  .composer { padding: 14px; display: grid; gap: 10px; margin-bottom: 22px; }
-  .composer textarea { min-height: 54px; }
   .field { display: grid; gap: 4px; font-size: 11px; color: var(--text-dim); min-width: 0; }
   input, select, textarea { background: #0e0f12; border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); padding: 8px 10px; min-width: 0; }
   textarea { resize: vertical; width: 100%; }
@@ -146,7 +154,7 @@
   .rail button:hover { background: rgba(255,255,255,.02); color: #dfc4d2; }
   .rail button[aria-pressed=true] { background: rgba(240,160,176,.05); color: var(--pink); }
 
-  @media (max-width: 1100px) { :root { --sidebar-w: 174px; } .split { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 1100px) { :root { --sidebar-w: 310px; } .split { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
   /* Narrow window: the drawer floats over the content instead of squeezing it. */
   @media (max-width: 900px) { .body { position: relative; } .drawer { position: absolute; right: 48px; top: 0; bottom: 0; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.45); } }
 </style>
@@ -156,28 +164,39 @@
   <header class="titlebar"><span class="logo" aria-hidden="true"></span><b>AI Workspace</b><span>· Workspace</span><span class="hint">Tasks keep running when this window closes</span></header>
 
   <div class="toolbar">
-    <button class="icon-btn" id="toggle-sidebar" aria-label="Toggle project navigation" aria-expanded="true">
+    <button class="icon-btn" id="toggle-sidebar" aria-label="Toggle chat" aria-expanded="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg>
     </button>
     <nav class="crumbs" aria-label="Breadcrumb"><span>Workspace</span><i>/</i><b id="crumb">No project</b></nav>
+    <div class="nav" aria-label="Pages">
+      <button data-page="overview">Overview</button>
+      <button data-page="tasks">Tasks</button>
+    </div>
     <div class="right">
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
-      <button class="btn primary small" id="new-task-btn">New task</button>
+      <button class="btn primary small" id="new-task-btn">New chat</button>
     </div>
   </div>
 
   <div class="body">
-    <aside class="sidebar" id="sidebar" aria-label="Project navigation">
-      <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
-      <div class="label">Project</div>
-      <div class="nav" role="list">
-        <button role="listitem" data-page="overview"><span>01</span>Overview</button>
-        <button role="listitem" data-page="tasks"><span>02</span>Tasks</button>
+    <aside class="sidebar" id="sidebar" aria-label="Chat">
+      <div class="chat-head">
+        <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
+        <button class="link-btn" data-tool="projects">Switch ↗</button>
       </div>
-      <div class="sidebar-foot">
-        <div id="foot-status"></div>
-        <button class="link-btn" data-tool="projects">Switch project ↗</button>
-      </div>
+      <div class="chat-title" id="chat-title"></div>
+      <div class="messages" id="messages" aria-live="polite"></div>
+      <form class="chat-composer" id="new">
+        <div class="chat-state" id="chat-state" role="status"></div>
+        <textarea name="goal" required aria-label="Message"></textarea>
+        <div class="row" id="new-options">
+          <label class="field">Role<select name="role"></select></label>
+          <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
+          <label class="check"><input name="write" type="checkbox"> Allow writes</label>
+        </div>
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><button class="btn primary small" id="send">Send</button></div>
+        <p class="error" id="new-error" role="alert"></p>
+      </form>
     </aside>
 
     <main class="content" id="content">
@@ -185,17 +204,7 @@
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
-        <p class="lede">Delegated work for this project. Progress shows verified steps and tokens, never guessed percentages.</p>
-        <form class="card composer" id="new" style="margin-top:24px">
-          <label class="field">Goal<textarea name="goal" required placeholder="What should the agent do? Enter starts it, Shift+Enter adds a line."></textarea></label>
-          <div class="row">
-            <label class="field">Role<select name="role"></select></label>
-            <label class="field">Token budget<input name="budget" type="number" min="1" step="1" value="200000" required></label>
-            <label class="check"><input name="write" type="checkbox"> Allow writes</label>
-            <button class="btn primary">Start task</button>
-          </div>
-          <p class="error" id="new-error" role="alert"></p>
-        </form>
+        <p class="lede" style="margin-bottom:24px">Delegated work for this project. Select a task to open its conversation in the chat. Progress shows verified steps and tokens, never guessed percentages.</p>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -332,11 +341,32 @@ function renderOverview() {
       <div><strong>${cache.toLocaleString()}</strong><span>cached tokens</span></div>
     </div>
     <div class="section-head"><h2>Recent tasks</h2><span>${mine.length ? 'latest first' : ''}</span></div>
-    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one from Tasks.</p>'}</div>`;
+    <div class="task-list">${mine.slice(0, 6).map(row).join('') || '<p class="empty">No tasks yet. Start one in the chat.</p>'}</div>`;
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
   <span class="goal">${esc(t.goal)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
+
+// The chat shows the selected task's conversation; with none selected, the next message starts a task.
+let shown = '';
+function renderChat() {
+  const t = state.tasks.find((x) => x.id === state.selected);
+  const busy = t?.status === 'running' && t.runnerAlive;
+  $('#chat-title').textContent = t ? `Task ${t.id} · ${t.role} · ${t.write ? 'writes allowed' : 'read-only'}` : 'New chat: your first message becomes the task goal';
+  $('#new-options').hidden = !!t;
+  $('#send').disabled = !current() || busy || t?.status === 'cancelled';
+  $('[name=goal]').placeholder = t ? 'Reply to continue this task. Enter sends, Shift+Enter adds a line.' : 'What should the agent do? Enter sends, Shift+Enter adds a line.';
+  $('#chat-state').innerHTML = !t ? '' : busy ? `<span class="dot s-running"></span> Working… ${summary(t)}`
+    : t.status === 'running' ? 'Runner stopped. Resume it from Tasks.'
+    : ['paused', 'failed', 'cancelled'].includes(t.status) ? `${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}` : '';
+  const messages = t?.messages ?? [];
+  const key = `${t?.id}:${messages.length}:${!!current()}`;
+  if (key === shown) return; // keep the reader's scroll position between polls
+  shown = key;
+  $('#messages').innerHTML = messages.map((m) => `<div class="msg ${m.from === 'user' ? 'user' : 'agent'}">${esc(m.text)}<time>${new Date(m.at).toLocaleTimeString()}</time></div>`).join('')
+    || `<p class="empty">${current() ? 'Describe a task below to start it.' : 'Add a project first (Projects, right rail).'}</p>`;
+  $('#messages').scrollTop = $('#messages').scrollHeight;
+}
 
 async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
@@ -383,6 +413,7 @@ function renderDrawer() {
 
 function render() {
   renderShell();
+  renderChat();
   if (state.page === 'overview') renderOverview();
   else renderTasks().catch((e) => { $('#detail').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
 }
@@ -409,7 +440,12 @@ $('#toggle-sidebar').onclick = () => {
 for (const b of $$('.nav button')) b.onclick = () => setPage(b.dataset.page);
 for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
 $('#close-drawer').onclick = () => setTool(state.tool);
-const newTask = () => { setPage('tasks'); $('[name=goal]').focus(); };
+const newTask = () => {
+  state.selected = null;
+  if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
+  render();
+  $('[name=goal]').focus();
+};
 $('#new-task-btn').onclick = newTask;
 
 document.addEventListener('click', async (e) => {
@@ -428,7 +464,7 @@ document.addEventListener('click', async (e) => {
   if (state.page !== 'tasks') setPage('tasks'); else render();
 });
 
-// Enter starts the task; Shift+Enter adds a line break.
+// Enter sends; Shift+Enter adds a line break.
 $('[name=goal]').onkeydown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };
@@ -437,7 +473,9 @@ $('#new').onsubmit = async (e) => {
   const f = new FormData(e.target);
   try {
     if (!state.project) throw new Error('Add a project first (Projects, right rail).');
-    const t = await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
+    const t = state.selected
+      ? await api(`/api/tasks/${state.selected}/reply`, { text: f.get('goal') })
+      : await api('/api/tasks', { goal: f.get('goal'), projectId: state.project, role: f.get('role'), budget: Number(f.get('budget')), write: f.get('write') === 'on' });
     state.selected = t.id;
     e.target.goal.value = '';
     $('#new-error').textContent = '';

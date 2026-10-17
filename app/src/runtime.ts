@@ -28,8 +28,16 @@ export interface Task {
   steps: number;
   adapterState?: Record<string, unknown>; // provider hint (e.g. CLI session id), never the durable state
   result?: string;
+  messages?: Message[]; // the conversation; absent on tasks recorded before chat (see conversation())
+  prompt?: string; // a user reply the next step must send; cleared once a step commits
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Message {
+  from: 'user' | 'agent';
+  text: string;
+  at: string;
 }
 
 export interface StepInput {
@@ -72,9 +80,31 @@ export function listTasks(): Task[] {
 
 export function createTask(fields: Pick<Task, 'projectId' | 'goal' | 'role' | 'integration' | 'model' | 'write' | 'tokenBudget' | 'parentId'>): Task {
   const now = new Date().toISOString();
-  const task: Task = { ...fields, id: randomUUID().slice(0, 8), status: 'pending', usage: { inputTokens: 0, outputTokens: 0 }, steps: 0, createdAt: now, updatedAt: now };
+  const task: Task = { ...fields, id: randomUUID().slice(0, 8), status: 'pending', usage: { inputTokens: 0, outputTokens: 0 }, steps: 0, messages: [{ from: 'user', text: fields.goal, at: now }], createdAt: now, updatedAt: now };
   saveTask(task);
   audit({ kind: 'task', taskId: task.id, event: 'created', integration: task.integration, write: task.write });
+  return task;
+}
+
+// The goal opens the conversation; older tasks only kept their last result.
+export function conversation(task: Task): Message[] {
+  if (task.messages) return task.messages;
+  const messages: Message[] = [{ from: 'user', text: task.goal, at: task.createdAt }];
+  if (task.result) messages.push({ from: 'agent', text: task.result, at: task.updatedAt });
+  return messages;
+}
+
+// A follow-up message continues a finished or paused task in the same agent session.
+export function replyTask(id: string, text: string): Task {
+  const task = loadTask(id);
+  if (task.status === 'cancelled') throw new Error('Task is cancelled');
+  if (runnerAlive(id)) throw new Error('Task is already running');
+  task.messages = [...conversation(task), { from: 'user', text, at: new Date().toISOString() }];
+  task.prompt = text;
+  task.status = 'pending';
+  task.reason = undefined;
+  saveTask(task);
+  audit({ kind: 'task', taskId: id, event: 'reply' });
   return task;
 }
 
@@ -192,6 +222,8 @@ async function steps(task: Task, adapter: AgentAdapter, root: string, maxSteps: 
     task.usage = addUsage(task.usage, result.usage);
     task.adapterState = result.adapterState ?? task.adapterState;
     task.result = result.text ?? task.result;
+    if (result.text) task.messages = [...conversation(task), { from: 'agent', text: result.text, at: new Date().toISOString() }];
+    task.prompt = undefined;
     audit({ kind: 'step', taskId: id, step: task.steps, integration: task.integration, usage: result.usage, error: result.error });
     saveTask(task);
     clearLiveUsage(id);

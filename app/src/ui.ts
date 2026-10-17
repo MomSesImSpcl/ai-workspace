@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { cancelTask, listTasks, loadTask, markRunner, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
+import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { home, listProjects, registerProject } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
@@ -63,7 +63,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 function view(task: Task) {
-  return { ...task, runnerAlive: task.status === 'running' && runnerAlive(task.id) };
+  return { ...task, messages: conversation(task), runnerAlive: task.status === 'running' && runnerAlive(task.id) };
 }
 
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {
@@ -106,6 +106,13 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     startRunner(task);
     return view(task);
   }
+  if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
+    const b = await body(req);
+    if (typeof b.text !== 'string' || !b.text.trim()) throw new HttpError(400, 'text is required');
+    const task = replyTask(id, b.text.trim());
+    startRunner(task);
+    return view(task);
+  }
   if (req.method === 'POST' && kind === 'tasks' && action === 'cancel') return view(cancelTask(id));
   throw new HttpError(404, 'not found');
 }
@@ -124,7 +131,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^No assignment|no runnable adapter|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^No assignment|no runnable adapter|^Project |^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

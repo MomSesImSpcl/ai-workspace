@@ -55,7 +55,7 @@ export const claudeCode: AgentAdapter = {
       mcpServers: { ws: { command: process.execPath, args: [mcpServer, task.id], env: { AI_WORKSPACE_HOME: home() } } },
     });
     const sessionId = task.adapterState?.sessionId as string | undefined;
-    const args = ['-p', sessionId ? 'Continue the task.' : task.goal, '--output-format', 'stream-json', '--verbose', '--tools', '', '--mcp-config', mcpConfig, '--strict-mcp-config', '--setting-sources', '', '--allowedTools', 'mcp__ws', '--max-turns', String(TURNS_PER_STEP)];
+    const args = ['-p', sessionId ? (task.prompt ?? 'Continue the task.') : task.goal, '--output-format', 'stream-json', '--verbose', '--tools', '', '--mcp-config', mcpConfig, '--strict-mcp-config', '--setting-sources', '', '--allowedTools', 'mcp__ws', '--max-turns', String(TURNS_PER_STEP)];
     if (task.model) args.push('--model', task.model);
     if (sessionId) args.push('--resume', sessionId);
     else args.push('--append-system-prompt', 'Use only the mcp__ws tools for file access. Paths are relative to the project root.');

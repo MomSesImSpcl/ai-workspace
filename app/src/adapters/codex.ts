@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import type { AgentAdapter, StepResult } from '../runtime.ts';
+import { conversation, type AgentAdapter, type StepResult } from '../runtime.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 
@@ -75,7 +75,9 @@ export const codex: AgentAdapter = {
       '-c', `mcp_servers.ws.env={AI_WORKSPACE_HOME=${JSON.stringify(home())}}`,
     ];
     if (task.model) args.push('-m', task.model);
-    args.push(`${task.goal}\n\nUse only the ws MCP tools (list_dir, read_file, write_file, delegate) for file access and subtasks. Paths are relative to the project root.`);
+    // Each step is a fresh `codex exec`, so a reply carries the whole conversation.
+    const prompt = task.prompt ? conversation(task).map((m) => `${m.from === 'user' ? 'User' : 'You'}: ${m.text}`).join('\n\n') : task.goal;
+    args.push(`${prompt}\n\nUse only the ws MCP tools (list_dir, read_file, write_file, delegate) for file access and subtasks. Paths are relative to the project root.`);
     return new Promise((resolvePromise, reject) => {
       mkdirSync(codexHome(), { recursive: true });
       const child = spawn(bin, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: codexHome() } });

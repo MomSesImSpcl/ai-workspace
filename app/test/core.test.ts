@@ -5,7 +5,7 @@ import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeniedError, newAttempt, readFile, writeFile, type Scope } from '../src/broker.ts';
-import { cancelTask, createTask, listTasks, liveUsage, loadTask, runTask, saveTask, writeLiveUsage, type AgentAdapter } from '../src/runtime.ts';
+import { cancelTask, createTask, replyTask, listTasks, liveUsage, loadTask, runTask, saveTask, writeLiveUsage, type AgentAdapter } from '../src/runtime.ts';
 import { serve } from '../src/ui.ts';
 import { adapterFor, assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { parseResult, streamUsage } from '../src/adapters/claude-code.ts';
@@ -109,6 +109,21 @@ test('task pauses when the token budget is reached and resumes with a larger bud
   assert.equal(done.status, 'completed');
   assert.equal(done.steps, 5);
   assert.equal(done.usage.inputTokens, 500);
+});
+
+test('a reply continues a completed task with the user message as the next prompt', async () => {
+  const prompts: (string | undefined)[] = [];
+  const adapter: AgentAdapter = { step: async ({ task }) => (prompts.push(task.prompt), { done: true, text: `answer ${prompts.length}`, usage: { inputTokens: 1, outputTokens: 1 } }) };
+  const task = createTask({ ...fields, tokenBudget: 10_000 });
+  await runTask(task.id, adapter, root);
+  replyTask(task.id, 'more please');
+  const done = await runTask(task.id, adapter, root);
+  assert.equal(done.status, 'completed');
+  assert.deepEqual(prompts, [undefined, 'more please']);
+  assert.equal(done.prompt, undefined);
+  assert.deepEqual(done.messages!.map((m) => `${m.from}:${m.text}`), ['user:g', 'agent:answer 1', 'user:more please', 'agent:answer 2']);
+  saveTask({ ...done, status: 'cancelled' });
+  assert.throws(() => replyTask(task.id, 'again'), /cancelled/);
 });
 
 test('task interrupted mid-step resumes from its last committed checkpoint', async () => {
