@@ -8,7 +8,7 @@ import { codexSessionEvents } from '../src/adapters/codex.ts';
 import { addMessage, createSession, emit, listSessions, loadSession, readEvents, requestStop, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
-import { listProjects, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
+import { listProjects, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
 
 let root = '';
 beforeEach(() => {
@@ -202,7 +202,7 @@ test('archiving a project hides it and keeps its data; ids with spaces work', as
   }
 });
 
-test('removing an archived project drops only its reference; workspace subfolders not yet added are listed', async () => {
+test('removing a project drops only its reference; workspace subfolders not yet added are listed', async () => {
   const ws = mkdtempSync(join(tmpdir(), 'ws-root-'));
   mkdirSync(join(ws, 'alpha'));
   mkdirSync(join(ws, 'beta'));
@@ -211,9 +211,7 @@ test('removing an archived project drops only its reference; workspace subfolder
   registerProject(join(ws, 'alpha'), 'alpha');
   assert.deepEqual(unaddedFolders(), [join(ws, 'beta')]);
   const s = createSession('alpha', 'Implementation', claude);
-  assert.throws(() => removeProject('alpha'), /must be archived/);
-  setProjectArchived('alpha', true);
-  removeProject('alpha');
+  removeProject('alpha'); // no archive needed first
   assert.equal(listProjects().some((p) => p.id === 'alpha'), false);
   assert.ok(existsSync(join(ws, 'alpha'))); // folder untouched
   assert.equal(loadSession(s.id).projectId, 'alpha'); // history kept

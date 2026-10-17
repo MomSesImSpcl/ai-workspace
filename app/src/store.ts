@@ -70,10 +70,10 @@ export function setProjectArchived(id: string, archived: boolean): Project {
   return project;
 }
 
-// Removes only the workspace's reference to an archived project. Its folder and the sessions, tasks
-// and logs stored under its id stay; adding the folder again with the same name brings them back.
+// Removes only the workspace's reference to a project. Its folder and the sessions, tasks and logs
+// stored under its id stay; adding the folder again with the same name brings them back.
 export function removeProject(id: string): void {
-  if (!getProject(id).archived) throw new Error('Project must be archived before it is removed');
+  getProject(id);
   writeJson(projectsPath(), listProjects().filter((p) => p.id !== id));
 }
 

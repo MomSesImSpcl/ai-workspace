@@ -228,7 +228,7 @@
       <div class="session-list" id="session-list"></div>
       <div class="menu" id="project-menu" role="menu" hidden>
         <button role="menuitem" data-mact="archive">Archive</button>
-        <button role="menuitem" class="danger" data-mact="remove" hidden>Remove from workspace…</button>
+        <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
       <div class="menu" id="session-menu" role="menu" hidden>
         <button role="menuitem" data-mact="rename">Rename</button>
@@ -623,8 +623,6 @@ function openMenu(kind, id, x, y) {
   state.menu = { kind, id };
   const menu = $(`#${kind}-menu`);
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
-  const remove = menu.querySelector('[data-mact=remove]');
-  if (remove) remove.hidden = !s.archived;
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -647,7 +645,7 @@ async function projectMenuAction(act, id) {
     if (!(await ask(`Remove "${p.id}" from the workspace?`, `Only the reference is removed. Nothing is deleted: the folder (${p.root}) stays, and its sessions and tasks stay in workspace storage. Adding the folder again with the same name brings them back.`, 'Remove', true))) return;
     try { await api(`/api/projects/${encodeURIComponent(id)}/remove`, {}); } catch (err) { return void ($('#project-error').textContent = err.message); }
     await load();
-    return render();
+    return state.project !== pref.get('project', null) ? selectProject(state.project) : render();
   }
   if (act !== 'archive') return;
   if (!p.archived && !(await ask(`Archive project "${p.id}"?`, `It is hidden from the workspace. Its folder (${p.root}), sessions and tasks stay untouched, and running work continues. Tick "Show archived" on this page to restore it.`, 'Archive'))) return;
