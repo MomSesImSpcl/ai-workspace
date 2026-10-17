@@ -76,7 +76,7 @@ Decided in [ADR 0004](../../architecture/decisions/0004-agent-native-permissions
 ## Open decisions
 
 - **Turn process:** one agent process per turn first (simple, crash-safe, a few seconds of startup); a process kept open per session only if the startup delay proves annoying.
-- **Codex continuation:** whether Codex can resume its own thread reliably or keeps receiving the conversation as text; verify when implementing. Per-integration status is tracked in the [integration matrix](../../INTEGRATIONS.md).
+- **Codex protocol:** native thread resume works (checked); approvals, streaming and interrupt need the experimental `codex app-server` protocol instead of `codex exec`. Whether to build on an experimental protocol now or accept fewer Codex features until it is stable. Per-integration status is tracked in the [integration matrix](../../INTEGRATIONS.md).
 
 ## Acceptance checks
 

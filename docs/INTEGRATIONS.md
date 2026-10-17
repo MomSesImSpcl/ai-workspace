@@ -2,7 +2,9 @@
 
 How each supported agent and version-control system implements the workspace's capabilities. Use it to see what adding or extending an integration costs: every row an integration cannot fill needs adapter work or a documented limit. Installation and tested versions are in the [dependency inventory](DEPENDENCIES.md). Update a cell whenever work changes how an integration provides a capability, and link the evidence.
 
-Status: **built** (implemented and tested), **planned** (specified, mechanism known), **verify** (mechanism assumed, not yet confirmed), **n/a** (does not apply).
+Status: **built** (implemented and tested), **planned** (specified, mechanism known), **checked** (mechanism confirmed against the real tool, not yet implemented), **verify** (mechanism assumed, not yet confirmed), **n/a** (does not apply).
+
+Codex findings (codex-cli 0.163.0, Windows 10, 2026-10-17, [history](history/2026-10-17-09-codex-capability-check/SUMMARY.md)): `codex exec --json` only emits completed items and turn-end usage and cannot ask for approvals. The `codex app-server` protocol (marked experimental) covers streaming, approvals, interrupt, resume, live usage, rate limits and config reads according to its protocol schema (`codex app-server generate-json-schema`; not yet exercised in a real session), so the Codex adapter for sessions should move to it.
 
 ## Agents
 
@@ -11,16 +13,17 @@ Contracts: [AgentAdapter](../app/src/runtime.ts), sessions event contract ([sess
 | Capability | Claude Code CLI | Codex CLI |
 |---|---|---|
 | Run one turn headless | built: `claude -p --output-format stream-json` | built: `codex exec --json` |
-| Continue a conversation | built: `--resume <session id>` | built: conversation sent as text each turn; native thread resume: verify |
-| Streamed reply text and activity events (sessions-007/020) | planned: `stream-json` assistant and tool events (today used only for live usage) | planned: `--json` item events (agent message, command, file change) |
-| Live usage while running | built: per-message usage from the stream | planned: usage arrives at turn end (`turn.completed`); mid-turn: verify |
-| Stop a turn (sessions-010) | planned: end the process | planned: end the process |
+| Continue a conversation | built: `--resume <session id>` | built: conversation sent as text each turn; checked: `codex exec resume <thread id> <prompt>` keeps the thread (real run recalled the earlier turn); app-server `thread/resume` |
+| Streamed reply text and activity events (sessions-007/020) | planned: `stream-json` assistant and tool events (today used only for live usage) | checked: `exec --json` emits only `item.completed` (no deltas, and a rejected command produced no item); app-server streams `item/agentMessage/delta`, `item/started`/`item/completed`, command and file-change output deltas |
+| Live usage while running | built: per-message usage from the stream | checked: `exec` reports usage only at `turn.completed`; app-server sends `thread/tokenUsage/updated` |
+| Stop a turn (sessions-010) | planned: end the process | planned: end the process (`exec`); checked: app-server `turn/interrupt` keeps the thread |
 | Own tools, settings and permissions (ADR 0004) | planned: drop `--tools ''`, `--setting-sources ''`, `--strict-mcp-config` | planned: drop `--ignore-user-config`, `--ignore-rules`, `-s read-only`, dedicated `CODEX_HOME` |
-| Read effective permissions for the summary (sessions-018) | verify: user/project settings files (`permissions` allow/ask/deny) | verify: config `approval_policy` and sandbox mode |
-| Relay "ask" prompts as approval cards (sessions-019) | verify: `--permission-prompt-tool` (MCP tool answering allow/deny) | verify: approval requests in the exec protocol |
+| Read effective permissions for the summary (sessions-018) | verify: user/project settings files (`permissions` allow/ask/deny) | checked: app-server `config/read`; relevant keys `approval_policy` and sandbox mode |
+| Relay "ask" prompts as approval cards (sessions-019) | verify: `--permission-prompt-tool` (MCP tool answering allow/deny) | checked: not possible with `exec` (with `approval_policy="never"` a blocked command is silently denied, seen in a real run); app-server requests `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `item/permissions/requestApproval` |
 | Global rules file (sessions-016) | user `CLAUDE.md`, loaded natively | user `AGENTS.md`, loaded natively |
-| Provider usage/rate limit detection (sessions-024) | verify: limit error in result event | verify: error event text |
+| Provider usage/rate limit detection (sessions-024) | verify: limit error in result event | checked: app-server `account/rateLimits/read` and `account/rateLimits/updated`; in `exec` only error text: verify |
 | Delegate to a child task (workspace `delegate` tool) | built: workspace MCP server | built: workspace MCP server |
+| Writes in the project folder on Windows | built (through the broker today) | verify: a real `exec` run with `-s workspace-write` had its file write rejected as "blocked by policy"; Windows sandbox setup needed |
 
 ## Version control
 
