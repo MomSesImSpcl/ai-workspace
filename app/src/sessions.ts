@@ -26,7 +26,7 @@ export interface Session {
 export type SessionEvent = { at: string; turn: number } & (
   | { type: 'user'; text: string }
   | { type: 'start'; integration: string }
-  | { type: 'init'; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
+  | { type: 'init'; model?: string; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
   | { type: 'notice'; text: string; blocked?: boolean } // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean }
@@ -240,6 +240,7 @@ export interface Turn {
   state: TurnState;
   error?: string;
   usage: Usage;
+  model?: string;
   permissionMode?: string;
   ruleFiles?: string[];
   plugins?: string[]; // what the agent loaded from its own setup, reported, never configured here
@@ -265,7 +266,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     if (!t) continue;
     if (e.type === 'text') t.text += e.text;
     else if (e.type === 'notice') t.notices.push({ text: e.text, blocked: e.blocked });
-    else if (e.type === 'init') Object.assign(t, { permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
+    else if (e.type === 'init') Object.assign(t, { model: e.model, permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
     else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside });
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail });

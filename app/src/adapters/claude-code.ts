@@ -126,6 +126,7 @@ interface StreamLine {
   session_id?: string;
   permissionMode?: string;
   memory_paths?: unknown;
+  model?: string;
   content?: string;
   level?: string;
   prevent_continuation?: boolean;
@@ -146,7 +147,7 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
     // Built-in plugins ship with Claude Code; the workspace's own approval server is not the user's.
     const plugins = e.plugins?.filter((p) => p.path !== 'builtin').map((p) => p.name);
     const mcp = e.mcp_servers?.filter((m) => m.name !== 'wsapprove').map(({ name, status }) => ({ name, status }));
-    return { events: [{ type: 'init', permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
+    return { events: [{ type: 'init', model: e.model, permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
   }
   // Warnings Claude Code shows in its own UI, for example a plugin hook that dropped the prompt.
   if (e.type === 'system' && e.subtype === 'informational' && e.content) return { events: [{ type: 'notice', text: e.content, blocked: e.prevent_continuation || undefined }] };

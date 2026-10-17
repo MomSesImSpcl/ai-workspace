@@ -93,7 +93,7 @@
   dialog.confirm p { margin: 0 0 18px; color: var(--text-dim); }
   .btn.danger { background: var(--red); border-color: var(--red); color: #1a1918; }
   .badge { padding: 0 6px; border-radius: 9px; background: var(--amber); color: #1a1918; font-size: 10px; font-weight: 700; }
-  .perm { padding: 6px 18px 0; font-size: 11px; color: var(--text-muted); }
+  .perm { justify-self: end; max-width: 100%; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
   .perm .warn, .flag { color: var(--amber); font-weight: 600; }
   .turn-activity { align-self: stretch; font-size: 12px; color: var(--text-dim); border-left: 2px solid var(--hairline-strong); padding: 2px 0 2px 10px; }
   .turn-activity summary { cursor: pointer; color: var(--text-muted); }
@@ -107,8 +107,9 @@
   .sidebar { position: relative; }
   .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
   .resizer:hover, .resizer.dragging, .resizer:focus-visible { background: var(--accent-edge); outline: none; }
-  .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 15px 12px; border-bottom: 1px solid var(--hairline); }
-  .chat-title { padding: 10px 18px 0; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr) minmax(0,1fr); align-items: center; gap: 10px; padding: 14px 15px 12px; border-bottom: 1px solid var(--hairline); }
+  .chat-title { display: flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; font-size: 13px; text-align: center; }
+  .chat-title b, .chat-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .messages { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 15px; }
   .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
   .msg.user { align-self: flex-end; background: var(--elevated); border: 1px solid var(--hairline-strong); }
@@ -252,9 +253,9 @@
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
         <div class="identity"><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
+        <div class="chat-title" id="chat-title"></div>
+        <div class="perm" id="perm" tabindex="0"></div>
       </div>
-      <div class="chat-title row" id="chat-title" style="justify-content:space-between;align-items:center"></div>
-      <div class="perm" id="perm"></div>
       <div class="messages" id="messages" aria-live="polite"></div>
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
@@ -498,12 +499,14 @@ function renderChat() {
       $('#rename').focus();
       $('#rename').select();
     }
-  } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
+  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
     : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
-  const loaded = setup ? `<br>Loaded from the agent's own setup (${esc(s.integration)}): ${setup.plugins?.length ? `plugins ${esc(setup.plugins.join(', '))}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${failed.length ? ` · <span class="warn">⚠ not connected: ${esc(failed.map((m) => `${m.name} (${m.status})`).join(', '))}</span>` : ''}${setup.skills ? ` · ${setup.skills} skills` : ''}` : '';
-  $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}${loaded}` : '';
+  const info = d && d.turns.findLast((t) => t.model);
+  const warnings = [d?.permissions.warn, d?.turns.at(-1)?.permissionMode === 'bypassPermissions' ? 'running with all permission checks skipped' : '', failed.length ? `not connected: ${failed.map((m) => m.name).join(', ')}` : ''].filter(Boolean);
+  $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
+  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
