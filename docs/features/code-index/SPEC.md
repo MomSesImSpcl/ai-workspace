@@ -31,6 +31,25 @@ Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
 
 **Open decisions:** Compiler API directly or `ts-morph`; HTML parser; index persistence and cache; how much cross-language linking the first slice covers.
 
+## 7.2.2 Markdown, shell and batch
+
+Structural adapters under code-index-001 for files without compiler-grade semantics. They use the same records, scoping, incremental refresh and degradation as 7.2.1 (code-index-006, 007, 009); this section adds only what differs. Targets in this repository: the `docs/` tree, the `AI Workspace.cmd` launcher (batch) and the `AI Workspace.command` launcher (shell script).
+
+- **code-index-010 — No execution, labeled findings:** Indexing and analysis MUST NOT run the scripts they read or grant any tool permission. External analyzers (linters, formatters) run only through the [tool broker](../tool-broker/SPEC.md) and runner policy. Results MUST separate verified parser/linter findings from heuristics and model inferences. A file that fails to parse is reported and skipped without stopping other indexing.
+- **code-index-011 — Markdown structure:** Index `.md` heading hierarchy, section boundaries with stable ranges, links and anchors, fenced code blocks and frontmatter. `.mdx` only with a parser that supports it.
+- **code-index-012 — Markdown links:** Resolve relative links and anchors inside the authorized scope, report broken links and missing anchors, and keep backlinks so agents can follow document-to-document references.
+- **code-index-013 — Section retrieval:** Return just the relevant section of a document (for example one requirement block of a spec or one ADR section) with its heading path, source, revision and the document's status line where present. A spec section is not evidence that the behavior is implemented.
+- **code-index-014 — Markdown lint:** Optional lint findings for formatting and links. Fixes go through normal review; no automatic rewrite of documents.
+- **code-index-015 — Shell structure:** For `.sh` (Bash and POSIX sh; other dialects only when the tooling supports them) index functions, command invocations, sourced scripts, variables and line ranges. Dynamic commands, expansions and runtime-dependent paths MUST be marked uncertain.
+- **code-index-016 — Shell diagnostics:** Return static diagnostics (file, line, severity, rule) and optional formatting checks.
+- **code-index-017 — Risky commands:** Flag script-to-script and executable references and potentially destructive or privileged commands (deletes, force pushes, permission or registry changes) in shell and batch scripts for review. This is a heuristic aid, never presented as a safety guarantee or certification.
+- **code-index-018 — Batch structure:** For `.bat` and `.cmd`, best-effort index of labels, commands, variable references, `CALL`/`GOTO` targets and line locations. Delayed and dynamic expansion and conditional execution MUST make affected relationships uncertain.
+- **code-index-019 — Batch validation:** Batch scripts MAY be run for validation only in an isolated Windows runner with explicit execution approval ([runners](../runners/SPEC.md)); never to index them.
+
+Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
+
+**Open decisions:** Markdown as a code-index adapter or a document extractor of [knowledge-retrieval](../knowledge-retrieval/SPEC.md) (either way it feeds the shared `knowledge-001` index); Markdown variants and shell dialects covered; lint rules; packaging of external analyzers per platform; batch parser dependency or a small own extractor; which analyses run by default and which on demand.
+
 **Product acceptance:** G7 in [acceptance scenarios](../../ACCEPTANCE.md).
 
 ## Acceptance evidence
@@ -41,3 +60,7 @@ Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
 - Edit a source file or stylesheet; affected results update without a full rebuild and stale references disappear.
 - Build a context package from affected symbols plus selected tests/specs; content from an unauthorized repository is excluded in a multi-repo project.
 - With a parser unavailable, the query returns an explicit limitation plus fallback results.
+- Query a heading in a multi-section spec; only that section comes back with heading path and location; a linked local document and anchor resolve; a deliberately broken local link is reported.
+- In a test `.sh`, a function and a sourced script are found and a deliberate static diagnostic points at the right line.
+- In a test `.cmd`, a label and a `CALL` target are found; a dynamically built command is marked uncertain, not reported as a dependency.
+- Editing or deleting a Markdown or script file updates or removes its records without a full reindex; a malformed file does not stop other indexing; indexing runs no script.
