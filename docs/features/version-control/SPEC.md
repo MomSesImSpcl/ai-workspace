@@ -18,7 +18,8 @@ Projects are local folders; collaboration and backup happen through the project'
 - **vcs-008 — Safety:** Destructive operations (discarding changes, resetting, deleting branches) MUST require explicit confirmation naming what will be lost. Every operation the UI runs MUST be recorded in the workspace audit log.
 - **vcs-009 — Credentials stay with the tools:** Authentication MUST use the version-control system's own credential mechanism (for example Git credential helpers, SSH keys, the Perforce login). The workspace MUST NOT ask for, store or display passwords or tokens.
 - **vcs-010 — Provider seam:** Operations go through one provider interface per version-control system. Git is the first provider; the UI MUST show only the operations the active provider supports, so Perforce and others can be added without UI rewrites.
-- **vcs-011 — Agents use the same path:** When an agent performs version-control actions, they MUST go through the tool broker with the session's or task's permissions and audit ([tool-broker](../tool-broker/SPEC.md)), not through an unscoped shell.
+- **vcs-011 — Agents use their own permissions:** Agents MAY commit, push and run other version-control actions with their own tools, governed only by the agent's own permission settings and the host's access tokens (for example GitHub token scopes), not by a workspace permission layer ([ADR 0004](../../architecture/decisions/0004-agent-native-permissions.md)). Their actions MUST be recorded in the audit log from the agent's events and shown in the session.
+- **vcs-012 — Browse remote repositories:** A provider MAY offer browsing the user's repositories on its host to pick one to clone (GitHub first, through the Git provider), using the host's own sign-in. Details are decided when that provider work starts.
 
 ## Non-goals
 
@@ -26,10 +27,9 @@ Hosting repositories, code review and pull requests, merge tools, CI, managing r
 
 ## Open decisions
 
-- **Second provider:** Perforce or another system, and when.
-- **Large files:** how Git LFS or similar systems are shown and handled (relevant for game and media projects).
-- **Agent commits:** whether agents may commit and push on their own, and how their commits are attributed (user, agent co-author).
-- **Remote discovery:** browsing the user's GitHub or provider repositories to pick one to clone, versus pasting a URL only.
+- **Order of providers (agreed):** Git, then Git LFS support, then other systems (for example Perforce) only when needed or requested.
+- **Large files:** how Git LFS files are shown and handled in status, diff and history.
+- **Attribution of agent commits:** whether the workspace adds anything (for example an agent co-author line) or leaves it to the agent's own settings.
 
 ## Acceptance checks
 
