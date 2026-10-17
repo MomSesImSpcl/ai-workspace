@@ -24,7 +24,7 @@ Each `docs/features/<feature>/` folder contains exactly `SUMMARY.md` and `SPEC.m
 
 ## Getting started (prototype CLI)
 
-Tested on Windows 10 with Node 24. Each agent run uses your own Claude and ChatGPT subscription quota.
+Tested on Windows 10 with Node 24. Each agent run uses your own Claude and ChatGPT subscription quota. **New machine:** follow the [setup order](docs/DEPENDENCIES.md#setup-order-on-a-new-machine); the steps below explain each part.
 
 **Requirements** (not installed by `npm install`):
 
