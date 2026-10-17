@@ -68,8 +68,18 @@ Keep structured machine state (e.g., processed entity IDs, API cursors, input ha
 
 **Product acceptance:** G3, G4 in [acceptance scenarios](../../ACCEPTANCE.md).
 
+## 4.7 Agent-native tasks
+
+Decided in [ADR 0007](../../architecture/decisions/0007-tasks-agent-native.md); agent capabilities and fallbacks per [ADR 0006](../../architecture/decisions/0006-agent-capability-contract.md).
+
+- **runtime-001 — Same agent setup as sessions:** A task MUST start the agent with its own tools, settings, plugins, hooks and MCP servers ([sessions-025](../sessions/SPEC.md#projects-agents-and-context)); the workspace adds only its own tools (`delegate`) and no write grant.
+- **runtime-002 — Approvals wait:** When the agent's rules say "ask", the task MUST show an approval card and wait until the user answers, without a timeout; a waiting task MUST be visible as such in the task list.
+- **runtime-003 — Permission mode:** A new task MUST default to the agent's own permission settings and MAY override them per task with the agent's own mode (for example Claude Code `acceptEdits` or `plan`); a mode that skips all checks MUST NOT be a default and MUST show a warning.
+- **runtime-004 — Repeat detection:** Every tool call MUST be recorded with a fingerprint (tool and input). When an interrupted step re-runs, a call matching one the interrupted attempt completed MUST be held before it runs and shown as an approval card naming the earlier step; the task waits for the user. Agents without a pre-run check MUST use the fallback: detect the repeat from events, stop the agent, pause and name the repeated step. Recovery context follows [sessions-021](../sessions/SPEC.md#permissions-events-and-recovery).
+- **runtime-005 — Budget and cancel by process:** The token cap MUST be enforced from streamed usage by ending the agent's process tree and pausing the task; cancel MUST end the process tree immediately.
+
 ## Acceptance evidence
 
 - From a usable client, run an authorized project task using a real configured model and permissioned tool/runner action. Persist status, result and a traceable artifact/log; close/reopen the client and verify the result survives while interactive conversation still works.
-- Demonstrate two tasks alongside foreground chat, explicit failure/blocked states, pause/resume/cancel and appended instructions. Restart a worker and recover its committed checkpoint without repeating a completed side effect.
+- Demonstrate two tasks alongside foreground chat, explicit failure/blocked states, pause/resume/cancel and appended instructions. Restart a worker and recover its committed checkpoint; an exact repeat of a completed tool call is held for the user's decision (runtime-004) and other changes since the step started are listed.
 - Force rollover with a deliberately small test context budget; rehydrate in a fresh context, batch a long research task and synthesize results with source links.
