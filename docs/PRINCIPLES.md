@@ -32,6 +32,16 @@ Unavailable tools MUST be reported clearly; compatible alternatives or remote ru
 
 Consider compatibility from the start of development. One OS MAY lead development, but architecture MUST preserve all three; relevant automated builds/tests MUST cover them as implementation matures. Verify compatibility before declaring functionality production-ready. Finished distribution MUST support installation/updates and appropriate CPU architectures where supported.
 
+## UI text ready for translation
+
+Until [localization](features/localization/SPEC.md) is built, all user-visible text MUST be written so it can be moved into catalogs without rework:
+
+- One complete sentence or label per string, with values inserted at named places; never build a sentence from fragments ("Archive " + name + "?"), and keep plural wording in one place per message.
+- Dates, times, numbers and durations through the platform's locale APIs (`toLocaleString`, `Intl`), never formatted by hand.
+- No text inside images or icons; icons that carry meaning have a text label or `aria-label`.
+- Layouts tolerate longer text (wrap or ellipsis with the full text on hover); no fixed widths sized to English words.
+- Messages the workspace stores (markers, approval cards) keep a stable form that can later be mapped to a message id.
+
 ## Outside the first usable release
 
 No new foundation or 3D-generation model; full replacement of commercial DCC/game tools; guaranteed autonomous AAA animation/environments/cinematics; automatic legal clearance; unrestricted autonomous installation of newly discovered software; native mobile apps before a PWA proves insufficient; or an unjustified microservice fleet.

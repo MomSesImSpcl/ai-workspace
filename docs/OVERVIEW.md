@@ -40,6 +40,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Internal artwork and identity similarity screening](features/similarity-review/SUMMARY.md)
 - [Video research, style guides and YouTube production](features/content-production/SUMMARY.md)
 - [Optional browser and web-based AI interfaces](features/integrated-browser/SUMMARY.md)
+- [Interface languages and localization](features/localization/SUMMARY.md)
 
 ## Shared references — load as needed
 

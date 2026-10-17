@@ -435,7 +435,8 @@ const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current
 const code = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
 const took = (t) => {
   const s = Math.round((new Date(t.endedAt) - new Date(t.startedAt)) / 1000);
-  return s < 60 ? `${s}s` : `${Math.round(s / 60)} min`;
+  const unit = (value, u) => new Intl.NumberFormat(undefined, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(value); // locale-aware
+  return s < 60 ? unit(s, 'second') : unit(Math.round(s / 60), 'minute');
 };
 const sessionState = (s) => s.working ? '<span class="dot s-running"></span>' : s.state === 'interrupted' || s.state === 'stopped' || s.state === 'error' ? '<small>⚠</small>' : '';
 
@@ -497,7 +498,7 @@ function renderChat() {
     : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
-  const loaded = setup ? `<br>Loaded from ${esc(s.integration)}'s own setup: ${setup.plugins?.length ? `plugins ${esc(setup.plugins.join(', '))}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${failed.length ? ` · <span class="warn">⚠ not connected: ${esc(failed.map((m) => `${m.name} (${m.status})`).join(', '))}</span>` : ''}${setup.skills ? ` · ${setup.skills} skills` : ''}` : '';
+  const loaded = setup ? `<br>Loaded from the agent's own setup (${esc(s.integration)}): ${setup.plugins?.length ? `plugins ${esc(setup.plugins.join(', '))}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${failed.length ? ` · <span class="warn">⚠ not connected: ${esc(failed.map((m) => `${m.name} (${m.status})`).join(', '))}</span>` : ''}${setup.skills ? ` · ${setup.skills} skills` : ''}` : '';
   $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}${loaded}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
