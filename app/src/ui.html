@@ -477,10 +477,11 @@ function turnHtml(t) {
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
     : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
+  const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
   const used = t.usage.inputTokens + t.usage.outputTokens;
-  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${cards}
+  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
     ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}`;
 }
 

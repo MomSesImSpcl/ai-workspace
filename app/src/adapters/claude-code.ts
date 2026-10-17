@@ -126,6 +126,9 @@ interface StreamLine {
   session_id?: string;
   permissionMode?: string;
   memory_paths?: unknown;
+  content?: string;
+  level?: string;
+  prevent_continuation?: boolean;
   plugins?: { name: string; path?: string }[];
   mcp_servers?: { name: string; status: string }[];
   skills?: unknown[];
@@ -145,6 +148,8 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
     const mcp = e.mcp_servers?.filter((m) => m.name !== 'wsapprove').map(({ name, status }) => ({ name, status }));
     return { events: [{ type: 'init', permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
   }
+  // Warnings Claude Code shows in its own UI, for example a plugin hook that dropped the prompt.
+  if (e.type === 'system' && e.subtype === 'informational' && e.content) return { events: [{ type: 'notice', text: e.content, blocked: e.prevent_continuation || undefined }] };
   if (e.type === 'stream_event' && e.event?.type === 'content_block_delta' && e.event.delta?.type === 'text_delta') return { events: [{ type: 'text', text: e.event.delta.text ?? '' }] };
   if (e.type === 'assistant') {
     return { events: (e.message?.content ?? []).filter((b) => b.type === 'tool_use' && b.id).map((b) => ({ type: 'activity' as const, id: b.id!, ...activityLabel(b.name ?? '', b.input ?? {}, root) })) };

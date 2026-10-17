@@ -108,6 +108,8 @@ test('claude stream lines map to the event contract', () => {
   assert.deepEqual(use.events, [{ type: 'activity', id: 't1', label: 'Running `npm test`' }]);
   const res = sessionEvents(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true }] } }), root);
   assert.deepEqual(res.events, [{ type: 'activity-done', id: 't1', error: true }]);
+  const dropped = sessionEvents(JSON.stringify({ type: 'system', subtype: 'informational', content: 'Prompt dropped by a hook: x', level: 'warning', prevent_continuation: true }), root);
+  assert.deepEqual(dropped.events, [{ type: 'notice', text: 'Prompt dropped by a hook: x', blocked: true }]);
   const done = sessionEvents(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', session_id: 's1', usage: { input_tokens: 5, output_tokens: 1 } }), root);
   assert.equal(done.result?.done, true);
 });

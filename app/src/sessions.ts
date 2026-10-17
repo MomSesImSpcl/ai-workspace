@@ -27,6 +27,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'start'; integration: string }
   | { type: 'init'; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
+  | { type: 'notice'; text: string; blocked?: boolean } // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean }
   | { type: 'activity-done'; id: string; error?: boolean }
   | { type: 'approval'; id: string; tool: string; detail: string }
@@ -198,6 +199,7 @@ export interface Turn {
   text: string;
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean }[];
   approvals: { id: string; tool: string; detail: string; allow?: boolean }[];
+  notices: { text: string; blocked?: boolean }[];
   state: TurnState;
   error?: string;
   usage: Usage;
@@ -219,12 +221,13 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
   for (const e of events) {
     if (e.type === 'user') {
-      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], state: 'working', usage: zero(), startedAt: e.at });
+      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
     if (!t) continue;
     if (e.type === 'text') t.text += e.text;
+    else if (e.type === 'notice') t.notices.push({ text: e.text, blocked: e.blocked });
     else if (e.type === 'init') Object.assign(t, { permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
     else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside });
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
