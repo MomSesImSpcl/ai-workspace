@@ -3,7 +3,8 @@
 // tasks keep running in their own processes.
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDir = fileURLToPath(new URL('..', import.meta.url));
@@ -23,10 +24,19 @@ function startServer() {
   });
 }
 
+// The window reopens where it was closed: size, position and maximized state.
+const boundsPath = () => join(app.getPath('userData'), 'window.json');
+function savedBounds() {
+  try { return JSON.parse(readFileSync(boundsPath(), 'utf8')); } catch { return {}; }
+}
+
 function createWindow(url) {
+  const saved = savedBounds();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: saved.width ?? 1280,
+    height: saved.height ?? 820,
+    x: saved.x,
+    y: saved.y,
     minWidth: 760,
     minHeight: 480,
     title: 'AI Workspace',
@@ -46,6 +56,10 @@ function createWindow(url) {
   });
   // Taskbar pin relaunches this app, not bare Electron.
   if (process.platform === 'win32') win.setAppDetails({ appId: appUserModelId, relaunchCommand: `"${process.execPath}" "${appDir}"`, relaunchDisplayName: 'AI Workspace' });
+  if (saved.maximized) win.maximize();
+  win.on('close', () => {
+    try { writeFileSync(boundsPath(), JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
+  });
   win.loadURL(`${url}?platform=${process.platform}`);
   return win;
 }

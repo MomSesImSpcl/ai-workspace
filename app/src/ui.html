@@ -320,11 +320,19 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 document.documentElement.dataset.platform = new URLSearchParams(location.search).get('platform') ?? '';
 
 // Layout preferences are per viewer and optional, so storage failures are ignored.
+// View state (project, session, page, layout) lives in workspace storage, not browser storage:
+// the server's port and so the page's origin change on every launch.
+const prefs = {};
 const pref = {
-  get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
-  set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
+  get: (k, d) => prefs[k] ?? d,
+  set: (k, v) => {
+    v = String(v ?? '');
+    if (prefs[k] === v) return;
+    prefs[k] = v;
+    api('/api/prefs', { key: k, value: v }).catch(() => {});
+  },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, menu: null, sessions: [], session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -826,6 +834,9 @@ $('#resizer').onkeydown = (e) => {
 };
 
 (async () => {
+  Object.assign(prefs, await api('/api/prefs'));
+  state.project = pref.get('project', null);
+  state.page = pref.get('page', 'projects');
   if (pref.get('chat-width', null)) setChatWidth(Number(pref.get('chat-width', 380)));
   $('#app').dataset.sidebar = pref.get('sidebar', 'open');
   $('#toggle-sidebar').setAttribute('aria-expanded', String($('#app').dataset.sidebar === 'open'));

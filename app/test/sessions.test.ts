@@ -217,3 +217,20 @@ test('removing a project drops only its reference; workspace subfolders not yet 
   assert.equal(loadSession(s.id).projectId, 'alpha'); // history kept
   assert.deepEqual(unaddedFolders().sort(), [join(ws, 'alpha'), join(ws, 'beta')]);
 });
+
+test('view state is stored in workspace storage and survives a new server (new port)', async () => {
+  const post = async (base: string, body: unknown) => (await fetch(`${base}/api/prefs`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) })).status;
+  for (const check of [false, true]) { // second round: a fresh server on another port
+    const server = serve(0);
+    await new Promise((r) => server.once('listening', r));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      if (!check) {
+        assert.equal(await post(base, { key: 'session.My Project', value: 'abc' }), 200);
+        assert.equal(await post(base, { key: 'page', value: 3 }), 400);
+      } else assert.deepEqual(await (await fetch(`${base}/api/prefs`)).json(), { 'session.My Project': 'abc' });
+    } finally {
+      server.close();
+    }
+  }
+});

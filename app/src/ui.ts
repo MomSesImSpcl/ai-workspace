@@ -7,11 +7,12 @@ import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './r
 import { addMessage, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { getProject, getWorkspaceRoot, home, listProjects, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const logPath = (id: string) => join(home(), 'tasks', `${id}.log`);
+const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
 
 // Each task runs in its own detached `ws resume` process, so closing the UI never stops it.
 function startRunner(task: Task): void {
@@ -138,6 +139,13 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (b.model !== undefined && typeof b.model !== 'string') throw new HttpError(400, 'model must be a string');
     setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
     return getRoles();
+  }
+  if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});
+  if (req.method === 'POST' && kind === 'prefs') {
+    const b = await body(req);
+    if (typeof b.key !== 'string' || !b.key || b.key.length > 200 || typeof b.value !== 'string' || b.value.length > 1000) throw new HttpError(400, 'key and string value required');
+    writeJson(prefsPath(), { ...readJson<Record<string, string>>(prefsPath(), {}), [b.key]: b.value });
+    return { ok: true };
   }
   if (req.method === 'POST' && kind === 'workspace') {
     const b = await body(req);
