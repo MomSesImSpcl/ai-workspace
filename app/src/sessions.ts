@@ -32,6 +32,9 @@ export function addUsage(a: Usage, b: Usage): Usage {
   };
 }
 
+// Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
+export const TASK_NOTE = 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.';
+
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
 

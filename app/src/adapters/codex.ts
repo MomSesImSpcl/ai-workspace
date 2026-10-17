@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage } from '../sessions.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -137,7 +137,9 @@ export class CodexProcess implements AgentProcess {
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = 'AI Workspace task: to hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.';
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.`;
+    } else if (task) {
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}`;
     } else if (!task) {
       // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
