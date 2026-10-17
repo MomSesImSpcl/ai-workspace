@@ -23,12 +23,13 @@ beforeEach(() => {
 const claude = { integration: 'claude-code' };
 const fake = (turn: SessionAgent['turn']): Record<string, SessionAgent> => ({ 'claude-code': { turn, permissions: () => ({ line: 'fake' }) } });
 
-test('sessions are listed only in their own project, newest activity first', () => {
+test('sessions are listed only in their own project, newest activity first', async () => {
   const other = mkdtempSync(join(tmpdir(), 'ws-other-'));
   registerProject(other, 'BLABLA');
   const a = createSession('TEST', 'Implementation', claude);
   createSession('BLABLA', 'Implementation', claude);
   const b = createSession('TEST', 'Implementation', claude);
+  await new Promise((r) => setTimeout(r, 5)); // timestamps have millisecond resolution
   addMessage(a.id, 'first message\nsecond line');
   assert.deepEqual(listSessions('TEST').map((s) => s.id), [a.id, b.id]);
   assert.equal(listSessions('BLABLA').length, 1);
