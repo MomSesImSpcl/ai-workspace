@@ -50,13 +50,23 @@ The desktop app's current chat column ([history](../../history/2026-10-17-04-cha
 
 Sharing sessions between projects or users, real-time collaboration in one session, cloud execution while the computer is off ([runners](../runners/SPEC.md)), and long-term memory extraction from sessions ([memory](../memory/SPEC.md)).
 
+## Projects, agents and context
+
+- **sessions-014 — General space:** The project list MUST include a built-in **General** entry with its own sessions for conversations that belong to no project. General has no project folder: its agents get no file access through the workspace tools and cannot start tasks that need a project.
+- **sessions-015 — Switchable agent:** The user picks the agent (role/integration) when starting a session and MAY switch it later in the same session. After a switch, the new agent MUST receive the conversation so far as text (as Codex replies already do) plus the session's context layers (sessions-016); vendor session hints of the previous agent are not reused. The session shows where the switch happened.
+- **sessions-016 — Three context layers:** Every agent turn in a session MUST receive, as instruction text:
+  1. **Global rules** of the chosen agent on this computer: the agent's own user-level rules file (for example the user's global `CLAUDE.md` for Claude Code, global `AGENTS.md` for Codex). Only the rules text is loaded; the agent's user settings, hooks, permission rules, MCP servers and model aliases MUST stay disabled as today ([ADR 0001](../../architecture/decisions/0001-core-slice-stack.md)), so they cannot bypass the broker. Which file applies depends on the chosen agent; after a switch (sessions-015) the new agent's file applies.
+  2. **Workspace rules:** context and rules that apply to every project in the workspace, edited in the app.
+  3. **Project rules:** context and rules for this project: its own instruction files in the project folder (`AGENTS.md`, `CLAUDE.md`) and rules edited for the project in the app.
+  The session MUST show which layers and files were applied, and each layer MUST be viewable from Settings. Tasks started by the session receive the same layers.
+- **sessions-017 — Defaults: per session, from the project:** Each project has defaults for token budget and write permission; a new session starts with them and the user MAY change them for that session in the composer; tasks the session starts inherit the session's values. Agreed direction for the defaults: budget **unlimited** unless the user sets a cap (usage is still measured and shown), and **writes allowed** within the project folder. Write access stays limited to the project folder and audited by the broker; the agent's own permission settings do not widen it.
+
 ## Open decisions
 
-- **Chats without a project:** whether a "General" space exists for questions that belong to no project, or every session needs a project.
-- **Agent per session:** whether a session is bound to one agent/role at creation or can switch mid-conversation ([task-runtime 4.1](../task-runtime/SPEC.md#41-two-top-level-work-modes) says a conversation can continue using any model), and how history is handed to a different agent.
-- **Shared project context:** which project instructions (and later memory) every new session receives, so sessions do not start knowing nothing about the project.
-- **Session budgets and write permission:** per session, per message, or inherited from project settings.
-- **Adapter support:** how each agent CLI provides streaming, stop and continuation (Claude Code streams events today; Codex runs one `codex exec` per turn).
+- **What a workspace is:** a local workspace on this computer, or an online/shared one with several users and computers; this decides where workspace rules (sessions-016) are stored and synced.
+- **Rule precedence:** proposed: the more specific layer wins on conflict (project over workspace over global), with all three otherwise combined. Not yet agreed.
+- **Budget and permission fine-tuning:** how an unlimited budget interacts with the existing budget pause ([task-runtime 4.6](../task-runtime/SPEC.md#46-scheduling-and-budgets)), and whether effort/model choice should replace token caps as the main cost control.
+- **Adapter support:** how each agent CLI provides streaming, stop and continuation (Claude Code streams events today; Codex runs one `codex exec` per turn); verify when implementing.
 
 ## Acceptance checks
 
@@ -67,3 +77,7 @@ Sharing sessions between projects or users, real-time collaboration in one sessi
 - A session starts a task; the task shows inline in the session and lists its session in the Tasks view; deleting the session after confirmation keeps the task.
 - Closing the window with two running tasks asks Keep running / Cancel all; Keep running leaves both running with a visible tray indicator; with "Don't ask again" the next close uses the remembered choice, which Settings shows and can change. Closing with no running tasks asks nothing.
 - After the switch from the interim build, conversations of earlier chat-as-task tasks are still readable.
+- A General session answers a question without a project; a request to read a file there is refused with a clear message.
+- Switching a session from Claude Code to Codex: Codex's next reply shows it received the earlier conversation; the session marks the switch.
+- With a rule in the global `CLAUDE.md`, one in workspace rules and one in the project's `AGENTS.md`, a Claude Code session follows all three and lists them as applied; a hook in the user's Claude settings does not run.
+- A new session starts with the project's defaults (unlimited budget, writes allowed); changing them in the composer affects only that session and its tasks; a write outside the project folder is still denied and audited.
