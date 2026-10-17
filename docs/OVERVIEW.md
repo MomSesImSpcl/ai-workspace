@@ -11,6 +11,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Identity, projects and repository access](features/identity-projects/SUMMARY.md) — in progress
 - [Desktop workspace and Task Center](features/desktop-client/SUMMARY.md) — in progress
 - [Chat sessions and project structure](features/sessions/SUMMARY.md)
+- [Version control in the workspace](features/version-control/SUMMARY.md)
 - [Agent setup onboarding and readiness in the UI](features/onboarding/SUMMARY.md)
 - [Mobile capture and cross-device task control](features/mobile-client/SUMMARY.md)
 - [Task notifications and privacy-safe previews](features/notifications/SUMMARY.md)

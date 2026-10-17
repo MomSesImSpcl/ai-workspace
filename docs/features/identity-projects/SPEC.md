@@ -45,6 +45,13 @@ Names are examples; the format must be versioned and validated. A project may in
 
 **Product acceptance:** G1, G2 in [acceptance scenarios](../../ACCEPTANCE.md).
 
+## 1.4 Workspace and local projects
+
+- **Workspace:** the AI Workspace application on one computer, with its settings, workspace rules ([sessions-016](../sessions/SPEC.md#projects-agents-and-context)) and its list of projects. There is exactly one workspace per computer and user; the workspace itself is never hosted online or synced.
+- **Projects are local:** every project's content lives in local folders on that computer (for Git-backed projects, the local working copies of its repositories). A project MAY have no version control.
+- **Online through version control:** sharing and collaboration happen through the project's own version control (Git, Perforce or what the user uses), not through the workspace. Joining a shared project means cloning or checking it out locally ([version-control](../version-control/SPEC.md)); it then appears as a project.
+- **What lives where:** portable project configuration and project rules live in the project folder (1.2) so they travel with version control. Sessions, tasks, audit logs and other workspace state live in the workspace's own storage on the computer and MUST NOT be written into project folders, so private conversations are never committed by accident.
+
 ## Illustrative contract (not a production schema)
 
 ```yaml
