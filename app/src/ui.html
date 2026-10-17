@@ -107,8 +107,10 @@
   .sidebar { position: relative; }
   .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
   .resizer:hover, .resizer.dragging, .resizer:focus-visible { background: var(--accent-edge); outline: none; }
-  .chat-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr) minmax(0,1fr); align-items: center; gap: 10px; padding: 14px 15px 12px; border-bottom: 1px solid var(--hairline); }
-  .chat-title { display: flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; font-size: 13px; text-align: center; }
+  /* Left cell stays empty so the session name is centred; the project is in the breadcrumb above. */
+  .chat-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr) minmax(0,1fr); align-items: center; gap: 10px; padding: 14px 15px 12px; border-bottom: 1px solid var(--hairline); }
+  .chat-title { display: flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; font-size: 14px; text-align: center; }
+  .chat-title b { font-weight: 700; }
   .chat-title b, .chat-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .messages { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 15px; }
   .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
@@ -252,7 +254,7 @@
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
-        <div class="identity"><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
+        <span aria-hidden="true"></span>
         <div class="chat-title" id="chat-title"></div>
         <div class="perm" id="perm" tabindex="0"></div>
       </div>
@@ -406,8 +408,6 @@ function renderShell() {
   $('#crumb').textContent = p?.id ?? 'No project';
   $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
   $('#crumb').disabled = !p || !window.desktop;
-  $('#project-name').textContent = p?.id ?? 'No project';
-  $('#project-root').textContent = p?.root ?? 'Add one from Projects';
   const chat = state.roles.Chat;
   $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
   const running = state.tasks.filter((t) => t.status === 'running' && t.runnerAlive).length;
