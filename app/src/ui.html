@@ -69,6 +69,20 @@
   .session-item[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .session-item span:not(.dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-item small { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+  .session-row { position: relative; display: flex; align-items: center; }
+  .session-row .session-item { padding-right: 30px; }
+  .menu-btn { position: absolute; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); cursor: pointer; opacity: 0; }
+  .session-row:hover .menu-btn, .menu-btn:focus-visible, .menu-btn[aria-expanded=true] { opacity: 1; }
+  .menu-btn:hover { background: var(--surface-2); color: var(--text); }
+  .menu { position: fixed; z-index: 20; min-width: 150px; padding: 4px; border: 1px solid var(--hairline-strong); border-radius: 9px; background: var(--elevated); box-shadow: 0 8px 24px rgba(0,0,0,.4); display: grid; }
+  .menu button { padding: 7px 10px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: var(--surface-2); }
+  .menu button.danger { color: var(--red); }
+  dialog.confirm { max-width: 420px; padding: 20px; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); background: var(--panel); color: var(--text); }
+  dialog.confirm::backdrop { background: rgba(0,0,0,.5); }
+  dialog.confirm h2 { margin: 0 0 8px; font-size: 15px; }
+  dialog.confirm p { margin: 0 0 18px; color: var(--text-dim); }
+  .btn.danger { background: var(--red); border-color: var(--red); color: #1a1918; }
   .badge { padding: 0 6px; border-radius: 9px; background: var(--amber); color: #1a1918; font-size: 10px; font-weight: 700; }
   .perm { padding: 6px 18px 0; font-size: 11px; color: var(--text-muted); }
   .perm .warn, .flag { color: var(--amber); font-weight: 600; }
@@ -209,6 +223,15 @@
       <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions">
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
+      <div class="menu" id="session-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="rename">Rename</button>
+        <button role="menuitem" data-mact="archive">Archive</button>
+        <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
+      </div>
+      <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
+        <form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p>
+          <div class="row" style="justify-content:flex-end"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" id="confirm-ok" value="ok"></button></div></form>
+      </dialog>
       <small class="meta" id="session-agent"></small>
     </aside>
     <aside class="sidebar" id="sidebar" aria-label="Chat">
@@ -289,7 +312,7 @@ const pref = {
   get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, sessions: [], session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, menuFor: null, sessions: [], session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -382,8 +405,9 @@ function renderSessions() {
   const q = $('#session-filter').value.trim().toLowerCase();
   const archived = $('#show-archived').checked;
   const list = state.sessions.filter((s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived));
-  $('#session-list').innerHTML = list.map((s) => `<button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
-    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived · ' : ''}${esc(s.integration)}</small></button>`).join('')
+  $('#session-list').innerHTML = list.map((s) => `<div class="session-row" data-row="${esc(s.id)}"><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
+    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : ''}</small></button>
+    <button class="menu-btn" data-menu="${esc(s.id)}" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menuFor === s.id}">⋯</button></div>`).join('')
     || `<p class="empty" style="margin:4px 0">${current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'}</p>`;
 }
 
@@ -415,10 +439,10 @@ function renderChat() {
   if (s && state.renaming) {
     if (document.activeElement?.id !== 'rename') {
       $('#chat-title').innerHTML = `<form id="rename-form" class="row" style="flex:1"><input id="rename" value="${esc(s.title)}" aria-label="Session name" style="flex:1"><button class="btn small">Save</button></form>`;
+      $('#rename').focus();
       $('#rename').select();
     }
-  } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b><span class="row" style="flex:none">
-      <button class="link-btn" data-sact="rename">Rename</button><button class="link-btn" data-sact="archive">${s.archived ? 'Restore' : 'Archive'}</button><button class="link-btn" data-sact="delete">Delete</button></span>`
+  } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
     : '<span>New session: your first message starts it</span>';
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
@@ -452,9 +476,9 @@ function openSession(id) {
   loadSessions().then(render).catch(() => {});
 }
 
-async function sessionAction(act, body = {}) {
+async function sessionAction(act, body = {}, id = state.session) {
   try {
-    await api(`/api/sessions/${state.session}/${act}`, body);
+    await api(`/api/sessions/${id}/${act}`, body);
     $('#new-error').textContent = '';
   } catch (err) { $('#new-error').textContent = err.message; }
   await loadSessions();
@@ -550,24 +574,83 @@ $('#session-filter').oninput = renderSessions;
 $('#show-archived').onchange = renderSessions;
 $('#stop').onclick = () => sessionAction('stop');
 
+// Styled confirmation (the native confirm() dialog does not match the workspace).
+function ask(title, text, ok, danger = false) {
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = text;
+  $('#confirm-ok').textContent = ok;
+  $('#confirm-ok').className = `btn small ${danger ? 'danger' : 'primary'}`;
+  $('#confirm').returnValue = '';
+  $('#confirm').showModal();
+  $('#confirm-ok').focus();
+  return new Promise((resolve) => $('#confirm').addEventListener('close', () => resolve($('#confirm').returnValue === 'ok'), { once: true }));
+}
+
+function openMenu(id, x, y) {
+  const s = state.sessions.find((v) => v.id === id);
+  if (!s) return;
+  state.menuFor = id;
+  const menu = $('#session-menu');
+  menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
+  menu.hidden = false;
+  menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
+  menu.querySelector('button').focus();
+  renderSessions();
+}
+function closeMenu() {
+  if (!state.menuFor) return;
+  state.menuFor = null;
+  $('#session-menu').hidden = true;
+  renderSessions();
+}
+
+async function menuAction(act, id) {
+  closeMenu();
+  const s = state.sessions.find((v) => v.id === id);
+  if (!s) return;
+  if (act === 'rename') {
+    if (state.session !== id) { state.session = id; await loadSessions(); }
+    state.renaming = true;
+    renderChat();
+    return $('#rename')?.focus();
+  }
+  if (act === 'archive' && s.archived) return sessionAction('archive', { archived: false }, id);
+  if (act === 'archive') {
+    if (!(await ask(`Archive "${s.title}"?`, 'It is hidden from the session list but kept on this computer. Tick "Show archived" to find it and restore it.', 'Archive'))) return;
+    return sessionAction('archive', { archived: true }, id);
+  }
+  if (act === 'delete') {
+    if (!(await ask(`Delete "${s.title}" permanently?`, 'Its history is removed and cannot be restored. Tasks it started are kept in the Tasks view. Archive keeps the session instead.', 'Delete', true))) return;
+    await sessionAction('delete', {}, id);
+    if (state.session === id) openSession(null);
+  }
+}
+
+$('#session-list').addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('[data-row]');
+  if (!row) return;
+  e.preventDefault();
+  openMenu(row.dataset.row, e.clientX, e.clientY);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('.chat-head [data-page],[data-id],[data-action],[data-act],[data-project],[data-session],[data-sact],[data-approve]');
+  const item = e.target.closest('[data-mact]');
+  if (item) return menuAction(item.dataset.mact, state.menuFor);
+  const menuBtn = e.target.closest('[data-menu]');
+  if (menuBtn) {
+    if (state.menuFor === menuBtn.dataset.menu) return closeMenu();
+    const r = menuBtn.getBoundingClientRect();
+    return openMenu(menuBtn.dataset.menu, r.left, r.bottom + 4);
+  }
+  if (!e.target.closest('#session-menu')) closeMenu();
+  const el = e.target.closest('.chat-head [data-page],[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
   if (!el) return;
   if (el.dataset.page) return setPage(el.dataset.page);
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
   if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' });
-  if (el.dataset.sact === 'archive') return sessionAction('archive', { archived: !state.sessionData.session.archived });
-  if (el.dataset.sact === 'rename') {
-    state.renaming = true;
-    renderChat();
-    return $('#rename').focus();
-  }
-  if (el.dataset.sact === 'delete') {
-    if (!confirm(`Delete "${state.sessionData.session.title}" permanently? Its history is removed; tasks it started are kept in the Tasks view. Archive keeps it instead.`)) return;
-    await sessionAction('delete');
-    return openSession(null);
-  }
   if (el.dataset.action === 'new-task') return newTask();
   if (el.dataset.action === 'view-tasks') return setPage('tasks');
   if (el.dataset.act) {
