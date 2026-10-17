@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { activityLabel, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
+import { activityLabel, agentEnv, claudePermissions, sessionEvents } from '../src/adapters/claude-code.ts';
 import { codexSessionEvents } from '../src/adapters/codex.ts';
 import { addMessage, createSession, emit, listSessions, loadSession, readEvents, requestStop, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
@@ -157,4 +157,9 @@ test('session API creates, renames, archives and deletes; approvals need a pendi
   } finally {
     server.close();
   }
+});
+
+test('variables of a Claude Code host are dropped so the settings env of the user applies', () => {
+  assert.deepEqual(agentEnv({ PATH: 'p', ANTHROPIC_BASE_URL: 'x' }), { PATH: 'p', ANTHROPIC_BASE_URL: 'x' });
+  assert.deepEqual(agentEnv({ PATH: 'p', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'd', ANTHROPIC_BASE_URL: 'x' }), { PATH: 'p' });
 });

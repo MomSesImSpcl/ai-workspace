@@ -171,6 +171,14 @@ export function claudePermissions(root: string): { line: string; warn?: string }
   return { line, warn: mode === 'bypassPermissions' ? 'Claude Code skips all permission checks (bypassPermissions)' : undefined };
 }
 
+// Started from inside a Claude Code host (e.g. the Claude desktop app), the host's own variables
+// (ANTHROPIC_BASE_URL, CLAUDE_CODE_*) would override the user's settings `env` (proxy, model), so the
+// session would not behave like the user's Claude Code elsewhere. Drop them; a normal launch is untouched.
+export function agentEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (!env.CLAUDECODE) return env;
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(CLAUDECODE$|CLAUDE_|ANTHROPIC_)/.test(k)));
+}
+
 function claudeTurn(input: TurnInput, resume?: string): Promise<{ vendorSessionId?: string; error?: string; staleHint?: boolean }> {
   const { session, root, turn, emit, signal } = input;
   const mcpConfig = JSON.stringify({ mcpServers: { wsapprove: { command: process.execPath, args: [approvalServer, session.id, String(turn)], env: { AI_WORKSPACE_HOME: home() } } } });
@@ -187,7 +195,7 @@ function claudeTurn(input: TurnInput, resume?: string): Promise<{ vendorSessionI
     text = '';
   };
   const timer = setInterval(flush, 250); // batch deltas so the log holds chunks, not single tokens
-  return runLines(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, env: { ...process.env, MCP_TOOL_TIMEOUT: '86400000' }, signal }, (line) => {
+  return runLines(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '86400000' }, signal }, (line) => {
     let parsed;
     try { parsed = sessionEvents(line, root); } catch { return; }
     sessionId = parsed.sessionId ?? sessionId;
