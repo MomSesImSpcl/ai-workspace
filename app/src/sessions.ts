@@ -57,6 +57,7 @@ export interface Session {
 export interface TaskSpec {
   tokenBudget: number;
   parentId?: string; // a subtask started by the parent's `delegate` call
+  sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
 }
 
@@ -72,6 +73,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'activity-done'; id: string; error?: boolean }
   | { type: 'approval'; id: string; tool: string; detail: string; repeat?: string }
   | { type: 'approval-answer'; id: string; allow: boolean }
+  | { type: 'task'; id: string } // the agent started this task from the chat (sessions-002)
   | { type: 'usage'; usage: Usage }
   | { type: 'done' }
   | { type: 'error'; message: string }
@@ -303,6 +305,7 @@ export interface Turn {
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean; fp?: string }[];
   approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
+  tasks: string[]; // tasks the agent started in this turn
   switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
@@ -327,7 +330,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
   for (const e of events) {
     if (e.type === 'user') {
-      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], state: 'working', usage: zero(), startedAt: e.at });
+      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], tasks: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
@@ -340,6 +343,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail, repeat: e.repeat });
     else if (e.type === 'approval-answer') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { allow: e.allow });
+    else if (e.type === 'task') t.tasks.push(e.id);
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
     else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
     else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });

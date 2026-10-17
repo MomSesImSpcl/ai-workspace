@@ -45,7 +45,7 @@ export function codexActivity(item: Item): { label: string; fp: string } | null 
     const paths = (item.changes ?? []).map((c) => c.path);
     return { label: `Editing ${paths.map((p) => `\`${p}\``).join(', ')}`, fp: fingerprint('fileChange', paths) };
   }
-  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'delegate' ? 'Subtask' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}) };
+  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'delegate' ? 'Subtask' : item.server === 'aiws' && item.tool === 'start_task' ? 'Starting task' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}) };
   return null;
 }
 
@@ -134,9 +134,14 @@ export class CodexProcess implements AgentProcess {
     this.send({ method: 'initialized' });
     const { task } = this.session;
     const params: Record<string, unknown> = { cwd: this.root, ...(this.model ? { model: this.model } : {}), ...(MODES[this.permissionMode ?? ''] ?? {}) };
+    const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
-      params.config = { 'mcp_servers.aiws': { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483, default_tools_approval_mode: 'approve' } };
+      params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
       params.developerInstructions = 'AI Workspace task: to hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.';
+    } else if (!task) {
+      // Starting a task spends tokens, so Codex's own approval policy decides, unlike a task's delegate.
+      params.config = { 'mcp_servers.aiws': aiws };
+      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task with a token budget, use the workspace start_task tool.';
     }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {

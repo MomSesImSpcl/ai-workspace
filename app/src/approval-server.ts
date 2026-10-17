@@ -1,13 +1,14 @@
 // Stdio MCP server of the workspace for one session or task. `approve` is Claude Code's
 // --permission-prompt-tool: every "ask" becomes an approval card in the chat, and the user's answer goes
-// back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001).
+// back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001), a chat
+// session gets `start_task` (sessions-002).
 // Usage: node src/approval-server.ts <sessionId>. One server serves all turns of a long-lived agent process.
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
-import { delegate } from './tasks.ts';
+import { delegate, startFromSession } from './tasks.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
 const currentTurn = () => readEvents(sessionId).findLast((e) => e.type === 'user')?.turn ?? 0;
@@ -43,6 +44,29 @@ if (task && !task.parentId) {
     async (a) => {
       try {
         return { content: [{ type: 'text' as const, text: await delegate(sessionId, a.goal, a.role) }] };
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
+      }
+    },
+  );
+}
+
+if (!task) {
+  server.registerTool(
+    'start_task',
+    {
+      description: 'Starts a background task in this project with the agent assigned to a workspace role (default Implementation), and returns at once. The task stops at its token budget. Its approval cards, replies and result appear in this chat; the user answers them there.',
+      inputSchema: {
+        goal: z.string().describe('Self-contained instructions for the task'),
+        tokenBudget: z.number().int().positive().describe('Token cap at real cost; the task stops when it is reached'),
+        role: z.string().optional(),
+        permissionMode: z.string().optional().describe("One of the role's agent's own permission modes; omit for the agent's settings"),
+      },
+    },
+    async (a) => {
+      try {
+        const t = startFromSession(sessionId, { goal: a.goal, role: a.role ?? 'Implementation', tokenBudget: a.tokenBudget, permissionMode: a.permissionMode });
+        return { content: [{ type: 'text' as const, text: `task ${t.id} started (${t.integration}); it runs in the background and shows in this chat` }] };
       } catch (e) {
         return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
       }

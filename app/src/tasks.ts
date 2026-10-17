@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { assignmentFor } from './roles.ts';
-import { addMessage, addUsage, allSessions, createSession, loadSession, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
+import { addMessage, addUsage, allSessions, createSession, emit, loadSession, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 
@@ -13,6 +13,7 @@ export type TaskStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'pause
 
 export const listTasks = () => allSessions().filter((s) => s.task);
 export const childrenOf = (id: string) => listTasks().filter((t) => t.task!.parentId === id);
+export const startedIn = (sessionId: string) => listTasks().filter((t) => t.task!.sessionId === sessionId);
 
 const zero = (): Usage => ({ inputTokens: 0, outputTokens: 0 });
 export const usageOf = (id: string): Usage => turns(readEvents(id), true).reduce((u, t) => addUsage(u, t.usage), zero());
@@ -27,7 +28,7 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
   return last.state === 'done' ? 'completed' : last.state === 'error' ? 'failed' : last.state === 'stopped' ? 'paused' : 'interrupted';
 }
 
-export interface NewTask { projectId: string; goal: string; role: string; tokenBudget: number; permissionMode?: string; parentId?: string }
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget: number; permissionMode?: string; parentId?: string; sessionId?: string }
 
 // The goal is the first message. The agent comes from the role's assignment; the mode must be one the agent offers.
 export function createTask(f: NewTask): Session {
@@ -35,12 +36,24 @@ export function createTask(f: NewTask): Session {
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   const s = createSession(f.projectId, f.role, { integration, model });
-  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId };
+  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId };
   s.permissionMode = f.permissionMode || undefined;
   saveSession(s);
   addMessage(s.id, f.goal);
-  audit({ kind: 'task', taskId: s.id, event: 'created', integration, permissionMode: s.permissionMode, parentId: f.parentId });
+  audit({ kind: 'task', taskId: s.id, event: 'created', integration, permissionMode: s.permissionMode, parentId: f.parentId, sessionId: f.sessionId });
   return loadSession(s.id);
+}
+
+// The workspace `start_task` tool of a chat session (sessions-002, ADR 0010): the task runs in the chat's
+// project in the background, and the chat shows it inline in the turn that started it.
+export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
+  const chat = loadSession(sessionId);
+  if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
+  if (!Number.isInteger(f.tokenBudget) || f.tokenBudget <= 0) throw new Error('Unknown token budget: a positive whole number is required');
+  const t = createTask({ ...f, projectId: chat.projectId, sessionId });
+  emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
+  startTurn(t.id);
+  return t;
 }
 
 const taskOf = (id: string) => {

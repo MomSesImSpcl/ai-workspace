@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, startFromSession, taskStatus, taskUsed } from '../src/tasks.ts';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { registerProject } from '../src/store.ts';
@@ -172,6 +174,44 @@ test('delegate runs a subtask under a role, charges the parent, reuses it for th
   assert.equal(loadSession(child!.id).task!.cancelled, true);
 });
 
+test('a chat starts a task: the task records the chat, which shows it with its approvals and result, and takes replies', async () => {
+  const chat = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(chat.id, 'please start one');
+  const t = startFromSession(chat.id, { goal: 'background goal', role: 'Implementation', tokenBudget: 5000 });
+  assert.equal(t.task!.sessionId, chat.id);
+  assert.deepEqual(last(chat.id).tasks, [t.id]);
+  await until(() => status(t.id) === 'completed');
+  assert.throws(() => startFromSession(t.id, { goal: 'x', role: 'Implementation', tokenBudget: 10 }), /delegate/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', tokenBudget: 0 }), /token budget/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', tokenBudget: 10, permissionMode: 'yolo' }), /Unknown permission mode/);
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const view = await (await fetch(`${base}/api/sessions/${chat.id}`)).json();
+    assert.deepEqual([view.tasks[t.id].status, view.tasks[t.id].session.id, view.tasks[t.id].pending], ['completed', chat.id, []]);
+    assert.match(view.tasks[t.id].result, /^turn 1/);
+    emit(t.id, 1, { type: 'approval', id: 'a1', tool: 'Bash', detail: 'ls' }); // a card still open in a finished turn is not pending
+    assert.deepEqual((await (await fetch(`${base}/api/sessions/${chat.id}`)).json()).tasks[t.id].pending, []);
+    const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'more' }) });
+    assert.equal(r.status, 200);
+    await until(() => turns(readEvents(t.id), turnRunning(t.id)).length === 2 && status(t.id) === 'completed');
+  } finally {
+    server.close();
+  }
+});
+
+test('the workspace MCP server offers start_task to a chat session and delegate to a top-level task', async () => {
+  const chat = createSession('P', 'Chat', { integration: 'claude-code' });
+  const tools = async (id: string) => {
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
+    try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
+  };
+  assert.deepEqual(await tools(chat.id), ['approve', 'start_task']);
+  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate']);
+});
+
 test('tasks recorded before they were sessions are converted once and keep their conversation and state', () => {
   const dir = join(process.env.AI_WORKSPACE_HOME!, 'projects', 'P', 'tasks');
   mkdirSync(dir, { recursive: true });
@@ -223,15 +263,15 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     const list = await (await fetch(`${base}/api/tasks`)).json();
     assert.deepEqual([list[0].id, list[0].status, list[0].goal], [t.id, 'interrupted', 'g']); // no runner was started
     const detail = await (await fetch(`${base}/api/tasks/${t.id}`)).json();
-    assert.equal(detail.turns[0].user, 'g');
+    assert.equal(detail.task.goal, 'g');
     // fetch cannot override Host, which is what DNS rebinding sends
     const rebound = await new Promise<number>((r) => get({ port, path: '/api/tasks', headers: { host: `evil.test:${port}` } }, (res) => r(res.statusCode!)).end());
     assert.equal(rebound, 403);
     assert.equal((await post(`/api/tasks/${t.id}/cancel`, { 'content-type': 'application/json' })).status, 403);
-    assert.equal((await post(`/api/tasks/${t.id}/resume`, { origin: base, 'content-type': 'text/plain' })).status, 415);
-    assert.equal((await post('/api/tasks', json, JSON.stringify({ projectId: 'P', goal: 'x', role: 'Implementation', budget: 10, permissionMode: 'yolo' }))).status, 400);
+    assert.equal((await post(`/api/tasks/${t.id}/reply`, { origin: base, 'content-type': 'text/plain' })).status, 415);
+    assert.equal((await post('/api/tasks', json, JSON.stringify({ projectId: 'P', goal: 'x', role: 'Implementation', budget: 10 }))).status, 404); // tasks start from a chat (ADR 0010)
     assert.equal((await (await post(`/api/tasks/${t.id}/cancel`, json)).json()).status, 'cancelled');
-    assert.equal((await post(`/api/tasks/${t.id}/resume`, json)).status, 400);
+    assert.equal((await post(`/api/tasks/${t.id}/reply`, json, JSON.stringify({ text: 'again' }))).status, 400);
     const add = (body: unknown) => post('/api/projects', json, JSON.stringify(body));
     assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
     assert.equal((await add({ path: 'relative/dir' })).status, 400);
