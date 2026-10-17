@@ -220,7 +220,6 @@
     <div class="right">
       <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
-      <button class="btn primary small" id="new-task-btn">New chat</button>
     </div>
   </div>
 
@@ -400,7 +399,6 @@ function renderShell() {
   $('#project-root').textContent = p?.root ?? 'Add one from Projects';
   const chat = state.roles.Chat;
   $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
-  $('#new-task-btn').disabled = !p;
   const running = state.tasks.filter((t) => t.status === 'running' && t.runnerAlive).length;
   $('#running-pill').innerHTML = `<span class="dot s-running"></span>${running} running`;
   const mine = projectTasks();
@@ -617,7 +615,6 @@ const newSession = () => {
   openSession(null);
   $('[name=text]').focus();
 };
-$('#new-task-btn').onclick = newSession;
 $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
 $('#new-session').onclick = newSession;
 $('#restart').hidden = !window.desktop?.restart;
