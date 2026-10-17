@@ -2,7 +2,7 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { getRoles, setRole } from './roles.ts';
-import { cacheTokens, loadSession, readEvents, turnRunning, turns, type Session } from './sessions.ts';
+import { cacheTokens, loadSession, used, readEvents, turnRunning, turns, type Session } from './sessions.ts';
 import { cancelTask, createTask, listTasks, migrateTasks, resumeTask, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { getProject, listProjects, migrateStorage, registerProject } from './store.ts';
 
@@ -41,7 +41,7 @@ function show(s: Session): void {
   const cached = cacheTokens(u);
   const last = ts.at(-1);
   const cost = u.costUsd === undefined ? '' : ` cost≈$${u.costUsd.toFixed(4)} (provider-reported)`;
-  console.log(`${s.id} ${taskStatus(s, ts)}${last?.marker ? ` (${last.marker})` : ''} tokens=${taskUsed(s)}/${s.task!.tokenBudget} (work=${tokens - cached} cached=${cached})${cost} integration=${s.integration}`);
+  console.log(`${s.id} ${taskStatus(s, ts)}${last?.marker ? ` (${last.marker})` : ''} tokens=${taskUsed(s)}/${s.task!.tokenBudget} at real cost (own ${used(u)}: work=${tokens - cached}, prompt cache=${cached} counted at its price)${cost} integration=${s.integration}`);
   if (last?.text) console.log(last.text);
 }
 

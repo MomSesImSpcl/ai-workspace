@@ -14,7 +14,13 @@ export interface Usage {
 
 // Prompt-cache traffic (read + write): mostly the agent's fixed prompt, shown apart from the work itself.
 export const cacheTokens = (u: Usage) => (u.cachedInputTokens ?? 0) + (u.cacheWriteTokens ?? 0);
-export const used = (u: Usage) => u.inputTokens + u.outputTokens;
+// Tokens at their real cost, in input-token equivalents: a prompt-cache read costs about a tenth of an input
+// token and a cache write about a quarter more (Anthropic list prices; OpenAI charges no write premium). The budget
+// and every display use this, so resending the agent's fixed prompt each call counts at what it costs.
+// shortcut: one weighting for every provider and model, upgrade with per-provider prices when another provider differs.
+export const CACHE_READ = 0.1;
+export const CACHE_WRITE = 1.25;
+export const used = (u: Usage) => Math.round(u.inputTokens - cacheTokens(u) + u.outputTokens + CACHE_READ * (u.cachedInputTokens ?? 0) + CACHE_WRITE * (u.cacheWriteTokens ?? 0));
 
 export function addUsage(a: Usage, b: Usage): Usage {
   return {

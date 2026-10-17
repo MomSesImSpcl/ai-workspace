@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
-import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
 import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, taskStatus, taskUsed } from '../src/tasks.ts';
 import { hostSession, runTurn, sessionAgent } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
@@ -196,6 +196,11 @@ test('roles keep independent assignments; integrations without a session agent f
   assert.equal(roles.Orchestration!.integration, 'not-built');
   assert.equal(roles.ArchitectureReasoning!.integration, 'manual-browser');
   assert.throws(() => sessionAgent('not-built'), /cannot run sessions/);
+});
+
+test('tokens count at real cost: cache reads at a tenth, cache writes at a quarter more', () => {
+  assert.equal(used({ inputTokens: 100_000, cachedInputTokens: 90_000, cacheWriteTokens: 8_000, outputTokens: 500 }), 2_000 + 500 + 9_000 + 10_000);
+  assert.equal(used({ inputTokens: 10, outputTokens: 2 }), 12);
 });
 
 test('claude result and per-message usage parsing', () => {

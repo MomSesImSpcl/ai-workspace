@@ -365,13 +365,10 @@ async function api(path, body) {
   return data;
 }
 
-// Cached input is mostly the agent's fixed prompt; the rest is what the work itself cost.
-const tokens = (t) => t.usage.inputTokens + t.usage.outputTokens;
-const cached = (t) => (t.usage.cachedInputTokens ?? 0) + (t.usage.cacheWriteTokens ?? 0); // prompt-cache reads + writes
-const spent = (t) => t.usage.cachedInputTokens === undefined // tasks recorded before the split
-  ? tokens(t).toLocaleString()
-  : `${(tokens(t) - cached(t)).toLocaleString()} work + ${cached(t).toLocaleString()} prompt cache`;
-const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · ${spent(t)} · ${t.used.toLocaleString()} / ${t.task.tokenBudget.toLocaleString()} budget · ${esc(t.integration)}`;
+// Tokens at real cost, as the server counts them (sessions.ts `used`): cache reads at 10 %, cache writes at 125 %.
+const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
+const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
+const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${COST_HINT}">${t.used.toLocaleString()} / ${t.task.tokenBudget.toLocaleString()} tokens</span> · ${esc(t.integration)}`;
 const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (resume to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';
@@ -429,10 +426,10 @@ function renderProjects() {
   $('#project-list').innerHTML = state.projects.filter((p) => !!p.archived === archived).map((p) => {
     const mine = state.tasks.filter((t) => t.projectId === p.id && !t.task.parentId);
     const running = mine.filter(active).length;
-    const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
+    const work = mine.reduce((n, t) => n + t.used, 0);
     return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
       <span class="goal">${esc(p.id)}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
-      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} work tokens</span></button>
+      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} tokens</span></button>
       <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>`;
   }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
   const folders = archived ? [] : state.unaddedFolders ?? [];
@@ -510,10 +507,10 @@ function turnHtml(t) {
   const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => `<div class="approval"><b>${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>${a.repeat ? `<span class="flag">⚠ Possible repeat: ${code(a.repeat)} already ran before the interruption</span>` : ''}
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true">Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false">Deny</button></div></div>`).join('');
-  const used = t.usage.inputTokens + t.usage.outputTokens;
+  const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time>${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${switched}`;
 }
 
 let shown = '';
