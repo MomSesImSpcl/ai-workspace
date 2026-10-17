@@ -27,6 +27,7 @@ export function appendJsonl(path: string, value: unknown): void {
 export interface Project {
   id: string;
   root: string;
+  archived?: boolean; // hidden from the workspace; its folder and workspace data are untouched
 }
 
 const projectsPath = () => join(home(), 'projects.json');
@@ -60,6 +61,13 @@ export function setWorkspaceRoot(root: string): string {
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`Not a directory: ${root}`);
   writeJson(workspacePath(), { root });
   return root;
+}
+
+// Archive is the only removal: the workspace never deletes a project folder or its history.
+export function setProjectArchived(id: string, archived: boolean): Project {
+  const project = { ...getProject(id), archived: archived || undefined };
+  addProject(project);
+  return project;
 }
 
 export function getProject(id: string): Project {

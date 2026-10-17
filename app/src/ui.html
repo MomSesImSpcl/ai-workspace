@@ -226,6 +226,9 @@
       <input id="session-filter" type="search" placeholder="Search sessions" aria-label="Search sessions">
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
+      <div class="menu" id="project-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="archive">Archive</button>
+      </div>
       <div class="menu" id="session-menu" role="menu" hidden>
         <button role="menuitem" data-mact="rename">Rename</button>
         <button role="menuitem" data-mact="archive">Archive</button>
@@ -258,6 +261,7 @@
         <div class="topline"><div class="eyebrow">Workspace</div></div>
         <h1 class="display">Projects</h1>
         <p class="lede" style="margin-bottom:24px">Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.</p>
+        <label class="check" style="margin-bottom:8px"><input id="show-archived-projects" type="checkbox"> Show archived</label>
         <div class="task-list" id="project-list"></div>
         <form class="card" id="project" style="display:grid;gap:8px;margin-top:20px">
           <h3 style="margin:0">Add project</h3>
@@ -318,7 +322,7 @@ const pref = {
   get: (k, d) => { try { return localStorage.getItem(`ws.${k}`) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(`ws.${k}`, v); } catch {} },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, menuFor: null, sessions: [], session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: pref.get('project', null), page: pref.get('page', 'projects'), tool: null, selected: null, menu: null, sessions: [], session: null, sessionData: null };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -389,14 +393,16 @@ function renderShell() {
 }
 
 function renderProjects() {
-  $('#project-list').innerHTML = state.projects.map((p) => {
+  const archived = $('#show-archived-projects').checked;
+  $('#project-list').innerHTML = state.projects.filter((p) => !!p.archived === archived).map((p) => {
     const mine = state.tasks.filter((t) => t.projectId === p.id && !t.parentId);
     const running = mine.filter((t) => t.status === 'running' && t.runnerAlive).length;
     const work = mine.reduce((n, t) => n + tokens(t) - cached(t), 0);
-    return `<button class="task-row" data-project="${esc(p.id)}" aria-current="${p.id === state.project}">
-      <span class="goal">${esc(p.id)}</span><span class="meta">${esc(p.root)}</span>
-      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} work tokens</span></button>`;
-  }).join('') || '<p class="empty">No projects yet. Add a folder below to start.</p>';
+    return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
+      <span class="goal">${esc(p.id)}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
+      <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} work tokens</span></button>
+      <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>`;
+  }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
@@ -416,7 +422,7 @@ function renderSessions() {
   const list = state.sessions.filter((s) => (q ? s.title.toLowerCase().includes(q) : !!s.archived === archived));
   $('#session-list').innerHTML = list.map((s) => `<div class="session-row" data-row="${esc(s.id)}"><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
     ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : ''}</small></button>
-    <button class="menu-btn" data-menu="${esc(s.id)}" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menuFor === s.id}">⋯</button></div>`).join('')
+    <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('')
     || `<p class="empty" style="margin:4px 0">${current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'}</p>`;
 }
 
@@ -544,7 +550,8 @@ function render() {
 async function load() {
   const meta = await api('/api/meta');
   Object.assign(state, meta);
-  if (!state.projects.some((p) => p.id === state.project)) state.project = state.projects[0]?.id ?? null;
+  const active = state.projects.filter((p) => !p.archived);
+  if (!active.some((p) => p.id === state.project)) state.project = active[0]?.id ?? null;
   const roleOptions = Object.entries(state.roles).map(([r, a]) => `<option value="${esc(r)}" ${r === 'Implementation' ? 'selected' : ''}>${esc(r)} → ${esc(a.integration)}${a.model ? ` (${esc(a.model)})` : ''}</option>`).join('');
   $('[name=role]').innerHTML = roleOptions;
 }
@@ -592,31 +599,52 @@ function ask(title, text, ok, danger = false) {
   $('#confirm').returnValue = '';
   $('#confirm').showModal();
   $('#confirm-ok').focus();
-  return new Promise((resolve) => $('#confirm').addEventListener('close', () => resolve($('#confirm').returnValue === 'ok'), { once: true }));
+  // Resolved from the button or Escape directly; the dialog's 'close' event is async and paused in hidden windows.
+  return new Promise((resolve) => {
+    const done = (ok) => { d.removeEventListener('submit', onSubmit); d.removeEventListener('cancel', onCancel); resolve(ok); };
+    const onSubmit = (e) => done(e.submitter?.value === 'ok');
+    const onCancel = () => done(false);
+    const d = $('#confirm');
+    d.addEventListener('submit', onSubmit);
+    d.addEventListener('cancel', onCancel);
+  });
 }
 
-function openMenu(id, x, y) {
-  const s = state.sessions.find((v) => v.id === id);
+const menuItem = (kind, id) => (kind === 'project' ? state.projects : state.sessions).find((v) => v.id === id);
+function openMenu(kind, id, x, y) {
+  const s = menuItem(kind, id);
   if (!s) return;
-  state.menuFor = id;
-  const menu = $('#session-menu');
+  closeMenu();
+  state.menu = { kind, id };
+  const menu = $(`#${kind}-menu`);
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
   menu.querySelector('button').focus();
-  renderSessions();
+  render();
 }
 function closeMenu() {
-  if (!state.menuFor) return;
-  state.menuFor = null;
-  $('#session-menu').hidden = true;
-  renderSessions();
+  if (!state.menu) return;
+  state.menu = null;
+  for (const m of $$('.menu')) m.hidden = true;
+  render();
+}
+
+// Archive is the only way to take a project out of the workspace; nothing on disk is deleted.
+async function projectMenuAction(act, id) {
+  closeMenu();
+  const p = menuItem('project', id);
+  if (!p || act !== 'archive') return;
+  if (!p.archived && !(await ask(`Archive project "${p.id}"?`, `It is hidden from the workspace. Its folder (${p.root}), sessions and tasks stay untouched, and running work continues. Tick "Show archived" on this page to restore it.`, 'Archive'))) return;
+  try { await api(`/api/projects/${encodeURIComponent(id)}/archive`, { archived: !p.archived }); } catch (err) { return void ($('#project-error').textContent = err.message); }
+  await load();
+  if (state.project !== pref.get('project', null)) selectProject(state.project); else render();
 }
 
 async function menuAction(act, id) {
   closeMenu();
-  const s = state.sessions.find((v) => v.id === id);
+  const s = menuItem('session', id);
   if (!s) return;
   if (act === 'rename') {
     if (state.session !== id) { state.session = id; await loadSessions(); }
@@ -636,24 +664,27 @@ async function menuAction(act, id) {
   }
 }
 
-$('#session-list').addEventListener('contextmenu', (e) => {
-  const row = e.target.closest('[data-row]');
+document.addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('[data-row],[data-prow]');
   if (!row) return;
   e.preventDefault();
-  openMenu(row.dataset.row, e.clientX, e.clientY);
+  if (row.dataset.prow) openMenu('project', row.dataset.prow, e.clientX, e.clientY);
+  else openMenu('session', row.dataset.row, e.clientX, e.clientY);
 });
+$('#show-archived-projects').onchange = () => render();
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
 document.addEventListener('click', async (e) => {
   const item = e.target.closest('[data-mact]');
-  if (item) return menuAction(item.dataset.mact, state.menuFor);
+  if (item && state.menu?.kind === 'project') return projectMenuAction(item.dataset.mact, state.menu.id);
+  if (item) return menuAction(item.dataset.mact, state.menu?.id);
   const menuBtn = e.target.closest('[data-menu]');
   if (menuBtn) {
-    if (state.menuFor === menuBtn.dataset.menu) return closeMenu();
+    if (state.menu?.id === menuBtn.dataset.menu) return closeMenu();
     const r = menuBtn.getBoundingClientRect();
-    return openMenu(menuBtn.dataset.menu, r.left, r.bottom + 4);
+    return openMenu(menuBtn.dataset.kind, menuBtn.dataset.menu, r.left, r.bottom + 4);
   }
-  if (!e.target.closest('#session-menu')) closeMenu();
+  if (!e.target.closest('.menu')) closeMenu();
   const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve]');
   if (!el) return;
   if (el.dataset.project) return selectProject(el.dataset.project);

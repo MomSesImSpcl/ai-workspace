@@ -7,7 +7,7 @@ import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './r
 import { addMessage, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
-import { getProject, getWorkspaceRoot, home, listProjects, registerProject, setWorkspaceRoot } from './store.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, registerProject, setProjectArchived, setWorkspaceRoot } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -120,9 +120,11 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
 }
 
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {
-  const [, api, kind, id, action] = url.pathname.split('/');
+  const [, api, kind, rawId, action] = url.pathname.split('/');
   if (api !== 'api') throw new HttpError(404, 'not found');
-  if (id !== undefined && !/^[\w-]+$/.test(id)) throw new HttpError(400, 'bad id');
+  // Task and session ids name files, so they stay strict; project ids are folder names (spaces allowed).
+  const id = kind === 'projects' && rawId !== undefined ? decodeURIComponent(rawId) : rawId;
+  if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
   if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(view);
@@ -142,7 +144,8 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (typeof b.root !== 'string' || !b.root.trim()) throw new HttpError(400, 'root is required');
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
-  if (req.method === 'POST' && kind === 'projects') {
+  if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
+  if (req.method === 'POST' && kind === 'projects' && !id) {
     const b = await body(req);
     if (typeof b.path !== 'string' || (b.id !== undefined && typeof b.id !== 'string')) throw new HttpError(400, 'path is required');
     return registerProject(b.path.trim(), b.id?.trim() || undefined);

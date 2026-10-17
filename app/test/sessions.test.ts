@@ -181,3 +181,23 @@ test('workspace folder is stored only when it is an existing absolute folder', a
     server.close();
   }
 });
+
+test('archiving a project hides it and keeps its data; ids with spaces work', async () => {
+  const spaced = mkdtempSync(join(tmpdir(), 'ws-spaced-'));
+  registerProject(spaced, 'My Project');
+  const s = createSession('My Project', 'Implementation', claude);
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const archive = (archived: boolean) => fetch(`${base}/api/projects/${encodeURIComponent('My Project')}/archive`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ archived }) });
+  try {
+    assert.equal((await (await archive(true)).json()).archived, true);
+    const listed = (await (await fetch(`${base}/api/meta`)).json()).projects.find((p: { id: string }) => p.id === 'My Project');
+    assert.equal(listed.archived, true);
+    assert.equal(loadSession(s.id).projectId, 'My Project'); // sessions untouched
+    assert.equal((await (await archive(false)).json()).archived, undefined);
+    assert.equal((await fetch(`${base}/api/projects/missing/archive`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{}' })).status, 400);
+  } finally {
+    server.close();
+  }
+});
