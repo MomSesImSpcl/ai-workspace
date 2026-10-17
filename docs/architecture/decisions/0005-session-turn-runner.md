@@ -1,6 +1,6 @@
 # ADR 0005 — Sessions slice 1: one detached agent process per turn, Codex on `exec`
 
-Status: accepted (2026-10-17, chosen by the user). Implements part of [ADR 0004](0004-agent-native-permissions.md) for sessions; resolves the two open decisions in the [sessions spec](../../features/sessions/SPEC.md#open-decisions) for now.
+Status: accepted (2026-10-17, chosen by the user); its one-process-per-turn part is superseded for Claude Code by [ADR 0008](0008-session-host-process.md). Implements part of [ADR 0004](0004-agent-native-permissions.md) for sessions; resolves the two open decisions in the [sessions spec](../../features/sessions/SPEC.md#open-decisions) for now.
 
 ## Context
 

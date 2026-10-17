@@ -155,9 +155,9 @@ export function createSession(projectId: string, role: string, assignment: { int
 }
 
 export function deleteSession(id: string): void {
-  if (turnRunning(id)) throw new Error('Session is working; stop it first');
+  if (sessionWorking(id)) throw new Error('Session is working; stop it first');
   loadSession(id);
-  for (const p of [sessionPath(id), eventsPath(id), stopPath(id), runnerPath(id), sessionFile(id, '.log')]) rmSync(p, { force: true });
+  for (const p of [sessionPath(id), eventsPath(id), stopPath(id), sessionFile(id, '.log')]) rmSync(p, { force: true });
   audit({ kind: 'session', sessionId: id, event: 'deleted' });
 }
 
@@ -174,16 +174,49 @@ export function emit(id: string, turn: number, body: Body): void {
 }
 
 // The turn runner is its own process (so a closed window lets the reply finish, sessions-011).
-export const markTurnRunner = (id: string, pid: number) => writeFileSync(runnerPath(id), String(pid));
-export const clearTurnRunner = (id: string) => rmSync(runnerPath(id), { force: true });
-export function turnRunning(id: string): boolean {
-  if (!existsSync(runnerPath(id))) return false;
+// The runner (a session host, or a one-turn runner) holds `<id>.pid`, created exclusively, so a
+// session never has two. `<id>.starting` covers the moment between spawning it and it taking the lock.
+const startingPath = (id: string) => sessionFile(id, '.starting');
+const STARTING_MS = 20_000;
+
+function pidIn(path: string): boolean {
   try {
-    process.kill(Number(readFileSync(runnerPath(id), 'utf8')), 0);
+    process.kill(Number(readFileSync(path, 'utf8')), 0);
     return true;
   } catch {
     return false; // shortcut: a reused pid reads as alive; upgrade with a runner lease (same as tasks).
   }
+}
+
+export const markStarting = (id: string) => writeFileSync(startingPath(id), String(Date.now()));
+
+export function acquireRunner(id: string): boolean {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(runnerPath(id), String(process.pid), { flag: 'wx' });
+      rmSync(startingPath(id), { force: true });
+      return true;
+    } catch {
+      if (pidIn(runnerPath(id))) return false;
+      rmSync(runnerPath(id), { force: true }); // left by a runner that died
+    }
+  }
+  return false;
+}
+
+export function releaseRunner(id: string): void {
+  try { if (readFileSync(runnerPath(id), 'utf8') === String(process.pid)) rmSync(runnerPath(id), { force: true }); } catch { /* already gone */ }
+}
+
+// A runner process exists (it may be idle between turns).
+export function turnRunning(id: string): boolean {
+  if (existsSync(runnerPath(id)) && pidIn(runnerPath(id))) return true;
+  try { return Date.now() - Number(readFileSync(startingPath(id), 'utf8')) < STARTING_MS; } catch { return false; }
+}
+
+// The agent is working on a turn: a runner exists and the last turn has not ended.
+export function sessionWorking(id: string): boolean {
+  return turnRunning(id) && turns(readEvents(id), true).at(-1)?.state === 'working';
 }
 
 // Stop is a marker the runner watches, so it works across processes and platforms (sessions-010).
@@ -258,7 +291,7 @@ export function transcript(ts: Turn[]): string {
 // and passed to the agent with the message, so user and agent see the same last step (sessions-009).
 export function addMessage(id: string, text: string): number {
   const s = loadSession(id);
-  if (turnRunning(id)) throw new Error('Session is already working');
+  if (sessionWorking(id)) throw new Error('Session is already working');
   const events = readEvents(id);
   const ts = turns(events, false);
   const last = ts.at(-1);

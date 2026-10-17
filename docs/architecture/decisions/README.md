@@ -10,4 +10,5 @@ One ADR per significant decision; rules in the [working agreement](../../WORKING
 | [0004](0004-agent-native-permissions.md) | Agents use their own tools and permissions; the workspace observes (supersedes parts of 0001) | accepted 2026-10-17; implemented for Claude Code sessions (ADR 0005), tasks pending | sessions, version-control, tool-broker, model-routing, task-runtime |
 | [0006](0006-agent-capability-contract.md) | Agent capability contract with fallbacks and a conformance check | accepted 2026-10-17, not implemented | all agent integrations, sessions, task-runtime, model-routing |
 | [0007](0007-tasks-agent-native.md) | Tasks run agent-native: approvals, permission mode, repeat detection (supersedes parts of 0001 for tasks) | accepted 2026-10-17, not implemented | task-runtime, tool-broker, desktop-client |
+| [0008](0008-session-host-process.md) | One long-lived Claude Code process per session (supersedes 0005's turn process) | accepted 2026-10-17 | sessions |
 | [0005](0005-session-turn-runner.md) | Sessions slice 1: one detached agent process per turn, Codex on `exec` | accepted 2026-10-17 | sessions, desktop-client, model-routing |

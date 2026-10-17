@@ -77,7 +77,7 @@ Decided in [ADR 0004](../../architecture/decisions/0004-agent-native-permissions
 
 ## Open decisions
 
-- **Turn process:** decided for now in [ADR 0005](../../architecture/decisions/0005-session-turn-runner.md): one agent process per turn first (simple, crash-safe, a few seconds of startup); a process kept open per session only if the startup delay proves annoying.
+- **Turn process:** decided in [ADR 0008](../../architecture/decisions/0008-session-host-process.md): one long-lived Claude Code process per session (earlier, [ADR 0005](../../architecture/decisions/0005-session-turn-runner.md): one agent process per turn first (simple, crash-safe, a few seconds of startup); a process kept open per session only if the startup delay proves annoying.)
 - **Codex protocol:** decided for now in ADR 0005: stay on `codex exec` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)). Native thread resume works (checked); approvals, streaming and interrupt need the experimental `codex app-server` protocol instead of `codex exec`. Whether to build on an experimental protocol now or accept fewer Codex features until it is stable. Per-integration status is tracked in the [integration matrix](../../INTEGRATIONS.md).
 
 ## Acceptance checks

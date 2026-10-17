@@ -68,8 +68,8 @@ try {
   } else if (cmd === 'cancel' && rest[0]) {
     show(cancelTask(rest[0]));
   } else if (cmd === 'turn' && rest[0]) {
-    const { runTurn } = await import('./turn.ts');
-    await runTurn(rest[0]);
+    const { runSession } = await import('./turn.ts');
+    await runSession(rest[0]);
   } else if (cmd === 'ui') {
     const { serve } = await import('./ui.ts');
     const server = serve(Number(values.port));

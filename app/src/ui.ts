@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
@@ -72,8 +72,8 @@ function view(task: Task) {
 
 // shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
 function sessionView(s: Session) {
-  const working = turnRunning(s.id);
-  const last = turns(readEvents(s.id), working).at(-1);
+  const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
+  const working = last?.state === 'working';
   return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
 }
 
@@ -86,8 +86,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   if (req.method === 'GET' && !id) return listSessions(url.searchParams.get('global') ? GLOBAL : text(url.searchParams.get('project'), 'project')).map(sessionView);
   if (req.method === 'GET' && !action) {
     const s = loadSession(id!);
-    const working = turnRunning(s.id);
-    return { session: sessionView(s), turns: turns(readEvents(s.id), working), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
+    return { session: sessionView(s), turns: turns(readEvents(s.id), turnRunning(s.id)), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)) };
   }
   if (req.method !== 'POST') throw new HttpError(404, 'not found');
   const b = await body(req);
@@ -105,9 +104,9 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   const s = loadSession(id);
   if (action === 'message') {
     addMessage(id, text(b.text, 'text'));
-    startTurn(id);
+    if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
   } else if (action === 'stop') {
-    if (turnRunning(id)) requestStop(id);
+    if (sessionWorking(id)) requestStop(id);
   } else if (action === 'approve') {
     const last = turns(readEvents(id), turnRunning(id)).at(-1);
     const pending = last?.state === 'working' && last.approvals.find((a) => a.id === b.approval && a.allow === undefined);

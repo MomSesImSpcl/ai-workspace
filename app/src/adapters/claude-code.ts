@@ -1,11 +1,11 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { addUsage, writeLiveUsage, type AgentAdapter, type StepResult, type Usage } from '../runtime.ts';
-import { runLines, type Body, type SessionAgent, type TurnInput } from '../sessions.ts';
+import { type Body, type Session, type SessionAgent, type TurnInput } from '../sessions.ts';
 
 const mcpServer = fileURLToPath(new URL('../mcp-server.ts', import.meta.url));
 const TURNS_PER_STEP = 8;
@@ -190,50 +190,143 @@ export function agentEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(CLAUDECODE$|CLAUDE_|ANTHROPIC_)/.test(k)));
 }
 
-function claudeTurn(input: TurnInput, resume?: string): Promise<{ vendorSessionId?: string; error?: string; staleHint?: boolean }> {
-  const { session, root, turn, emit, signal } = input;
-  const mcpConfig = JSON.stringify({ mcpServers: { wsapprove: { command: process.execPath, args: [approvalServer, session.id, String(turn)], env: { AI_WORKSPACE_HOME: home() } } } });
-  const prompt = resume || !input.history ? input.prompt : `Earlier in this conversation:\n\n${input.history}\n\nUser: ${input.prompt}`;
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__wsapprove__approve'];
-  if (session.model) args.push('--model', session.model);
-  if (resume) args.push('--resume', resume);
-  let sessionId = resume;
-  let result: StepResult | undefined;
-  let text = '';
-  let sawText = false;
-  const flush = () => {
-    if (text) emit({ type: 'text', text });
-    text = '';
-  };
-  const timer = setInterval(flush, 250); // batch deltas so the log holds chunks, not single tokens
-  return runLines(process.env.CLAUDE_BIN ?? 'claude', args, { cwd: root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '86400000' }, signal }, (line) => {
-    let parsed;
-    try { parsed = sessionEvents(line, root); } catch { return; }
-    sessionId = parsed.sessionId ?? sessionId;
-    result = parsed.result ?? result;
-    for (const ev of parsed.events) {
-      if (ev.type === 'text') { text += ev.text; sawText = true; continue; }
-      flush();
-      emit(ev);
-    }
-  }).then(({ code, err }) => {
-    clearInterval(timer);
-    flush();
-    if (result) emit({ type: 'usage', usage: result.usage });
-    const error = result ? result.error : signal.aborted ? undefined : `claude exited ${code}: ${err || 'no result'}`;
-    // An expired or unknown vendor session: the workspace history is the source, so start fresh from it.
-    const staleHint = !!resume && !sawText && /no conversation found/i.test(`${error ?? ''} ${err}`);
-    return { vendorSessionId: sessionId, error, staleHint };
-  }, (e) => {
-    clearInterval(timer);
-    throw e;
-  });
+type TurnEnd = { vendorSessionId?: string; error?: string; staleHint?: boolean };
+
+// One Claude Code process for a whole session: messages go in over stdin as stream-json, so plugins
+// and hooks keep their in-memory state between turns, as in an interactive Claude Code (issue #15).
+export class ClaudeProcess {
+  private child?: ChildProcessWithoutNullStreams;
+  private onLine?: (line: string) => void;
+  private onExit?: (code: number | null) => void;
+  private err = '';
+  fresh = true; // started without --resume: the next prompt must carry the earlier conversation
+  sessionId?: string;
+
+  private session: Session;
+  private root: string;
+
+  constructor(session: Session, root: string) {
+    this.session = session;
+    this.root = root;
+  }
+
+  get alive() {
+    return !!this.child && this.child.exitCode === null;
+  }
+
+  private start(resume?: string): void {
+    const mcpConfig = JSON.stringify({ mcpServers: { wsapprove: { command: process.execPath, args: [approvalServer, this.session.id], env: { AI_WORKSPACE_HOME: home() } } } });
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__wsapprove__approve'];
+    if (this.session.model) args.push('--model', this.session.model);
+    if (resume) args.push('--resume', resume);
+    this.fresh = !resume;
+    this.sessionId = resume;
+    this.err = '';
+    // CLAUDE_BIN may name a script (tests use a fake CLI), which runs with this Node.
+    const bin = process.env.CLAUDE_BIN ?? 'claude';
+    const [cmd, pre] = /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin]] : [bin, []];
+    const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '86400000' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let pending = '';
+    child.stdout.on('data', (d) => {
+      pending += d;
+      const parts = pending.split('\n');
+      pending = parts.pop() ?? '';
+      for (const l of parts) if (l.trim()) this.onLine?.(l.trim());
+    });
+    child.stderr.on('data', (d) => (this.err = (this.err + d).slice(-4000)));
+    child.on('error', (e) => (this.err += e.message));
+    child.on('close', (code) => this.onExit?.(code));
+    this.child = child;
+  }
+
+  private send(value: unknown): void {
+    this.child?.stdin.write(JSON.stringify(value) + '\n');
+  }
+
+  // Ends the process and its subprocesses (commands, MCP servers).
+  kill(): void {
+    const child = this.child;
+    this.child = undefined;
+    if (!child || child.exitCode !== null) return;
+    if (process.platform === 'win32' && child.pid) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    else child.kill('SIGTERM');
+  }
+
+  // Lets the process finish what it writes, then ends it.
+  close(): void {
+    this.child?.stdin.end();
+    const child = this.child;
+    setTimeout(() => child && child.exitCode === null && this.kill(), 5000).unref();
+  }
+
+  // Runs one turn. Stop sends Claude Code's own interrupt; if it does not end the turn soon, the process is ended.
+  turn(input: Pick<TurnInput, 'prompt' | 'history' | 'emit' | 'signal'>): Promise<TurnEnd> {
+    if (!this.alive) this.start(this.session.vendorSessionId);
+    const { emit, signal } = input;
+    const resumed = !this.fresh;
+    const prompt = this.fresh && input.history ? `Earlier in this conversation:\n\n${input.history}\n\nUser: ${input.prompt}` : input.prompt;
+    this.fresh = false;
+    let text = '';
+    let sawText = false;
+    const flush = () => {
+      if (text) emit({ type: 'text', text });
+      text = '';
+    };
+    return new Promise<TurnEnd>((resolve) => {
+      const timer = setInterval(flush, 250); // batch deltas so the log holds chunks, not single tokens
+      let killTimer: NodeJS.Timeout | undefined;
+      const end = (r: TurnEnd) => {
+        clearInterval(timer);
+        clearTimeout(killTimer);
+        signal.removeEventListener('abort', interrupt);
+        this.onLine = undefined;
+        this.onExit = undefined;
+        flush();
+        resolve({ vendorSessionId: this.sessionId, ...r });
+      };
+      const interrupt = () => {
+        this.send({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } });
+        killTimer = setTimeout(() => { this.kill(); end({}); }, 10000);
+      };
+      this.onLine = (line) => {
+        let parsed;
+        try { parsed = sessionEvents(line, this.root); } catch { return; }
+        this.sessionId = parsed.sessionId ?? this.sessionId;
+        for (const ev of parsed.events) {
+          if (ev.type === 'text') { text += ev.text; sawText = true; continue; }
+          flush();
+          emit(ev);
+        }
+        if (parsed.result) {
+          emit({ type: 'usage', usage: parsed.result.usage });
+          end({ error: signal.aborted ? undefined : parsed.result.error });
+        }
+      };
+      this.onExit = (code) => {
+        this.child = undefined;
+        const error = signal.aborted ? undefined : `claude exited ${code}: ${this.err.trim() || 'no result'}`;
+        // An expired or unknown vendor session: the workspace history is the source, so start fresh from it.
+        end({ error, staleHint: resumed && !sawText && /no conversation found/i.test(this.err) });
+      };
+      signal.addEventListener('abort', interrupt, { once: true });
+      this.send({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] } });
+    });
+  }
 }
 
+// A single turn in its own process (used by tests and as the SessionAgent contract); the session host
+// keeps one ClaudeProcess for many turns instead.
 export const claudeSession: SessionAgent = {
   async turn(input) {
-    const first = await claudeTurn(input, input.session.vendorSessionId);
-    return first.staleHint ? claudeTurn(input) : first;
+    const proc = new ClaudeProcess(input.session, input.root);
+    try {
+      const first = await proc.turn(input);
+      if (!first.staleHint) return first;
+      input.session.vendorSessionId = undefined;
+      return await new ClaudeProcess(input.session, input.root).turn(input);
+    } finally {
+      proc.close();
+    }
   },
   permissions: claudePermissions,
 };
