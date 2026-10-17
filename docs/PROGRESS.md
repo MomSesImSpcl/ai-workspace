@@ -20,7 +20,6 @@ Planning/design, orchestration and implementation roles are independently select
 
 ## Proposed — not yet agreed
 
-[Milestones](MILESTONES.md): M1 "The workspace develops itself" is a draft to review with the user (exit criteria, required and helpful requirements, open questions).
 
 Using the workspace on its own repository after the core and the longer tentative feature order remain proposals; see the [preserved proposal record](history/2026-10-16-00-imported-progress-snapshot/DETAILS.md#proposed-not-yet-agreed). There is no fixed delivery sequence.
 
@@ -28,6 +27,6 @@ Using the workspace on its own repository after the core and the longer tentativ
 
 Each feature gets its own branch created from the current `main` and is merged only after the user approves; setup on a new machine follows the [setup order](DEPENDENCIES.md#setup-order-on-a-new-machine). Run the app from the main checkout with `npm run desktop` in `app/` (or `AI Workspace.cmd` / `AI Workspace.command`, or the Start menu shortcut), not from an old worktree; ⟳ reloads code changes. Tests with `npm test`. Real storage was migrated to the per-project layout on the user's computer.
 
-Next action: choose the next scope with the user. Candidates: tasks started from a session plus turn-start Git state (sessions-002, 021); project defaults for agent, model and effort (sessions-017); agent-native tasks (ADR 0007, task-runtime 4.7); Codex on `codex app-server` (#14). Known exception to fix with the next session work: the session host checks `integration === 'claude-code'` instead of an adapter capability ([custom-integrations](features/custom-integrations/SPEC.md#preparation-that-applies-now)).
+Active milestone: [M1 "The workspace develops itself"](MILESTONES.md#m1--the-workspace-develops-itself); prefer its Required requirements. Next action: choose the next scope with the user. Candidates: tasks started from a session plus turn-start Git state (sessions-002, 021); project defaults for agent, model and effort (sessions-017); agent-native tasks (ADR 0007, task-runtime 4.7); Codex on `codex app-server` (#14). Known exception to fix with the next session work: the session host checks `integration === 'claude-code'` instead of an adapter capability ([custom-integrations](features/custom-integrations/SPEC.md#preparation-that-applies-now)).
 
 Open limits: [`known-limit` issues](https://github.com/MomSesImSpcl/ai-workspace/issues?q=label%3Aknown-limit). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
