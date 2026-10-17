@@ -1,0 +1,4 @@
+Github Issues: Might need to be checked if they are resolved when a new feature has been implemented. Also might need to be checked before a new feature is started if they are a road block.
+Maybe also add the feature, the issue potentially belongs to and when it becomes relevent (educated guess if not sure)
+Make the CLI open in the background so its not visible
+Maybe add Gobal effort rule as an optional setting to the workspace.
