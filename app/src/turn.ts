@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
 import { acquireRunner, clearStop, emit, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
-import { taskUsed } from './tasks.ts';
+import { startPendingTasks, taskUsed } from './tasks.ts';
 
 export const sessionAgents: Record<string, SessionAgent> = { 'claude-code': claudeSession, codex: codexSession };
 
@@ -53,7 +53,10 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
   };
   const committed = task ? taskUsed(session) : 0;
   const live = task ? (u: Usage) => committed + used(u) >= task.tokenBudget && halt(`token budget ${task.tokenBudget.toLocaleString('en')} reached`) : undefined;
-  const watch = setInterval(() => stopRequested(id) && halt(), 300);
+  const watch = setInterval(() => {
+    if (stopRequested(id)) halt();
+    if (!task) startPendingTasks(id); // tasks its agent started with start_task
+  }, 300);
   try {
     say({ type: 'start', integration: session.integration });
     live?.({ inputTokens: 0, outputTokens: 0 });
@@ -76,6 +79,7 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
     say({ type: 'error', message: (e as Error).message });
   } finally {
     clearInterval(watch);
+    if (!task) startPendingTasks(id);
     clearStop(id);
   }
   return {};

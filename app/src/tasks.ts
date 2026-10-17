@@ -45,15 +45,21 @@ export function createTask(f: NewTask): Session {
 }
 
 // The workspace `start_task` tool of a chat session (sessions-002, ADR 0010): the task runs in the chat's
-// project in the background, and the chat shows it inline in the turn that started it.
+// project in the background, and the chat shows it inline in the turn that started it. The chat's runner
+// starts it (startPendingTasks): a process started inside the agent's tree dies with it (Codex runs its MCP
+// servers in a Windows job that is closed with the agent).
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
   if (!Number.isInteger(f.tokenBudget) || f.tokenBudget <= 0) throw new Error('Unknown token budget: a positive whole number is required');
   const t = createTask({ ...f, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
-  startTurn(t.id);
   return t;
+}
+
+// Starts the chat's tasks that were recorded but never run.
+export function startPendingTasks(sessionId: string): void {
+  for (const t of startedIn(sessionId)) if (!t.task!.cancelled && !turnRunning(t.id) && readEvents(t.id).every((e) => e.type === 'user')) startTurn(t.id);
 }
 
 const taskOf = (id: string) => {
