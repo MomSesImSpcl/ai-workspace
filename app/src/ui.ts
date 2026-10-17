@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
-import { cancelTask, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
+import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
-const logPath = (id: string) => join(home(), 'tasks', `${id}.log`);
+const logPath = (id: string) => taskFile(id, '.log');
 const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
 
 // Each task runs in its own detached `ws resume` process, so closing the UI never stops it.

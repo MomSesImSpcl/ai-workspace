@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
-import { clearTurnRunner, emit, loadSession, markTurnRunner, readEvents, saveSession, sessionRoot, stopRequested, transcript, turnPrompt, turns, type SessionAgent } from './sessions.ts';
+import { clearTurnRunner, sessionFile, emit, loadSession, markTurnRunner, readEvents, saveSession, sessionRoot, stopRequested, transcript, turnPrompt, turns, type SessionAgent } from './sessions.ts';
 import { home } from './store.ts';
 
 export const sessionAgents: Record<string, SessionAgent> = { 'claude-code': claudeSession, codex: codexSession };
@@ -48,7 +48,7 @@ const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
 
 // Detached, so closing the window lets the reply finish and be saved (sessions-011).
 export function startTurn(id: string): void {
-  const log = openSync(join(home(), 'sessions', `${id}.log`), 'a');
+  const log = openSync(sessionFile(id, '.log'), 'a');
   const child = spawn(process.execPath, [cli, 'turn', id], { detached: true, stdio: ['ignore', log, log], windowsHide: true });
   closeSync(log);
   if (child.pid) markTurnRunner(id, child.pid);

@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appendJsonl, audit, getProject, getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
+import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, writeJson } from './store.ts';
 import { addUsage, type Usage } from './runtime.ts';
 
 // A session is a conversation in one project (sessions-001/002). Its history is an append-only
@@ -56,11 +56,12 @@ export interface SessionAgent {
   permissions(root: string): { line: string; warn?: string };
 }
 
-const dir = () => join(home(), 'sessions');
-const sessionPath = (id: string) => join(dir(), `${id}.json`);
-const eventsPath = (id: string) => join(dir(), `${id}.jsonl`);
-const runnerPath = (id: string) => join(dir(), `${id}.pid`);
-const stopPath = (id: string) => join(dir(), `${id}.stop`);
+// A session's files live in its project's (or the global) storage folder, see store.ts.
+export const sessionFile = (id: string, suffix: string) => join(storageDir('sessions', id), `${id}${suffix}`);
+const sessionPath = (id: string) => sessionFile(id, '.json');
+const eventsPath = (id: string) => sessionFile(id, '.jsonl');
+const runnerPath = (id: string) => sessionFile(id, '.pid');
+const stopPath = (id: string) => sessionFile(id, '.stop');
 
 // Runs an agent CLI and hands each stdout line to onLine. Abort ends the whole process tree, since
 // agents start their own subprocesses (commands, MCP servers).
@@ -113,8 +114,9 @@ export function sessionRoot(s: Pick<Session, 'projectId'>): string {
 
 // Pinned first (in their pin order), then newest activity first.
 export function listSessions(projectId: string): Session[] {
-  if (!existsSync(dir())) return [];
-  return readdirSync(dir()).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5)))
+  // The flat legacy folder still holds items whose runner was alive during migration.
+  const dirs = [join(projectStorage(projectId), 'sessions'), join(home(), 'sessions')].filter((d) => existsSync(d));
+  return dirs.flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))))
     .filter((s) => s.projectId === projectId)
     .sort((a, b) => (a.pinOrder ?? Infinity) - (b.pinOrder ?? Infinity) || b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -145,6 +147,7 @@ export function createSession(projectId: string, role: string, assignment: { int
   sessionRoot({ projectId });
   const now = new Date().toISOString();
   const s: Session = { id: randomUUID().slice(0, 8), projectId, title: 'New session', role, ...assignment, createdAt: now, updatedAt: now };
+  placeIn('sessions', s.id, projectId);
   saveSession(s);
   audit({ kind: 'session', sessionId: s.id, event: 'created', projectId, role, integration: s.integration });
   return s;
@@ -153,7 +156,7 @@ export function createSession(projectId: string, role: string, assignment: { int
 export function deleteSession(id: string): void {
   if (turnRunning(id)) throw new Error('Session is working; stop it first');
   loadSession(id);
-  for (const p of [sessionPath(id), eventsPath(id), stopPath(id), runnerPath(id), join(dir(), `${id}.log`)]) rmSync(p, { force: true });
+  for (const p of [sessionPath(id), eventsPath(id), stopPath(id), runnerPath(id), sessionFile(id, '.log')]) rmSync(p, { force: true });
   audit({ kind: 'session', sessionId: id, event: 'deleted' });
 }
 

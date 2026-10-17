@@ -8,7 +8,7 @@ import { codexSessionEvents } from '../src/adapters/codex.ts';
 import { addMessage, createSession, emit, GLOBAL, listSessions, loadSession, readEvents, reorderPinned, requestStop, sessionRoot, setPinned, turnPrompt, turns, type SessionAgent } from '../src/sessions.ts';
 import { runTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
-import { listProjects, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
+import { listProjects, migrateStorage, registerProject, removeProject, setWorkspaceRoot, unaddedFolders } from '../src/store.ts';
 
 let root = '';
 beforeEach(() => {
@@ -250,4 +250,27 @@ test('global sessions run in the workspace folder; pinned sessions list first in
   assert.deepEqual(listSessions('TEST').map((s) => s.id), [c.id, a.id, b.id]);
   setPinned(c.id, false);
   assert.equal(listSessions('TEST')[0].id, a.id);
+});
+
+test('storage mirrors the workspace and old flat folders are migrated without losing files', () => {
+  const home = process.env.AI_WORKSPACE_HOME!;
+  // New items go straight into their project's or the global folder.
+  setWorkspaceRoot(root);
+  const p = createSession('TEST', 'Chat', claude);
+  const g = createSession(GLOBAL, 'Chat', claude);
+  assert.ok(existsSync(join(home, 'projects', 'TEST', 'sessions', `${p.id}.json`)));
+  assert.ok(existsSync(join(home, 'global', 'sessions', `${g.id}.json`)));
+  // An item in the old flat layout, with side files, and one whose runner is alive.
+  mkdirSync(join(home, 'sessions'), { recursive: true });
+  writeFileSync(join(home, 'sessions', 'old1.json'), JSON.stringify({ id: 'old1', projectId: 'A: B', title: 't', role: 'Chat', integration: 'claude-code', createdAt: '', updatedAt: '' }));
+  writeFileSync(join(home, 'sessions', 'old1.jsonl'), '{"turn":1,"type":"user","text":"hi","at":""}\n');
+  writeFileSync(join(home, 'sessions', 'busy.json'), JSON.stringify({ id: 'busy', projectId: 'TEST' }));
+  writeFileSync(join(home, 'sessions', 'busy.pid'), String(process.pid));
+  migrateStorage();
+  assert.ok(existsSync(join(home, 'projects', 'A_ B', 'sessions', 'old1.json')));
+  assert.equal(readEvents('old1')[0].type, 'user');
+  assert.ok(existsSync(join(home, 'sessions', 'busy.json'))); // runner alive: left for a later run
+  assert.equal(listSessions('TEST').some((s) => s.id === 'busy'), true);
+  migrateStorage(); // idempotent
+  assert.ok(existsSync(join(home, 'projects', 'A_ B', 'sessions', 'old1.jsonl')));
 });
