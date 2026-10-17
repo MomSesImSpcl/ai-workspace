@@ -13,7 +13,15 @@
 
 ## 7.2.1 Language analysis
 
-Requirements below refine 7.2. Priority stated by the user (2026-10-17): TypeScript/JavaScript (code-index-002) HTML/CSS (code-index-003, code-index-004) Markdown, shell and batch ([7.2.2](#722-markdown-shell-and-batch), code-index-010–019) come first, because development of this repository moves into the workspace once it is ready; together they cover every source language in it (its specs, ADRs and history are Markdown, its launchers shell and batch). C# and other languages follow through the same adapter interface; this is a priority, not a fixed delivery order.
+Requirements below refine 7.2. Priority stated by the user (2026-10-17), ordered by how much this repository uses each language today, because its development moves into the workspace once it is ready:
+
+1. TypeScript/JavaScript (code-index-002)
+2. HTML/CSS (code-index-003, code-index-004)
+3. Markdown ([7.2.2](#722-markdown-shell-and-batch), code-index-011–014): specs, ADRs and history
+4. JSON and YAML ([7.2.3](#723-json-and-yaml), code-index-020–028): package, TypeScript and CI configuration
+5. Shell and batch (code-index-015–019): the launchers
+
+Together these cover every file type in the repository today. Shared rules (code-index-001, 005–010) apply to all of them. C# and other languages follow through the same adapter interface. This is a priority, not a fixed delivery order.
 
 - **code-index-001 — Language adapters:** Analysis MUST run through per-language adapters for definitions, symbols, references, imports/dependencies, types, diagnostics and relationship/impact queries. Each adapter MUST declare which queries it supports and MUST return `unsupported` or `unknown` instead of inventing results. A project MAY mix languages and configure which adapters apply.
 - **code-index-002 — TypeScript and JavaScript:** Cover `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` and `.cjs` with compiler/language-service analysis: definitions, references, module relationships and type information where available. JavaScript outside the project's `tsconfig.json` (for example `app/desktop/main.mjs`, outside `app/tsconfig.json` `include`) MUST still be analyzed through a separately configured program, not silently skipped. Dynamic or unresolved usage MUST be reported as uncertain.
@@ -50,6 +58,26 @@ Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
 
 **Open decisions:** Markdown as a code-index adapter or a document extractor of [knowledge-retrieval](../knowledge-retrieval/SPEC.md) (either way it feeds the shared `knowledge-001` index); Markdown variants and shell dialects covered; lint rules; packaging of external analyzers per platform; batch parser dependency or a small own extractor; which analyses run by default and which on demand.
 
+## 7.2.3 JSON and YAML
+
+Structural adapters for configuration under code-index-001, with the shared rules of 7.2.1 and code-index-010 (no execution, labeled findings). Configuration content is data, never instructions to the agent. Targets in this repository: `app/package.json`, `app/package-lock.json`, `app/tsconfig.json`, `.github/workflows/ci.yml`.
+
+- **code-index-020 — Formats:** Strict `.json` and `.yml`/`.yaml`. Comments and trailing commas only in formats that allow them (for example `tsconfig.json`, `.jsonc`); strict JSON MUST NOT silently accept them.
+- **code-index-021 — Structure:** Index keys, nested paths, arrays/sequences, values and types, document boundaries and exact ranges; keep comments where the parser supports them. Secret-looking values MUST be redacted from search and model results.
+- **code-index-022 — Validation:** Report parse errors, duplicate keys and, where a schema applies, type violations and missing or unknown fields, each with file, range, severity and source. A file that parses is not thereby schema-valid.
+- **code-index-023 — Schemas:** Optional JSON Schema association through an explicit project mapping, a local schema, `$schema` or a trusted built-in match; validate JSON and YAML and show the schema and version used. Remote schemas need policy-approved network access and versioned caching; no implicit untrusted downloads.
+- **code-index-024 — References:** Track `$ref`, relative file paths, config imports, workflow `uses` and declared dependencies. Unresolved, dynamic or convention-based links are uncertain; YAML tags and expressions are never executed.
+- **code-index-025 — YAML specifics:** Multi-document files, anchors, aliases and merges where supported, with source locations; report unknown custom tags; bound alias expansion against resource exhaustion; do not assume YAML 1.1 or 1.2 scalar coercion where the consuming tool decides.
+- **code-index-026 — GitHub Actions:** Treat `.github/workflows/*.yml`/`*.yaml` as workflows and validate jobs, steps, `needs`, expressions and syntax with a dedicated checker, without evaluating `${{ … }}`. Flag untrusted expression interpolation and privileged steps for review (heuristic, as in code-index-017).
+- **code-index-027 — Key-path lookup:** Look up by key path (for example `compilerOptions.strict`, `jobs.test.strategy.matrix.os`) and return a small extract with path, revision, range, schema and diagnostics, not the whole file, through the shared index (code-index-006).
+- **code-index-028 — Generated files:** Distinguish generated files (for example `package-lock.json`) from hand-written config; changes to generated files go through the tool that owns them (the package manager), not direct edits.
+
+Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
+
+**Non-goals:** executing configuration, guaranteed resolution of dynamic references, mandatory schema downloads, a separate search database.
+
+**Open decisions:** tool choice, cache format, supported YAML schema dialects, default lint rules.
+
 **Product acceptance:** G7 in [acceptance scenarios](../../ACCEPTANCE.md).
 
 ## Acceptance evidence
@@ -64,3 +92,7 @@ Nonbinding candidates: [technology candidates](../../TECHNOLOGY_CANDIDATES.md).
 - In a test `.sh`, a function and a sourced script are found and a deliberate static diagnostic points at the right line.
 - In a test `.cmd`, a label and a `CALL` target are found; a dynamically built command is marked uncertain, not reported as a dependency.
 - Editing or deleting a Markdown or script file updates or removes its records without a full reindex; a malformed file does not stop other indexing; indexing runs no script.
+- `compilerOptions.strict` in `app/tsconfig.json` returns its value and position; comments allowed in tsconfig are not strict-JSON errors.
+- `scripts.typecheck` in `app/package.json` returns only that entry with its source; `app/package-lock.json` is marked generated.
+- `jobs.test.strategy.matrix.os` in `.github/workflows/ci.yml` returns the platform list linked to the `test` job; workflow validation runs without evaluating `${{ … }}`.
+- A malformed JSON/YAML fixture yields located diagnostics, including duplicate keys and schema mismatches where a schema applies; editing one entry refreshes it and its references; secrets, unauthorized repositories and unapproved remote schemas never reach model context.

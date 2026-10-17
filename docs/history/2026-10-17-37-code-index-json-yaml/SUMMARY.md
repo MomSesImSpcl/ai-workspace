@@ -1,0 +1,3 @@
+# Feature: JSON and YAML in the code index; ordered priority
+
+Specified, not started: [code-index 7.2.3](../../features/code-index/SPEC.md#723-json-and-yaml) (code-index-020–028): strict vs comment-allowing JSON, key-path structure and lookup, validation and optional JSON Schema, references, YAML anchors and multi-document files, GitHub Actions checks without evaluating expressions, generated-file handling, secret redaction. The language priority is now an ordered list by current use in this repository: TypeScript/JavaScript, HTML/CSS, Markdown, JSON/YAML, shell and batch; it covers every file type in the repository.

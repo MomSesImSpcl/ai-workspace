@@ -2,7 +2,7 @@
 
 **Status:** not-started
 
-Index symbols, relationships, tests and Git changes, through per-language adapters: TypeScript/JavaScript, HTML/CSS, Markdown, shell and batch first (including links between markup, styles and handlers, section retrieval from docs, and script diagnostics without running any script), compiler-backed C# later. Find internal code and approved dependencies before proposing replacements; keep documentation grounded in current, authorized source.
+Index symbols, relationships, tests and Git changes, through per-language adapters: TypeScript/JavaScript, HTML/CSS, Markdown, JSON/YAML, shell and batch first, in that order (including links between markup, styles and handlers, section retrieval from docs, config lookup by key path, and script diagnostics without running anything), compiler-backed C# later. Find internal code and approved dependencies before proposing replacements; keep documentation grounded in current, authorized source.
 
 [Full requirements](SPEC.md).
 
