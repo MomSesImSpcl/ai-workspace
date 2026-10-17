@@ -46,7 +46,10 @@
   .toolbar { display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid var(--hairline); }
   .icon-btn { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-dim); cursor: pointer; transition: background var(--t), color var(--t); }
   .icon-btn:hover { background: var(--surface-2); color: var(--text); }
-  .crumbs { display: flex; gap: 9px; align-items: center; font-size: 14px; min-width: 0; }
+  /* Fixed to the sessions column's width (minus toolbar padding, toggle and gaps), so the tabs never move. */
+  .crumbs { display: flex; gap: 9px; align-items: center; font-size: 14px; flex: none; width: calc(var(--sessions-w) - 68px); min-width: 0; }
+  .crumbs .crumb-btn { min-width: 0; }
+  .crumbs #crumb-workspace, .crumbs i { flex: none; }
   .crumbs span { color: var(--text-dim); } .crumbs i { color: var(--text-muted); font-style: normal; }
   .crumbs b, .crumb-btn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb-btn { padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 6px; background: none; font-size: 14px; cursor: pointer; }
