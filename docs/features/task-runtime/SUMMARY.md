@@ -6,4 +6,4 @@ Run independent background tasks alongside responsive conversations. Persist wor
 
 [Full requirements](SPEC.md).
 
-**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [runners](../runners/SUMMARY.md), [tool-broker](../tool-broker/SUMMARY.md).
+**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [runners](../runners/SUMMARY.md), [tool-broker](../tool-broker/SUMMARY.md), [sessions](../sessions/SUMMARY.md) (interactive sessions per project).

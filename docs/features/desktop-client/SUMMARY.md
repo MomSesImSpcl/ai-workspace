@@ -6,4 +6,4 @@ Provide project navigation, interactive conversations, task controls, artifacts,
 
 [Full requirements](SPEC.md).
 
-**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [task-runtime](../task-runtime/SUMMARY.md).
+**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [task-runtime](../task-runtime/SUMMARY.md), [sessions](../sessions/SUMMARY.md) (chat sessions per project, close behavior).
