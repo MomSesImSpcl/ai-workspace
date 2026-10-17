@@ -8,7 +8,7 @@
 
 **Interactive session:** live, low-latency, interruptible conversation with a selected model/role, optionally tool-assisted.
 
-**Delegated autonomous task:** independent persistent task started by a user or authorized parent task and operated by a worker over minutes, hours or multiple contexts.
+**Delegated autonomous task:** independent persistent task started by the orchestrator, an agent in a session, or an authorized parent task, not from a form in the Task Center ([ADR 0010](../../architecture/decisions/0010-tasks-started-from-chat.md)) and operated by a worker over minutes, hours or multiple contexts.
 
 - A conversation can create one or more delegated tasks. The conversation remains responsive and can continue using any model while background tasks run.
 - Multiple independent tasks run concurrently subject to authorizations, resource capacity, API rate limits, approval gates and budgets.
