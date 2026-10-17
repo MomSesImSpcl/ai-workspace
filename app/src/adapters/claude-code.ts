@@ -175,6 +175,8 @@ export class ClaudeProcess implements AgentProcess {
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
       if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
+    } else args.push('--allowedTools', 'mcp__aiws__start_task'); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    if (session.task) {
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       args.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [hook] }] } }));
     }

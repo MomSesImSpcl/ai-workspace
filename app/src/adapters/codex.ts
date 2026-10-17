@@ -139,8 +139,8 @@ export class CodexProcess implements AgentProcess {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
       params.developerInstructions = 'AI Workspace task: to hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.';
     } else if (!task) {
-      // Starting a task spends tokens, so Codex's own approval policy decides, unlike a task's delegate.
-      params.config = { 'mcp_servers.aiws': aiws };
+      // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
+      params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
       params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task with a token budget, use the workspace start_task tool.';
     }
     let r: Record<string, unknown> | undefined;

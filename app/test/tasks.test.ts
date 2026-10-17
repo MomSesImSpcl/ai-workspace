@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, startFromSession, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent } from '../src/turn.ts';
@@ -180,6 +180,7 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   const t = startFromSession(chat.id, { goal: 'background goal', role: 'Implementation', tokenBudget: 5000 });
   assert.equal(t.task!.sessionId, chat.id);
   assert.deepEqual(last(chat.id).tasks, [t.id]);
+  startPendingTasks(chat.id); // the chat's runner does this while its turn runs
   await until(() => status(t.id) === 'completed');
   assert.throws(() => startFromSession(t.id, { goal: 'x', role: 'Implementation', tokenBudget: 10 }), /delegate/);
   assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', tokenBudget: 0 }), /token budget/);
