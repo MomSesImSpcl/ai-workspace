@@ -61,6 +61,8 @@
   .body { display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
   .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) auto 48px; }
   .app[data-sidebar=collapsed] .sessions-col { visibility: hidden; }
+  /* Fixed columns: a hidden drawer leaves the grid, which would shift the rail off the edge. */
+  .body > .drawer { grid-column: 4; } .body > .rail { grid-column: 5; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
   /* Chat column: the project's sessions above the open session, full height. */
