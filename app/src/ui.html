@@ -244,7 +244,7 @@
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
-        <div class="identity"><div class="brand-mark" id="mark">?</div><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
+        <div class="identity"><div style="min-width:0"><strong id="project-name">No project</strong><small id="project-root">Add one from Projects</small></div></div>
       </div>
       <div class="chat-title row" id="chat-title" style="justify-content:space-between;align-items:center"></div>
       <div class="perm" id="perm"></div>
@@ -394,7 +394,6 @@ function renderShell() {
   $('#project-root').textContent = p?.root ?? 'Add one from Projects';
   const chat = state.roles.Chat;
   $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
-  $('#mark').textContent = p?.id[0] ?? '?';
   $('#new-task-btn').disabled = !p;
   const running = state.tasks.filter((t) => t.status === 'running' && t.runnerAlive).length;
   $('#running-pill').innerHTML = `<span class="dot s-running"></span>${running} running`;
