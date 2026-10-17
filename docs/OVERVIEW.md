@@ -50,7 +50,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 
 - [Requirement locations and evidence](REQUIREMENTS_TRACEABILITY.md) · [Current work](PROGRESS.md) · [History on demand](history/)
 - [Architecture, security and quality contracts](ARCHITECTURE.md) · [Acceptance scenarios G1–G13](ACCEPTANCE.md) · [Dependency inventory](DEPENDENCIES.md)
-- [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
+- [Milestones](MILESTONES.md) · [Working agreement](WORKING_AGREEMENT.md) · [Open decisions](OPEN_DECISIONS.md) · [Nonbinding technology candidates](TECHNOLOGY_CANDIDATES.md)
 - [Adding or changing features](ADDING_FEATURES.md)
 
 Status: core slice 1 prototype (CLI) and the Electron workspace app (Task Center) implemented and verified on Windows; see [progress](PROGRESS.md). Desktop client is in progress; other features are planned.

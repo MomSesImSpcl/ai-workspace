@@ -23,7 +23,7 @@ Use MUST/MUST NOT, SHOULD and MAY as defined in the shared principles. Preserve 
 
 Behavior that depends on what the agent does (events, approvals, interruption, permissions) MUST name the [integration matrix](INTEGRATIONS.md) rows it relies on, adding rows with a fallback where needed, so it works with every agent set up for the workspace ([ADR 0006](architecture/decisions/0006-agent-capability-contract.md)).
 
-Dependencies describe required capabilities or integration contracts, not a fixed development order. Do not assign delivery phases, fixed priority labels or dates unless the user requests them. A partial implementation must identify which requirements it covers.
+Dependencies describe required capabilities or integration contracts, not a fixed development order. Do not assign delivery phases, fixed priority labels or dates unless the user requests them; agreed order belongs in [milestones](MILESTONES.md), not in feature specs. A partial implementation must identify which requirements it covers.
 
 ## Register and check
 
