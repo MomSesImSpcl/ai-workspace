@@ -300,7 +300,7 @@
         <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
           <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
           <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
-          <div class="row"><button class="btn small">Save</button><span class="meta" id="workspace-saved"></span></div></form>
+          <span class="meta" id="workspace-saved" role="status"></span></form>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
@@ -540,7 +540,7 @@ function renderDrawer() {
       return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
         <div class="row"><label class="field">Agent<select name="integration">${options.map((i) => `<option ${i === a.integration ? 'selected' : ''}>${esc(i)}</option>`).join('')}</select></label>
         <label class="field">Model (optional)<input name="model" value="${esc(a.model)}" placeholder="default"></label></div>
-        <div class="row"><button class="btn small">Save</button><span class="meta" data-saved></span></div></form>`;
+        <span class="meta" data-saved role="status"></span></form>`;
     }).join('');
   }
 }
@@ -769,7 +769,7 @@ $('[name=path]').onclick = async (e) => {
 $('[name=root]').onclick = async (e) => {
   if (!window.desktop) return;
   const path = await window.desktop.pickFolder('Select the workspace folder', state.workspaceRoot ?? undefined);
-  if (path) e.target.value = path;
+  if (path) { e.target.value = path; $('#workspace-form').requestSubmit(); }
 };
 $('#workspace-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -792,6 +792,9 @@ $('#project').onsubmit = async (e) => {
     selectProject(p.id);
   } catch (err) { $('#project-error').textContent = err.message; }
 };
+// Settings save on change (a picked option, or a text field when it loses focus or on Enter); there is no Save button.
+$('#workspace-form').onchange = (e) => e.currentTarget.requestSubmit();
+$('#roles').onchange = (e) => e.target.form?.requestSubmit();
 $('#roles').onsubmit = async (e) => {
   e.preventDefault();
   const form = e.target;
