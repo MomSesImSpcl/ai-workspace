@@ -41,6 +41,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Video research, style guides and YouTube production](features/content-production/SUMMARY.md)
 - [Optional browser and web-based AI interfaces](features/integrated-browser/SUMMARY.md)
 - [Interface languages and localization](features/localization/SUMMARY.md)
+- [Workspace backup, transfer and private sync](features/workspace-transfer/SUMMARY.md) — in progress
 
 ## Shared references — load as needed
 

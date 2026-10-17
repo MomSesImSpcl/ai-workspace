@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
+import { exportStorage, importStorage } from './transfer.ts';
 import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
 import { getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
@@ -154,6 +155,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     writeJson(prefsPath(), { ...readJson<Record<string, string>>(prefsPath(), {}), [b.key]: b.value });
     return { ok: true };
   }
+  if (req.method === 'POST' && kind === 'storage' && (id === 'export' || id === 'import')) {
+    const b = await body(req);
+    if (typeof b.path !== 'string' || !isAbsolute(b.path)) throw new HttpError(400, 'an absolute file path is required');
+    return id === 'export' ? exportStorage(b.path) : importStorage(b.path);
+  }
   if (req.method === 'POST' && kind === 'workspace') {
     const b = await body(req);
     if (typeof b.root !== 'string' || !b.root.trim()) throw new HttpError(400, 'root is required');
@@ -212,7 +218,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Workspace folder |^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^No assignment|no runnable adapter|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

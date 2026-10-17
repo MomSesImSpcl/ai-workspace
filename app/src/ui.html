@@ -310,7 +310,9 @@
           <span class="meta" id="workspace-saved" role="status"></span></form>
         <div style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace storage</b>
           <p class="meta" style="margin:0">Sessions, tasks and logs live here, never in project folders, so they cannot be committed by accident.</p>
-          <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div></div>
+          <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div>
+          <div class="row"><button class="btn small" id="export-storage" type="button">Export…</button><button class="btn small" id="import-storage" type="button">Import…</button></div>
+          <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
       </div>
@@ -398,7 +400,7 @@ function renderShell() {
   $('#crumb-workspace').disabled = !state.workspaceRoot || !window.desktop;
   if (document.activeElement?.name !== 'root') $('[name=root]').value = state.workspaceRoot ?? '';
   $('#storage-path').textContent = state.storage ?? '';
-  $('#open-storage').disabled = !window.desktop;
+  $('#open-storage').disabled = $('#export-storage').disabled = $('#import-storage').disabled = !window.desktop;
   $('#crumb').textContent = p?.id ?? 'No project';
   $('#crumb').title = p ? `${p.root}${window.desktop ? '\nClick to open the folder' : ''}` : '';
   $('#crumb').disabled = !p || !window.desktop;
@@ -628,6 +630,25 @@ $('#new-session').onclick = newSession;
 $('#restart').hidden = !window.desktop?.restart;
 $('#restart').onclick = () => window.desktop.restart();
 $('#open-storage').onclick = () => state.storage && window.desktop?.openFolder(state.storage);
+// Export and import between computers (workspace-transfer part 1); sign-ins never leave this computer.
+$('#export-storage').onclick = async () => {
+  if (!(await ask('Export the workspace?', 'The file contains your private conversations, tasks and logs. Keep it somewhere only you can read. Sign-ins and credentials are not included.', 'Choose file…'))) return;
+  const path = await window.desktop.saveExport();
+  if (!path) return;
+  try { const r = await api('/api/storage/export', { path }); $('#transfer-result').textContent = `Exported ${r.files} files.`; }
+  catch (err) { $('#transfer-result').textContent = err.message; }
+};
+$('#import-storage').onclick = async () => {
+  const path = await window.desktop.openExport();
+  if (!path) return;
+  try {
+    const r = await api('/api/storage/import', { path });
+    const projects = r.projects.map((p) => `${p.id}: ${p.outcome}`).join('; ');
+    $('#transfer-result').textContent = `Imported ${r.sessions} sessions and ${r.tasks} tasks.${projects ? ` Projects: ${projects}.` : ''}`;
+    await load();
+    await poll();
+  } catch (err) { $('#transfer-result').textContent = err.message; }
+};
 $('#session-list').addEventListener('click', (e) => {
   if (!e.target.closest('#new-global')) return;
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();

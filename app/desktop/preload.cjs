@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld('desktop', {
   pickFolder: (title, start) => ipcRenderer.invoke('pick-folder', title, start),
   openFolder: (path) => ipcRenderer.invoke('open-folder', path),
   restart: () => ipcRenderer.invoke('restart'),
+  saveExport: () => ipcRenderer.invoke('save-export'),
+  openExport: () => ipcRenderer.invoke('open-export'),
 });

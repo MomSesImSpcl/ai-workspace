@@ -71,6 +71,17 @@ ipcMain.handle('pick-folder', async (event, title, start) => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+// File dialogs for workspace export and import; the page only gets the chosen path.
+const transferFilters = [{ name: 'AI Workspace export', extensions: ['aiworkspace'] }];
+ipcMain.handle('save-export', async (event) => {
+  const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Export workspace', defaultPath: `ai-workspace-${new Date().toISOString().slice(0, 10)}.aiworkspace`, filters: transferFilters });
+  return result.canceled ? null : result.filePath;
+});
+ipcMain.handle('open-export', async (event) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Import workspace', filters: transferFilters, properties: ['openFile'] });
+  return result.canceled ? null : result.filePaths[0];
+});
+
 // Only existing folders, so the page cannot make the shell open files or URLs.
 ipcMain.handle('open-folder', (_event, path) => {
   if (typeof path !== 'string' || !existsSync(path) || !statSync(path).isDirectory()) return 'not a folder';
