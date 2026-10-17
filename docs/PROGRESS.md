@@ -31,4 +31,6 @@ Each feature gets its own branch created from the current `main` and is merged o
 
 Active milestone: [M1 "The workspace develops itself"](MILESTONES.md#m1--the-workspace-develops-itself); prefer its Required requirements. sessions-002 is merged; not yet run with the real agents calling `start_task` ([history](history/2026-10-18-04-chat-starts-tasks/SUMMARY.md)). Next action, the user's choice: the orchestrator (orchestrator-002/004/005/006, ADR 0011, onboarding-009/010, with task Pause/Resume runtime-006) or M1 version control. The session host opens an `AgentProcess` for every agent; no `integration === 'claude-code'` check remains.
 
+Worktrees merged into `main`, ready to remove (local branch too): `chat-starts-task-feature-15a45f`, `tasks-feature-b7694b`, `language-intelligence-spec-review-e17771`, `chat-sessions-per-project-f82af3`. Check each for uncommitted work and an active session first.
+
 Open limits: [`known-limit` issues](https://github.com/MomSesImSpcl/ai-workspace/issues?q=label%3Aknown-limit). Cross-cutting choices remain in [open decisions](OPEN_DECISIONS.md).
