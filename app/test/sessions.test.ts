@@ -97,8 +97,9 @@ test('agent errors end the turn as failed and keep the activity', async () => {
 });
 
 test('claude stream lines map to the event contract', () => {
-  const init = sessionEvents(JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1', permissionMode: 'default', memory_paths: ['C:/u/CLAUDE.md'] }), root);
-  assert.deepEqual(init.events, [{ type: 'init', permissionMode: 'default', ruleFiles: ['C:/u/CLAUDE.md'] }]);
+  const init = sessionEvents(JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1', permissionMode: 'default', memory_paths: { auto: 'C:/u/memory/' },
+    plugins: [{ name: 'caveman', path: 'C:/p' }, { name: 'cc-plugin-telemetry', path: 'builtin' }], mcp_servers: [{ name: 'caveman', status: 'connected' }, { name: 'wsapprove', status: 'connected' }], skills: ['a', 'b'] }), root);
+  assert.deepEqual(init.events, [{ type: 'init', permissionMode: 'default', ruleFiles: ['C:/u/memory/'], plugins: ['caveman'], mcp: [{ name: 'caveman', status: 'connected' }], skills: 2 }]);
   assert.equal(init.sessionId, 's1');
   const delta = sessionEvents(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } } }), root);
   assert.deepEqual(delta.events, [{ type: 'text', text: 'Hi' }]);

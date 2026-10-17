@@ -437,7 +437,10 @@ function renderChat() {
   } else $('#chat-title').innerHTML = s ? `<b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</b><span class="row" style="flex:none">
       <button class="link-btn" data-sact="rename">Rename</button><button class="link-btn" data-sact="archive">${s.archived ? 'Restore' : 'Archive'}</button><button class="link-btn" data-sact="delete">Delete</button></span>`
     : '<span>New session: your first message starts it</span>';
-  $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}` : '';
+  const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
+  const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
+  const loaded = setup ? `<br>Loaded from ${esc(s.integration)}'s own setup: ${setup.plugins?.length ? `plugins ${esc(setup.plugins.join(', '))}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${failed.length ? ` · <span class="warn">⚠ not connected: ${esc(failed.map((m) => `${m.name} (${m.status})`).join(', '))}</span>` : ''}${setup.skills ? ` · ${setup.skills} skills` : ''}` : '';
+  $('#perm').innerHTML = d ? `${esc(d.permissions.line)}${d.permissions.warn ? ` · <span class="warn">⚠ ${esc(d.permissions.warn)}</span>` : ''}${d.turns.at(-1)?.permissionMode === 'bypassPermissions' ? ' · <span class="warn">⚠ running with all permission checks skipped</span>' : ''}${loaded}` : '';
   $('#send').disabled = !current() || working;
   $('#stop').hidden = !working;
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';

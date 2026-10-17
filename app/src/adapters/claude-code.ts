@@ -126,6 +126,9 @@ interface StreamLine {
   session_id?: string;
   permissionMode?: string;
   memory_paths?: unknown;
+  plugins?: { name: string; path?: string }[];
+  mcp_servers?: { name: string; status: string }[];
+  skills?: unknown[];
   event?: { type: string; delta?: { type: string; text?: string } };
   message?: { content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean }[] };
 }
@@ -137,7 +140,10 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   if (e.type === 'system' && e.subtype === 'init') {
     const paths = Array.isArray(e.memory_paths) ? e.memory_paths : e.memory_paths && typeof e.memory_paths === 'object' ? Object.values(e.memory_paths) : [];
     const ruleFiles = paths.map((p) => (typeof p === 'string' ? p : String((p as { path?: string }).path ?? JSON.stringify(p))));
-    return { events: [{ type: 'init', permissionMode: e.permissionMode, ruleFiles }], sessionId: e.session_id };
+    // Built-in plugins ship with Claude Code; the workspace's own approval server is not the user's.
+    const plugins = e.plugins?.filter((p) => p.path !== 'builtin').map((p) => p.name);
+    const mcp = e.mcp_servers?.filter((m) => m.name !== 'wsapprove').map(({ name, status }) => ({ name, status }));
+    return { events: [{ type: 'init', permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
   }
   if (e.type === 'stream_event' && e.event?.type === 'content_block_delta' && e.event.delta?.type === 'text_delta') return { events: [{ type: 'text', text: e.event.delta.text ?? '' }] };
   if (e.type === 'assistant') {

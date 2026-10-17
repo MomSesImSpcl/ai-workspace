@@ -24,7 +24,7 @@ export interface Session {
 export type SessionEvent = { at: string; turn: number } & (
   | { type: 'user'; text: string }
   | { type: 'start'; integration: string }
-  | { type: 'init'; permissionMode?: string; ruleFiles?: string[] }
+  | { type: 'init'; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
   | { type: 'activity'; id: string; label: string; outside?: boolean }
   | { type: 'activity-done'; id: string; error?: boolean }
@@ -166,6 +166,9 @@ export interface Turn {
   usage: Usage;
   permissionMode?: string;
   ruleFiles?: string[];
+  plugins?: string[]; // what the agent loaded from its own setup, reported, never configured here
+  mcp?: { name: string; status: string }[];
+  skills?: number;
   startedAt: string;
   endedAt?: string;
   marker?: string; // "Interrupted after step N: …" when the turn did not finish (sessions-008)
@@ -185,7 +188,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     const t = out.findLast((x) => x.n === e.turn);
     if (!t) continue;
     if (e.type === 'text') t.text += e.text;
-    else if (e.type === 'init') Object.assign(t, { permissionMode: e.permissionMode, ruleFiles: e.ruleFiles });
+    else if (e.type === 'init') Object.assign(t, { permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });
     else if (e.type === 'activity') t.activity.push({ id: e.id, label: e.label, done: false, outside: e.outside });
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail });
