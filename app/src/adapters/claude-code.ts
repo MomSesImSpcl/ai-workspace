@@ -200,6 +200,7 @@ export class ClaudeProcess {
   private onExit?: (code: number | null) => void;
   private err = '';
   fresh = true; // started without --resume: the next prompt must carry the earlier conversation
+  effort?: string; // the level this process was started with; a change needs a new process
   sessionId?: string;
 
   private session: Session;
@@ -218,6 +219,10 @@ export class ClaudeProcess {
     const mcpConfig = JSON.stringify({ mcpServers: { wsapprove: { command: process.execPath, args: [approvalServer, this.session.id], env: { AI_WORKSPACE_HOME: home() } } } });
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__wsapprove__approve'];
     if (this.session.model) args.push('--model', this.session.model);
+    // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
+    this.effort = this.session.effort;
+    if (this.effort) args.push('--effort', this.effort);
+    args.push('--append-system-prompt', `AI Workspace session: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;

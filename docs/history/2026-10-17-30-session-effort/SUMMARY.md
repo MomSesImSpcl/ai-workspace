@@ -1,0 +1,3 @@
+# Effort level per session
+
+Sessions have an effort level (Default, Low, Medium, High, Extra, Max) chosen in the composer; Claude Code gets `--effort` (a changed level restarts the session's process, resuming the conversation), Codex gets `model_reasoning_effort` (Extra and Max map to high). The agent is told its level through `--append-system-prompt`, so rules that depend on it can read it; a real High session answered with its level. Tests 41/41 (effort restart via the fake CLI). Also answered: messages in a session do not start tasks yet (sessions-002 not built). Branch `claude/chat-sessions-per-project-f82af3`.

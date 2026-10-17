@@ -142,7 +142,9 @@ export const codexSession: SessionAgent = {
     const text = history ? `Earlier in this conversation:\n\n${history}\n\nUser: ${prompt}` : prompt;
     let done = false;
     let error: string | undefined;
-    const { code, err } = await runLines(bin, [...pre, 'exec', '--json', '--skip-git-repo-check', '-C', root, ...(session.model ? ['-m', session.model] : []), text], { cwd: root, signal }, (line) => {
+    const { code, err } = await runLines(bin, [...pre, 'exec', '--json', '--skip-git-repo-check', '-C', root, ...(session.model ? ['-m', session.model] : []),
+      // Codex knows low, medium and high; the two higher workspace levels map to high.
+      ...(session.effort ? ['-c', `model_reasoning_effort="${session.effort === 'low' || session.effort === 'medium' ? session.effort : 'high'}"`] : []), text], { cwd: root, signal }, (line) => {
       let parsed;
       try { parsed = codexSessionEvents(line); } catch { return; }
       for (const ev of parsed.events) emit(ev);

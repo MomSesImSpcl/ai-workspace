@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, integrations, newRoleTask, setRole } from './roles.ts';
-import { addMessage, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, EFFORTS, GLOBAL, reorderPinned, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { sessionAgent, startTurn } from './turn.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { cancelTask, taskFile, conversation, listTasks, loadTask, markRunner, replyTask, runnerAlive, saveTask, terminal, type Task } from './runtime.ts';
@@ -77,6 +77,13 @@ function sessionView(s: Session) {
   return { ...s, working, state: last?.state, pendingApprovals: last?.approvals.filter((a) => a.allow === undefined).length ?? 0 };
 }
 
+// '' or null clears the level, so the agent's own default applies.
+const effort = (v: unknown) => {
+  if (v === '' || v === null) return undefined;
+  if (!EFFORTS.includes(v as never)) throw new HttpError(400, `effort must be one of ${EFFORTS.join(', ')}`);
+  return v as (typeof EFFORTS)[number];
+};
+
 const text = (v: unknown, name: string) => {
   if (typeof v !== 'string' || !v.trim()) throw new HttpError(400, `${name} is required`);
   return v.trim();
@@ -99,7 +106,12 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const role = text(b.role, 'role');
     const assignment = assignmentFor(role);
     sessionAgent(assignment.integration);
-    return sessionView(createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, assignment));
+    const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, assignment);
+    if (b.effort !== undefined) {
+      s.effort = effort(b.effort);
+      saveSession(s);
+    }
+    return sessionView(s);
   }
   const s = loadSession(id);
   if (action === 'message') {
@@ -114,6 +126,9 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     emit(id, last.n, { type: 'approval-answer', id: pending.id, allow: b.allow });
   } else if (action === 'rename') {
     s.title = text(b.title, 'title').slice(0, 120);
+    saveSession(s);
+  } else if (action === 'effort') {
+    s.effort = effort(b.effort);
     saveSession(s);
   } else if (action === 'pin') {
     setPinned(id, b.pinned === true);

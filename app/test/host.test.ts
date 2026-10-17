@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { addMessage, createSession, emit, readEvents, requestStop, sessionWorking, turnRunning, turns } from '../src/sessions.ts';
+import { addMessage, createSession, emit, loadSession, readEvents, saveSession, requestStop, sessionWorking, turnRunning, turns } from '../src/sessions.ts';
 import { hostSession } from '../src/turn.ts';
 import { registerProject } from '../src/store.ts';
 
@@ -31,7 +31,7 @@ test('one agent process answers every turn of a session, then the host ends when
   const host = hostSession(s.id);
   await until(() => last(s.id).state === 'done');
   const first = last(s.id).text;
-  assert.match(first, /^turn 1 pid \d+$/);
+  assert.match(first, /^turn 1 pid \d+ effort default$/);
   assert.equal(turnRunning(s.id), true); // idle host still alive
   assert.equal(sessionWorking(s.id), false);
   addMessage(s.id, 'second');
@@ -40,6 +40,21 @@ test('one agent process answers every turn of a session, then the host ends when
   assert.equal(last(s.id).text, first.replace('turn 1', 'turn 2'));
   await host; // idle timeout
   assert.equal(turnRunning(s.id), false);
+});
+
+test('a changed effort level starts the agent again with --effort, resuming the conversation', async () => {
+  const s = createSession('P', 'Chat', claude);
+  addMessage(s.id, 'one');
+  const host = hostSession(s.id);
+  await until(() => last(s.id).state === 'done');
+  assert.match(last(s.id).text, /effort default$/);
+  const saved = loadSession(s.id);
+  saved.effort = 'high';
+  saveSession(saved);
+  addMessage(s.id, 'two');
+  await until(() => last(s.id).n === 2 && last(s.id).state === 'done');
+  assert.match(last(s.id).text, /^turn 1 pid \d+ effort high$/); // a new process, started at the new level
+  await host;
 });
 
 test('Stop interrupts the turn in the running process, which then takes the next message', async () => {

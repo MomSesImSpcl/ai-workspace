@@ -14,6 +14,7 @@ export interface Session {
   role: string;
   integration: string;
   model?: string;
+  effort?: Effort; // unset: the agent's own default
   archived?: boolean;
   pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
@@ -102,6 +103,9 @@ export function loadSession(id: string): Session {
   if (!s) throw new Error(`Unknown session: ${id}`);
   return s;
 }
+
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
 
 // Global sessions belong to no project; they run in the workspace folder (sessions-014).
 export const GLOBAL = '';

@@ -259,7 +259,8 @@
       <form class="chat-composer" id="new">
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
+        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row"><label class="field" style="flex-direction:row;align-items:center;gap:6px">Effort<select id="effort" aria-label="Effort level">
+          <option value="">Default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra</option><option value="max">Max</option></select></label><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
@@ -506,6 +507,7 @@ function renderChat() {
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
+  if (document.activeElement?.id !== 'effort') $('#effort').value = s ? s.effort ?? '' : state.newEffort ?? '';
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns]);
@@ -690,6 +692,8 @@ $('#session-list').addEventListener('drop', async (e) => {
 $('#session-filter').oninput = renderSessions;
 $('#show-archived').onchange = renderSessions;
 $('#stop').onclick = () => sessionAction('stop');
+// The level applies from the next message; a running reply keeps the level it started with.
+$('#effort').onchange = (e) => (state.session ? sessionAction('effort', { effort: e.target.value }) : (state.newEffort = e.target.value));
 
 // Styled confirmation (the native confirm() dialog does not match the workspace).
 function ask(title, text, ok, danger = false) {
@@ -851,7 +855,8 @@ $('#new').onsubmit = async (e) => {
   const f = new FormData(e.target);
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
-    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat' } : { projectId: state.project, role: 'Chat' })).id;
+    const effort = $('#effort').value;
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', effort } : { projectId: state.project, role: 'Chat', effort })).id;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';

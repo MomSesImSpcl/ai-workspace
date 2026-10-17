@@ -4,6 +4,7 @@
 import { createInterface } from 'node:readline';
 
 let turns = 0;
+const effort = process.argv.includes('--effort') ? process.argv[process.argv.indexOf('--effort') + 1] : 'default';
 let waiting = null;
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 const result = (text) => out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: 'fake-session', usage: { input_tokens: 10, output_tokens: 2 } });
@@ -20,6 +21,6 @@ for await (const line of createInterface({ input: process.stdin })) {
   const text = msg.message.content[0].text;
   out({ type: 'system', subtype: 'init', session_id: 'fake-session', permissionMode: 'default', plugins: [], mcp_servers: [] });
   if (text.includes('slow')) { waiting = true; continue; }
-  out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `turn ${turns} pid ${process.pid}` } } });
+  out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `turn ${turns} pid ${process.pid} effort ${effort}` } } });
   result(`turn ${turns}`);
 }

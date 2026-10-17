@@ -91,6 +91,11 @@ export async function hostSession(id: string): Promise<void> {
     while (existsSync(sessionFile(id, '.json'))) {
       if (pending(id)) {
         const session = loadSession(id);
+        // --effort is fixed per process: a changed level restarts it, resuming the same conversation.
+        if (proc && proc.effort !== session.effort) {
+          proc.close();
+          proc = undefined;
+        }
         proc ??= new ClaudeProcess(session, sessionRoot(session));
         await oneTurn(id, async (input) => {
           const r = await proc!.turn(input);
