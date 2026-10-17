@@ -77,6 +77,12 @@ ipcMain.handle('open-folder', (_event, path) => {
   return shell.openPath(path);
 });
 
+// Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
+ipcMain.handle('restart', () => {
+  app.relaunch();
+  app.quit();
+});
+
 const appUserModelId = 'AIWorkspace.Desktop';
 let mainWindow;
 

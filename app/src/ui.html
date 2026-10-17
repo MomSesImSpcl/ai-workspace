@@ -218,6 +218,7 @@
       <button data-page="tasks">Tasks</button>
     </div>
     <div class="right">
+      <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app (reloads code changes; running agent work continues)">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
       <button class="btn primary small" id="new-task-btn">New chat</button>
     </div>
@@ -619,6 +620,8 @@ const newSession = () => {
 $('#new-task-btn').onclick = newSession;
 $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
 $('#new-session').onclick = newSession;
+$('#restart').hidden = !window.desktop?.restart;
+$('#restart').onclick = () => window.desktop.restart();
 $('#session-list').addEventListener('click', (e) => {
   if (!e.target.closest('#new-global')) return;
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
