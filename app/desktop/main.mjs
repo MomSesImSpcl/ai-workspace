@@ -101,14 +101,19 @@ ipcMain.on('attention', (_e, on) => {
 });
 
 ipcMain.handle('restart', () => {
+  const t0 = Date.now();
+  const step = (what) => log(`${what} (+${Date.now() - t0} ms)`); // which step is slow when a restart hangs
   log('restart requested');
   app.releaseSingleInstanceLock(); // the new instance must not find the lock still held
+  step('lock released');
   app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== RELAUNCHED), RELAUNCHED] });
+  step('relaunch scheduled');
   // A plain quit sometimes never finishes on Windows (the windowless process stays and the relauncher waits for
   // it), so restart saves what quitting would and exits at once.
   if (mainWindow) saveBounds(mainWindow);
+  step('window position saved');
   server?.kill();
-  log('exiting for restart');
+  step('exiting for restart');
   app.exit(0);
 });
 
