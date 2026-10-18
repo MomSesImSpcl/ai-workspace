@@ -210,6 +210,12 @@
   .task-row:hover { background: var(--surface-2); }
   .task-row[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .task-list { display: grid; gap: 8px; }
+  /* Title with its description beside it, never taller than the title. */
+  .page-head { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; }
+  .page-head h1 { margin: 0; flex: none; }
+  /* Never taller than the title: 2 lines next to the small title, 3 once it reaches its full size (wide windows). */
+  .page-head .lede { margin: 0; max-width: none; flex: 1; min-width: 0; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  @media (min-width: 1270px) { .page-head .lede { -webkit-line-clamp: 3; } }
   .task-scope { margin-bottom: 16px; gap: 6px; }
   .task-group { display: grid; gap: 8px; margin-bottom: 10px; }
   .task-group > .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
@@ -357,8 +363,8 @@
       </section>
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
-        <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:16px">Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.</p>
+        <div class="page-head"><h1 class="display">Tasks</h1>
+        <p class="lede" title="Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.">Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.</p></div>
         <!-- Which tasks the list shows: the open chat's, or all of its project (or of all global sessions), grouped by chat. -->
         <div class="row task-scope" role="group" aria-label="Tasks to show"><button class="btn small" data-scope="session" type="button" title="All tasks in this Session">Session</button><button class="btn small" data-scope="all" type="button" id="scope-all"></button></div>
         <div class="split">
