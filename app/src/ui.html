@@ -133,7 +133,10 @@
   .mode-menu button span:first-child { display: grid; gap: 1px; }
   .mode-menu small { color: var(--text-muted); font-size: 11px; }
   details.run { margin-bottom: 10px; }
-  details.run > summary { cursor: pointer; list-style: none; }
+  details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+  details.run > summary::-webkit-details-marker { display: none; }
+  details.run > summary::after { content: '▾'; margin-left: auto; font-size: 16px; line-height: 1; color: var(--text); transition: transform .15s; }
+  details.run[open] > summary::after { transform: rotate(180deg); }
   details.run > summary { padding: 2px 0; }
   details.run[open] > summary { margin-bottom: 8px; }
   .detail-head { display: flex; align-items: baseline; gap: 12px; }
@@ -707,7 +710,7 @@ function runHtml(t, r, i, count, open, permissions) {
   const mode = state.agents?.[t.integration]?.modes?.find((m) => m.id === (r.permissionMode ?? t.permissionMode ?? ''));
   const when = new Date(r.startedAt).toLocaleString();
   const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}${r.paused ? ` · paused ${r.paused}×` : ''}`;
-  return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta">${line}</summary>
+  return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta"><span>${line}</span></summary>
     <dl>
       <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
