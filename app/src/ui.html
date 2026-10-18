@@ -102,7 +102,7 @@
   /* Request on the right (up to 60 %), its folded Worked line on the left (up to 36 %), on one line. */
   .turn-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 4%; }
   .turn-head > .msg.user { margin-left: auto; max-width: 60%; }
-  .turn-head > details.turn-activity:not([open]) { max-width: 36%; }
+  .turn-head > details.turn-activity:not([open]) { max-width: 36%; align-self: flex-end; } /* level with the request's bottom edge */
   .turn-head > details.turn-activity[open] { order: 2; flex-basis: 100%; max-width: 92%; }
   .turn-head > details.turn-activity summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .turn-activity summary { cursor: pointer; color: var(--text-muted); }
