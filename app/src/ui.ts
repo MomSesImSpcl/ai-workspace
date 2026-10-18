@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
-import { getAgentSetup, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
+import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -59,6 +59,7 @@ function taskView(s: Session) {
   return {
     ...s, goal: ts[0]?.user ?? s.title, status, reason: last?.marker, subtaskUsed: childrenOf(s.id).reduce((n, c) => n + used(usageOf(c.id)), 0), // part of `used`, shown as its own line
     used: taskUsed(s) + (last?.state === 'working' ? used(turnUsage(last)) : 0), usage: last?.state === 'working' ? addUsage(usageOf(s.id), turnUsage(last)) : usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined,
+    loaded: (getAgentSetup().inventory?.[s.integration] ?? []).filter((i) => itemOn(s, i.id)).map((i) => i.title), // its enabled setup items (orchestrator-005)
     ranModel: ts.findLast((t) => t.model)?.model, // the model the agent reported, also when the task used the agent's default
     finishedAt: status === 'running' || status === 'waiting' ? undefined : last?.endedAt,
     session: chat && { id: chat.id, title: chat.title },

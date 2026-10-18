@@ -246,6 +246,7 @@
   dl { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 14px; margin: 0; font-size: 12px; }
   dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; }
   h3 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; margin: 22px 0 8px; }
+  .result { padding: 12px; background: var(--code); border: 1px solid var(--hairline); border-radius: 8px; overflow-wrap: anywhere; }
   pre { margin: 0; padding: 12px; background: var(--code); border: 1px solid var(--hairline); border-radius: 8px; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
   .error { color: var(--red); font-size: 12px; min-height: 1em; margin: 0; }
 
@@ -838,6 +839,7 @@ function runHtml(t, r, i, count, open, permissions) {
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       <dt>Progress</dt><dd>${stepsHtml(t, r)}</dd>
+      ${t.loaded ? `<dt>Tools</dt><dd><details><summary>${t.loaded.length} enabled</summary>${t.loaded.length ? `<ul style="margin:4px 0 0;padding-left:18px">${t.loaded.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="meta">None</span>'}</details></dd>` : ''}
       <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
       <dt>Started</dt><dd>${when}</dd>
       <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
