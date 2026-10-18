@@ -99,6 +99,12 @@
   /* A folded "Worked …" line is only as wide as its text, on the reply side, so it never reaches under the request. */
   details.turn-activity:not([open]) { align-self: flex-start; max-width: 92%; }
   details.turn-activity[open] { align-self: flex-start; width: 92%; }
+  /* Request on the right (up to 60 %), its folded Worked line on the left (up to 36 %), on one line. */
+  .turn-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 4%; }
+  .turn-head > .msg.user { margin-left: auto; max-width: 60%; }
+  .turn-head > details.turn-activity:not([open]) { max-width: 36%; }
+  .turn-head > details.turn-activity[open] { order: 2; flex-basis: 100%; max-width: 92%; }
+  .turn-head > details.turn-activity summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .turn-activity summary { cursor: pointer; color: var(--text-muted); }
   .turn-activity ol { margin: 4px 0 0; padding-left: 18px; }
   .turn-activity li.err { color: var(--red); }
@@ -687,7 +693,9 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
-  return `<div class="msg user turn-start">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
+  // A finished turn's "Worked" line sits beside the request instead of under it; open, its steps go below.
+  const request = `<div class="msg user turn-start">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>`;
+  return `${t.state === 'done' && activity ? `<div class="turn-head">${activity}${request}</div>` : request + activity}${notices}${cards}
     ${t.text ? `<div class="msg agent">${md(t.text)}${used ? `<time title="${esc(breakdown(t.usage))}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
