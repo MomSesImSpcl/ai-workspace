@@ -137,7 +137,7 @@
   details.run > summary { padding: 2px 0; }
   details.run[open] > summary { margin-bottom: 8px; }
   .detail-head { display: flex; align-items: baseline; gap: 12px; }
-  .detail-head h2 { flex: 1; min-width: 0; }
+  .detail-head h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .task-id { flex: none; width: 8ch; text-align: right; font-size: 11px; color: var(--text-muted); }
   .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
@@ -692,7 +692,7 @@ async function renderTasks() {
   if (id !== state.selected) return; // the user picked another task while this one loaded
   // One bubble per run (the start, then each reply that reused the task); one is open, the latest by default.
   const openRun = t.id in (state.openRun ?? {}) ? state.openRun[t.id] : runs.at(-1)?.n; // null: the user closed them all
-  setHtml($('#detail'), `<div class="detail-head"><h2>${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
+  setHtml($('#detail'), `<div class="detail-head"><h2 title="${esc(t.title)}">${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
     + `<p class="error" id="detail-error" role="alert"></p>${t.session ? '' : pendingCards(t)}`
     + (children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : '')
     + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''));
