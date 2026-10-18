@@ -65,11 +65,14 @@ function taskView(s: Session) {
 }
 
 // A task as its starting chat shows it (sessions-002): status, its and its subtasks' pending approvals, the result.
+// Open approval cards of a task and its subtasks.
+const pendingOf = (s: Session) => [s, ...childrenOf(s.id)].flatMap((t) => {
+  const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
+  return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
+});
+
 function taskCard(s: Session) {
-  const pending = [s, ...childrenOf(s.id)].flatMap((t) => {
-    const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
-    return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
-  });
+  const pending = pendingOf(s);
   // The task's own conversation after its goal: the user's replies and each answer, oldest first.
   const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i && !t.resume ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
   return { ...taskView(s), pending, thread };
@@ -80,7 +83,7 @@ function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
   const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
-  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + taskCard(t).pending.length, 0) };
+  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
 }
 
 // Agent, model and effort, checked against what the agent offers (its catalog).

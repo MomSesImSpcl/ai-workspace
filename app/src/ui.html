@@ -723,11 +723,17 @@ function renderChat() {
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
+// A load the user overtook (another project or chat picked while it ran) is dropped, so it cannot redraw the old one.
 async function loadSessions() {
-  state.sessions = state.project ? await api(`/api/sessions?project=${encodeURIComponent(state.project)}`) : [];
-  state.globals = await api('/api/sessions?global=1');
-  if (state.session && !allSessions().some((s) => s.id === state.session)) state.session = null;
-  state.sessionData = state.session ? await api(`/api/sessions/${state.session}`) : null;
+  const project = state.project, session = state.session;
+  const [sessions, globals, data] = await Promise.all([
+    project ? api(`/api/sessions?project=${encodeURIComponent(project)}`) : [],
+    api('/api/sessions?global=1'),
+    session ? api(`/api/sessions/${session}`).catch(() => null) : null,
+  ]);
+  if (project !== state.project || session !== state.session) return;
+  Object.assign(state, { sessions, globals, sessionData: data });
+  if (state.session && !allSessions().some((s) => s.id === state.session)) Object.assign(state, { session: null, sessionData: null });
 }
 
 function openSession(id, newGlobal = false) {

@@ -97,7 +97,8 @@ ipcMain.handle('open-folder', (_event, path) => {
 let wantsAttention = false;
 ipcMain.on('attention', (_e, on) => {
   wantsAttention = on;
-  if (mainWindow) mainWindow.flashFrame(on && !mainWindow.isFocused());
+  // The page can still send this while a restart is closing the window.
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(on && !mainWindow.isFocused());
 });
 
 ipcMain.handle('restart', () => {
