@@ -260,7 +260,8 @@ export function deleteSession(id: string): void {
   audit({ kind: 'session', sessionId: id, event: 'deleted' });
 }
 
-// Logs are append-only, so a log read before is extended with only its new lines; the page polls every second.
+// Logs are append-only, so a log read before is extended with only its new lines; the page polls every 2 s.
+// shortcut: a log replaced by a longer one in the same process lifetime is misread; nothing rewrites logs today.
 const eventCache = new Map<string, { size: number; events: SessionEvent[] }>();
 export function readEvents(id: string): SessionEvent[] {
   const path = eventsPath(id);

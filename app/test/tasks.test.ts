@@ -337,6 +337,23 @@ test('a reply typed under a task goes to it directly; the chat records it and it
   }
 });
 
+test('a cached log picks up appended events, waits for a half-written line and survives a rewrite', async () => {
+  const { appendFileSync, writeFileSync } = await import('node:fs');
+  const { sessionFile } = await import('../src/sessions.ts');
+  const s = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(s.id, 'one');
+  assert.equal(readEvents(s.id).length, 1);
+  emit(s.id, 1, { type: 'text', text: 'hi' });
+  assert.equal(readEvents(s.id).length, 2);
+  const path = sessionFile(s.id, '.jsonl');
+  appendFileSync(path, '{"at":"x","turn":1,"type":"do');
+  assert.equal(readEvents(s.id).length, 2);
+  appendFileSync(path, 'ne"}\n');
+  assert.equal(readEvents(s.id).at(-1)!.type, 'done');
+  writeFileSync(path, '{"at":"x","turn":1,"type":"user","text":"new"}\n');
+  assert.deepEqual(readEvents(s.id).map((e) => e.type), ['user']);
+});
+
 test('the page script parses', async () => {
   const { readFileSync } = await import('node:fs');
   const { Script } = await import('node:vm');
