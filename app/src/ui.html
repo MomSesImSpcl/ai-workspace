@@ -1214,7 +1214,7 @@ $('#resizer').onkeydown = (e) => {
   api('/api/agents').then((agents) => { state.agents = agents; render(); }).catch(() => {});
   // A refresh that is still running is not started again on top of itself.
   let polling = false;
-  setInterval(() => { if (polling) return; polling = true; poll().catch(() => {}).finally(() => (polling = false)); }, 2000);
+  setInterval(() => { if (polling) return; polling = true; poll().catch(() => {}).finally(() => (polling = false)); }, 1000);
   // The open session refreshes faster while its agent works, so the reply streams in.
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
 })();
