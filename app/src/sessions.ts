@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
 
@@ -173,11 +173,20 @@ export function runLines(bin: string, args: string[], opts: { cwd: string; env?:
 export function saveSession(s: Session): void {
   s.updatedAt = new Date().toISOString();
   writeJson(sessionPath(s.id), s);
+  listed = undefined;
 }
 
+// Parsed session files, reused while the file is unchanged (size and modification time).
+const sessionCache = new Map<string, { stamp: string; session: Session }>();
 export function loadSession(id: string): Session {
-  const s = readJson<Session | null>(sessionPath(id), null);
+  const path = sessionPath(id);
+  let stamp = '';
+  try { const st = statSync(path); stamp = `${st.size}:${st.mtimeMs}`; } catch { /* missing: readJson reports it */ }
+  const known = sessionCache.get(path);
+  if (stamp && known?.stamp === stamp) return structuredClone(known.session);
+  const s = readJson<Session | null>(path, null);
   if (!s) throw new Error(`Unknown session: ${id}`);
+  if (stamp) sessionCache.set(path, { stamp, session: structuredClone(s) });
   return s;
 }
 
@@ -194,7 +203,13 @@ export function sessionRoot(s: Pick<Session, 'projectId'>): string {
 const inDirs = (dirs: string[]) => dirs.filter((d) => existsSync(d)).flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))));
 
 // Every session and task in storage.
-export const allSessions = () => inDirs(storageDirs('sessions'));
+// One page refresh asks for it many times (each chat's tasks, each task's subtasks), so it is kept for half a
+// second; a write in this process clears it at once, other processes' writes show on the next refresh.
+let listed: { at: number; sessions: Session[] } | undefined;
+export const allSessions = (): Session[] => {
+  if (!listed || Date.now() - listed.at > 500) listed = { at: Date.now(), sessions: inDirs(storageDirs('sessions')) };
+  return listed.sessions.map((x) => structuredClone(x));
+};
 
 // The chat list: pinned first (in their pin order), then newest activity first. Tasks are listed apart.
 export function listSessions(projectId: string): Session[] {
@@ -208,6 +223,7 @@ export function listSessions(projectId: string): Session[] {
 function savePin(s: Session, pinOrder: number | undefined): void {
   s.pinOrder = pinOrder;
   writeJson(sessionPath(s.id), s);
+  listed = undefined;
 }
 
 export function setPinned(id: string, pinned: boolean): Session {
@@ -240,12 +256,32 @@ export function deleteSession(id: string): void {
   if (sessionWorking(id)) throw new Error('Session is working; stop it first');
   loadSession(id);
   for (const p of [sessionPath(id), eventsPath(id), stopPath(id), sessionFile(id, '.log')]) rmSync(p, { force: true });
+  listed = undefined;
   audit({ kind: 'session', sessionId: id, event: 'deleted' });
 }
 
+// Logs are append-only, so a log read before is extended with only its new lines; the page polls every second.
+const eventCache = new Map<string, { size: number; events: SessionEvent[] }>();
 export function readEvents(id: string): SessionEvent[] {
-  if (!existsSync(eventsPath(id))) return [];
-  return readFileSync(eventsPath(id), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as SessionEvent);
+  const path = eventsPath(id);
+  let size: number;
+  try { size = statSync(path).size; } catch { eventCache.delete(path); return []; }
+  const known = eventCache.get(path);
+  if (known && known.size === size) return known.events.slice();
+  const from = known && known.size < size ? known.size : 0;
+  const fd = openSync(path, 'r');
+  let text: string;
+  try {
+    const buf = Buffer.alloc(size - from);
+    readSync(fd, buf, 0, buf.length, from);
+    text = buf.toString('utf8');
+  } finally { closeSync(fd); }
+  // A line still being written has no newline yet: keep it for the next read.
+  const end = text.lastIndexOf('\n') + 1;
+  const fresh = text.slice(0, end).split('\n').filter(Boolean).map((l) => JSON.parse(l) as SessionEvent);
+  const events = from ? [...known!.events, ...fresh] : fresh;
+  eventCache.set(path, { size: from + Buffer.byteLength(text.slice(0, end)), events });
+  return events.slice();
 }
 
 // Every event goes to the session log and the workspace audit log.

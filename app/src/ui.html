@@ -1212,7 +1212,9 @@ $('#resizer').onkeydown = (e) => {
   setPage(state.page === 'tasks' && state.projects.length ? 'tasks' : 'projects');
   openSession(pref.get(`session.${state.project}`, '') || null);
   api('/api/agents').then((agents) => { state.agents = agents; render(); }).catch(() => {});
-  setInterval(() => poll().catch(() => {}), 2000);
+  // A refresh that is still running is not started again on top of itself.
+  let polling = false;
+  setInterval(() => { if (polling) return; polling = true; poll().catch(() => {}).finally(() => (polling = false)); }, 2000);
   // The open session refreshes faster while its agent works, so the reply streams in.
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
 })();
