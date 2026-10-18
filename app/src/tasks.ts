@@ -30,7 +30,7 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
 
 // agent, model, effort and reason: the orchestrator's choice (orchestrator-004); unset, the role's assignment.
 // defaultMode: used when no mode is given and the agent offers it; basedOn: an earlier related task.
-export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string; title?: string }
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string; title?: string; setup?: string[] }
 
 // Tasks a chat starts edit files without asking unless the chat picks another mode; agents without this mode
 // keep their own settings.
@@ -44,7 +44,7 @@ export function createTask(f: NewTask): Session {
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
-  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn };
+  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn, setup: f.setup?.length ? f.setup : undefined };
   const offers = (m?: string) => !!m && !!agent.catalog().modes?.some((x) => x.id === m);
   s.permissionMode = f.permissionMode || (offers(f.defaultMode) ? f.defaultMode : undefined);
   saveSession(s);

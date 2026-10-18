@@ -37,7 +37,7 @@ async function until(check: () => boolean, ms = 10000): Promise<void> {
 const last = (id: string) => turns(readEvents(id), turnRunning(id)).at(-1)!;
 const status = (id: string) => taskStatus(loadSession(id), turns(readEvents(id), turnRunning(id)));
 const task = (goal: string, tokenBudget = 10_000) => createTask({ projectId: 'P', goal, role: 'Implementation', tokenBudget });
-const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }) } });
+const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
 
 test('a task is a session with a budget, listed apart from chat sessions; a pending approval shows as waiting', () => {
   const t = task('do the thing');
@@ -219,7 +219,7 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   addMessage(orch.id, 'args');
   await runTurn(orch.id);
   const args = JSON.parse(last(orch.id).text) as string[];
-  assert.match(args[args.indexOf('--disallowedTools') + 1]!, /^Bash,Edit,Write/);
+  assert.match(args[args.indexOf('--disallowedTools') + 1]!, /Bash,Edit,Write/);
   assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator/);
   const { setSettings } = await import('../src/sessions.ts');
   setSettings({ orchestratorInstructions: 'Keep goals under 50 words.' });
@@ -230,7 +230,8 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   assert.match(args2[args2.indexOf('--append-system-prompt') + 1]!, /user's own instructions .*Keep goals under 50 words\./);
   const t = task('args');
   await runTurn(t.id);
-  assert.ok(!(JSON.parse(last(t.id).text) as string[]).includes('--disallowedTools'));
+  const targs = JSON.parse(last(t.id).text) as string[];
+  assert.doesNotMatch(targs[targs.indexOf('--disallowedTools') + 1] ?? '', /Bash/);
   const codex = createSession('P', 'Orchestration', { integration: 'codex' });
   addMessage(codex.id, 'hi');
   await runTurn(codex.id);
@@ -250,6 +251,56 @@ test('tasks run uncapped unless asked; the chat cap applies; the chosen agent, m
   assert.equal(startFromSession(chat.id, { goal: 'd', role: 'Implementation', effort }).effort, effort);
   assert.throws(() => startFromSession(chat.id, { goal: 'e', role: 'Implementation', effort: 'warp' }), /Unknown effort/);
   assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none' }), /Unknown agent/);
+});
+
+test('orchestrator chats and tasks load only the chosen setup items, switched for the one run (orchestrator-005)', async () => {
+  const { setGlobalRules, setItemState, getAgentSetup } = await import('../src/setup.ts');
+  const { setWorkspaceRoot } = await import('../src/store.ts');
+  writeFileSync(join(root, '..', 'AGENTS.md'), 'Workspace rule: be kind.');
+  setWorkspaceRoot(join(root, '..'));
+  const argsOf = async (id: string) => { await runTurn(id); return JSON.parse(last(id).text) as string[]; };
+  const flag = (args: string[], f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+  // The orchestrator: reading tools only, every listed item off, no global rules, the workspace's AGENTS.md added.
+  const orch = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(orch.id, 'args');
+  let args = await argsOf(orch.id);
+  assert.equal(flag(args, '--tools'), 'Read,Glob,Grep');
+  assert.match(flag(args, '--disallowedTools')!, /mcp__claude_ai_github/);
+  assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins['demo@market'], false);
+  assert.equal(flag(args, '--setting-sources'), 'project,local');
+  assert.ok(args.includes('--disable-slash-commands') === false); // no standalone skills listed in this test's Claude home
+  assert.match(flag(args, '--append-system-prompt')!, /workspace's own rules[\s\S]*be kind/);
+  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.map((i) => i.id), ['plugin:demo@market', 'mcp:claude.ai github']);
+  // A task: an item the orchestrator decides loads only when picked; an always-on item always; global rules per role.
+  setItemState('Implementation', 'claude-code', 'plugin:demo@market', 'on');
+  setGlobalRules('Implementation', true);
+  const plain = task('args');
+  args = await argsOf(plain.id);
+  assert.match(flag(args, '--disallowedTools')!, /mcp__claude_ai_github/);
+  assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins, undefined);
+  assert.equal(flag(args, '--setting-sources'), undefined);
+  const picked = createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['mcp:claude.ai github'] });
+  args = await argsOf(picked.id);
+  assert.equal(flag(args, '--disallowedTools'), undefined);
+  assert.ok(JSON.parse(flag(args, '--settings')!).hooks.PreToolUse.length); // the workspace's repeat hook stays
+  assert.throws(() => setItemState('Chat', 'claude-code', 'x', 'on'), /Unknown role/);
+  // Codex: plugins off per turn, MCP servers, apps, standalone skills and hooks off in the thread config.
+  const cx = createSession('P', 'Orchestration', { integration: 'codex' });
+  addMessage(cx.id, 'args');
+  await runTurn(cx.id);
+  const sent = JSON.parse(last(cx.id).text) as { config: Record<string, unknown>; developerInstructions: string; disabledPluginIds: string[] };
+  assert.deepEqual(sent.disabledPluginIds, ['demo@market']);
+  assert.equal(sent.config['mcp_servers.tools.enabled'], false);
+  assert.equal(sent.config['features.apps'], false);
+  assert.deepEqual(sent.config['skills.config'], [{ path: '/skills/own/SKILL.md', enabled: false }]);
+  assert.ok(sent.config['mcp_servers.aiws']);
+  assert.match(sent.developerInstructions, /workspace orchestrator[\s\S]*be kind/);
+  // A plain chat keeps the user's full setup.
+  const chat = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(chat.id, 'args');
+  args = await argsOf(chat.id);
+  assert.equal(flag(args, '--settings'), undefined);
+  assert.equal(flag(args, '--setting-sources'), undefined);
 });
 
 test('pause interrupts a task and keeps its conversation; resume continues it and flags calls already run', async () => {

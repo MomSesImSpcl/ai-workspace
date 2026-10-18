@@ -25,7 +25,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - [self-development](features/self-development/SPEC.md) selfdev-001–006
 - [version-control](features/version-control/SPEC.md) vcs-002 (status and changes), vcs-003 (commit), vcs-004 (sync), vcs-006 (branches), vcs-008 (safety)
 - [sessions](features/sessions/SPEC.md) sessions-017 (project defaults for agent, model and effort), sessions-021 (turn-start project state)
-- Lean orchestrator and tasks (added 2026-10-18 by the user, to cut token use, also while testing):
+- Lean orchestrator and tasks (added 2026-10-18 by the user, to cut token use, also while testing; built 2026-10-18, [history](history/2026-10-18-10-lean-orchestrator-and-tasks/SUMMARY.md)):
   - First measure what the orchestrator and a task load today by default: rule files, plugins, skills, MCP servers, tools, and their tokens per call, for Claude Code and Codex.
   - [onboarding](features/onboarding/SPEC.md) onboarding-010 (agent setup inventory).
   - [ai-orchestrator](features/ai-orchestrator/SPEC.md) orchestrator-005: tasks start from a clean slate with only the items the orchestrator picks.

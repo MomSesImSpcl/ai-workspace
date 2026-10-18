@@ -9,6 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
+import { decidable } from './setup.ts';
 import { delegate, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 
@@ -73,9 +74,10 @@ if (!task) {
         basedOn: z.string().optional().describe('Id of an earlier related task; the new task starts with its goal and result'),
         role: z.string().optional(),
         permissionMode: z.string().optional().describe("One of the agent's own permission modes; omit for the agent's settings"),
+        setup: z.array(z.string()).optional().describe("Ids from list_agents' setup list of the plugins, MCP servers, skills or hooks the task needs; omit for none"),
       },
     },
-    tool((a: { title?: string; goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string }) => {
+    tool((a: { title?: string; goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
       const t = startFromSession(sessionId, { ...a, role: a.role ?? 'Implementation' });
       return `task ${t.id} started (${[t.integration, t.model, t.effort].filter(Boolean).join(', ')}); it runs in the background and shows in this chat`;
     }),
@@ -101,8 +103,8 @@ if (!task) {
   );
   server.registerTool(
     'list_agents',
-    { description: "The agents a task can use, with their models and effort levels, and each workspace role's assigned agent.", inputSchema: {} },
-    tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])) })),
+    { description: "The agents a task can use, with their models and effort levels, each workspace role's assigned agent, and per agent the setup items (plugins, MCP servers, skills, hooks) a task may add with start_task's setup.", inputSchema: {} },
+    tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])) })),
   );
 }
 

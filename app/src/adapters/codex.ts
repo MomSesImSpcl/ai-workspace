@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
@@ -69,6 +70,7 @@ export class CodexProcess implements AgentProcess {
   private fresh = true;
   private info?: Body;
   private mcp = new Map<string, string>();
+  private disabledPluginIds?: string[]; // plugins switched off for this run (orchestrator-005)
   readonly model?: string;
   readonly effort?: string;
   readonly permissionMode?: string;
@@ -127,11 +129,34 @@ export class CodexProcess implements AgentProcess {
     return reply.result ?? {};
   }
 
-  // Starts the process and opens the session's thread: the agent's own one when it still exists, else a new one.
-  private async open(): Promise<void> {
+  private async init(): Promise<void> {
     this.start();
     await this.request('initialize', { clientInfo: { name: 'ai-workspace', title: 'AI Workspace', version: '0.1.0' }, capabilities: null });
     this.send({ method: 'initialized' });
+  }
+
+  // What Codex loads besides its own prompt and tools (onboarding-010), listed by the app-server itself: enabled
+  // plugins, MCP servers from the config, apps, standalone skills as one item, hooks. Paths of those skills too.
+  async inventory(): Promise<{ items: SetupItem[]; skillPaths: string[] }> {
+    if (!this.child) await this.init();
+    const items: SetupItem[] = [];
+    type Plugin = { id: string; name: string; installed?: boolean; enabled?: boolean; interface?: { displayName?: string; shortDescription?: string } };
+    const { marketplaces = [] } = await this.request('plugin/list', {}) as { marketplaces?: { plugins: Plugin[] }[] };
+    for (const p of marketplaces.flatMap((m) => m.plugins).filter((p) => p.installed && p.enabled)) items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.interface?.displayName ?? p.name, description: p.interface?.shortDescription });
+    const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { mcp_servers?: Record<string, { command?: string; url?: string }> } };
+    for (const [name, c] of Object.entries(config?.mcp_servers ?? {})) items.push({ id: `mcp:${name}`, kind: 'mcp', title: name, description: `MCP server: ${c.command ?? c.url ?? ''}` });
+    items.push({ id: 'apps', kind: 'apps', title: 'Apps and connectors', description: 'Codex apps (codex_apps), for example GitHub, Gmail and Google Drive' });
+    type Skill = { name: string; path: string; enabled?: boolean; pluginId?: string | null };
+    const { data = [] } = await this.request('skills/list', { cwds: [this.root] }) as { data?: { skills: Skill[] }[] };
+    const skills = data.flatMap((d) => d.skills).filter((k) => k.enabled !== false && !k.pluginId);
+    if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}` });
+    if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json' });
+    return { items, skillPaths: skills.map((k) => k.path) };
+  }
+
+  // Starts the process and opens the session's thread: the agent's own one when it still exists, else a new one.
+  private async open(): Promise<void> {
+    await this.init();
     const { task } = this.session;
     const params: Record<string, unknown> = { cwd: this.root, ...(this.model ? { model: this.model } : {}), ...(MODES[this.permissionMode ?? ''] ?? {}) };
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
@@ -148,6 +173,23 @@ export class CodexProcess implements AgentProcess {
     if (!task && this.session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
       Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${orchestratorNote()}` });
+    }
+    // Orchestrator chats and tasks load only the chosen items, switched for this run only (orchestrator-005). Codex
+    // reads its global AGENTS.md on every run and has no switch for one run, so the global-rules setting does not apply.
+    if (setupApplies(this.session)) {
+      // A Codex that cannot list keeps its full setup (onboarding-010).
+      const { items, skillPaths } = await this.inventory().catch(() => ({ items: [] as SetupItem[], skillPaths: [] as string[] }));
+      saveInventory('codex', items);
+      const setup = runSetup(this.session, items, this.root);
+      const config = (params.config ??= {}) as Record<string, unknown>;
+      for (const i of items.filter((i) => !setup.on(i))) {
+        if (i.kind === 'plugin') (this.disabledPluginIds ??= []).push(i.id.slice('plugin:'.length));
+        else if (i.kind === 'mcp') config[`mcp_servers.${i.title}.enabled`] = false;
+        else if (i.kind === 'apps') config['features.apps'] = false;
+        else if (i.kind === 'skills') config['skills.config'] = skillPaths.map((path) => ({ path, enabled: false }));
+        else if (i.kind === 'hooks') config['features.codex_hooks'] = false;
+      }
+      if (setup.workspaceRules) params.developerInstructions = `${params.developerInstructions ?? ''}\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}`;
     }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {
@@ -271,7 +313,7 @@ export class CodexProcess implements AgentProcess {
       this.onExit = () => end({ error: signal.aborted ? undefined : `codex app-server exited: ${this.err.trim().split('\n').pop() || 'no result'}` });
       signal.addEventListener('abort', interrupt, { once: true });
       if (signal.aborted) return interrupt();
-      this.request('turn/start', { threadId, input: [{ type: 'text', text: prompt, text_elements: [] }], ...(this.effort ? { effort: this.effort } : {}) })
+      this.request('turn/start', { threadId, input: [{ type: 'text', text: prompt, text_elements: [] }], ...(this.effort ? { effort: this.effort } : {}), ...(this.disabledPluginIds ? { disabledPluginIds: this.disabledPluginIds } : {}) })
         .then((r) => (turnId ??= (r.turn as { id: string }).id))
         .catch((e) => end({ error: (e as Error).message }));
     });
@@ -329,4 +371,8 @@ export const codexSession: SessionAgent = {
   open: (session, root) => new CodexProcess(session, root),
   permissions: codexPermissions,
   catalog: codexCatalog,
+  inventory: async (root) => {
+    const p = new CodexProcess({ id: '', projectId: '', title: '', role: '', integration: 'codex', createdAt: '', updatedAt: '' }, root);
+    try { return (await p.inventory()).items; } finally { p.kill(); }
+  },
 };

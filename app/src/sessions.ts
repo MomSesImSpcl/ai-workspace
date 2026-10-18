@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import type { SetupItem } from './setup.ts';
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
@@ -42,7 +43,7 @@ export const TASK_NOTE = 'This is a background task: nobody answers until it end
 // whatever agent the role uses, so this rule is not the only guard.
 export const ORCHESTRATION = 'Orchestration';
 export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task']; // its workspace tools, run without a card
-export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Choose the agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task.`;
+export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Choose the agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task. A task loads only the plugins, MCP servers, skills and hooks the user set to always on; pass in setup the ids from list_agents that the task needs and nothing else. If a task fails because a tool or skill is missing, start it again with basedOn and that item added.`;
 
 // The user's own orchestrator instructions (Settings), added to the note for every orchestrator chat. They apply
 // when the chat's agent starts next.
@@ -86,6 +87,7 @@ export interface TaskSpec {
   parentId?: string; // a subtask started by the parent's `delegate` call
   sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
+  setup?: string[]; // ids of the agent's setup items the orchestrator picked for this task (orchestrator-005)
 }
 
 // The one event contract every adapter reports (sessions-020). `turn` numbers the user's messages.
@@ -143,6 +145,7 @@ export interface SessionAgent {
   open(session: Session, root: string): AgentProcess;
   permissions(root: string): { line: string; warn?: string };
   catalog(): Catalog;
+  inventory(root: string): Promise<SetupItem[]>; // what it loads besides its own prompt (onboarding-010)
 }
 
 // A session's files live in its project's (or the global) storage folder, see store.ts.

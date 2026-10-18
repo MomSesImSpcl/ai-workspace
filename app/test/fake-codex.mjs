@@ -9,6 +9,7 @@ let turnNo = 0;
 let total = { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
 let waiting = null; // the turn waiting for an interrupt
 const answers = new Map();
+let started = {}; // the last thread/start params, shown by an "args" turn
 
 function spend(turnId, input, output) {
   const last = { totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 };
@@ -48,14 +49,22 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (m.method === 'initialize') out({ id: m.id, result: { userAgent: 'fake' } });
   else if (m.method === 'thread/start' || m.method === 'thread/resume') {
     if (m.method === 'thread/resume' && m.params.threadId !== thread) { out({ id: m.id, error: { message: 'no thread' } }); continue; }
+    started = m.params;
     out({ id: m.id, result: { thread: { id: thread }, model: m.params.model ?? 'fake-model', approvalPolicy: m.params.approvalPolicy ?? 'on-request', sandbox: { type: m.params.sandbox ?? 'workspaceWrite' }, instructionSources: ['AGENTS.md'] } });
   } else if (m.method === 'turn/start') {
     turnNo++;
     const turnId = `turn-${turnNo}`;
     out({ id: m.id, result: { turn: { id: turnId, items: [], status: 'inProgress' } } });
-    void run(turnId, m.params.input[0].text);
+    if (m.params.input[0].text.includes('args')) {
+      const text = JSON.stringify({ config: started.config, developerInstructions: started.developerInstructions, disabledPluginIds: m.params.disabledPluginIds });
+      out({ method: 'item/completed', params: { threadId: thread, turnId, item: { type: 'agentMessage', id: 'm1', text } } });
+      completed(turnId, 'completed');
+    } else void run(turnId, m.params.input[0].text);
   } else if (m.method === 'turn/interrupt') {
     out({ id: m.id, result: {} });
     if (waiting) { completed(waiting, 'interrupted'); waiting = null; }
-  } else if (m.id !== undefined) out({ id: m.id, result: {} });
+  } else if (m.method === 'plugin/list') out({ id: m.id, result: { marketplaces: [{ plugins: [{ id: 'demo@market', name: 'demo', installed: true, enabled: true, interface: { displayName: 'Demo', shortDescription: 'A demo plugin' } }] }] } });
+  else if (m.method === 'config/read') out({ id: m.id, result: { config: { mcp_servers: { tools: { command: 'tools-server' } } } } });
+  else if (m.method === 'skills/list') out({ id: m.id, result: { data: [{ skills: [{ name: 'own', path: '/skills/own/SKILL.md', enabled: true, pluginId: null }, { name: 'demo-skill', path: '/p/SKILL.md', enabled: true, pluginId: 'demo@market' }] }] } });
+  else if (m.id !== undefined) out({ id: m.id, result: {} });
 }

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -5,6 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { getAgentSetup, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -167,6 +169,14 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
   return sessionView(loadSession(id));
 }
 
+// The Settings view of the agent setup: each listed item with its state per role, and the global-rules switches.
+function agentSetupView() {
+  const setup = getAgentSetup();
+  const inventory = setup.inventory ?? {};
+  const states = Object.fromEntries(SETUP_ROLES.map((role) => [role, Object.fromEntries(Object.entries(inventory).map(([agent, items]) => [agent, Object.fromEntries(items.map((i) => [i.id, stateOf(setup, role, agent, i.id)]))]))]));
+  return { inventory, states, roles: SETUP_ROLES, ruleRoles: RULE_ROLES, globalRules: Object.fromEntries(RULE_ROLES.map((r) => [r, setup.globalRules?.[r] ?? false])) };
+}
+
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const [, api, kind, rawId, action] = url.pathname.split('/');
   if (api !== 'api') throw new HttpError(404, 'not found');
@@ -179,6 +189,17 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (typeof b.orchestratorInstructions !== 'string' || b.orchestratorInstructions.length > 4000) throw new HttpError(400, 'orchestratorInstructions must be text up to 4000 characters');
     setSettings({ orchestratorInstructions: b.orchestratorInstructions });
     return getSettings();
+  }
+  if (kind === 'agent-setup') {
+    if (req.method === 'POST' && id === 'list') {
+      // Lists what every agent loads now (onboarding-010); an agent that cannot list keeps its earlier list.
+      for (const [agent, a] of Object.entries(sessionAgents)) await a.inventory(getWorkspaceRoot() ?? homedir()).then((items) => saveInventory(agent, items), () => {});
+    } else if (req.method === 'POST') {
+      const b = await body(req);
+      if (typeof b.globalRules === 'boolean') setGlobalRules(String(b.role), b.globalRules);
+      else setItemState(String(b.role), String(b.agent), String(b.item), String(b.state) as ItemState);
+    }
+    return agentSetupView();
   }
   if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
