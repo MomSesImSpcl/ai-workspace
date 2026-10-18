@@ -125,6 +125,7 @@
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
+  .chat-tokens { flex: none; margin-left: 8px; white-space: nowrap; }
   .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
   .task-cap .check { padding-bottom: 0; }
   .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
@@ -421,6 +422,19 @@ async function api(path, body) {
 // Tokens at real cost, as the server counts them (sessions.ts `used`): cache reads at 10 %, cache writes at 125 %.
 const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
 const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
+// The whole session's tokens in its title row: the chat's own agent plus every task it started (with their
+// subtasks), split on hover. Running turns and tasks count what they streamed so far.
+function sessionTotalHtml(d) {
+  if (!d) return '';
+  const own = d.turns.reduce((n, t) => n + cost(t.state === 'working' && t.liveUsage ? t.liveUsage : t.usage), 0);
+  const tasks = Object.values(d.tasks);
+  const taskTotal = tasks.reduce((n, t) => n + t.used, 0);
+  if (!own && !taskTotal) return '';
+  const who = d.session.role === 'Orchestration' ? 'Orchestrator' : 'Chat';
+  const hover = [`${who}: ${own.toLocaleString()}`, ...(tasks.length ? [`Tasks (${tasks.length}): ${taskTotal.toLocaleString()}`] : []), '', COST_HINT].join('\n');
+  return `<small class="meta chat-tokens" title="${esc(hover)}">${(own + taskTotal).toLocaleString()} tokens</small>`;
+}
+
 // What each token kind adds to the count, for the hover on a token figure (weights as in `cost`).
 function breakdown(u, subtasks = 0) {
   if (!u) return COST_HINT;
@@ -683,7 +697,7 @@ function renderChat() {
       $('#rename').focus();
       $('#rename').select();
     }
-  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
+  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}${sessionTotalHtml(d)}`
     : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
