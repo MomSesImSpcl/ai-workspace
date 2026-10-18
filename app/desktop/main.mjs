@@ -30,6 +30,10 @@ function savedBounds() {
   try { return JSON.parse(readFileSync(boundsPath(), 'utf8')); } catch { return {}; }
 }
 
+function saveBounds(win) {
+  try { writeFileSync(boundsPath(), JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
+}
+
 function createWindow(url) {
   const saved = savedBounds();
   const win = new BrowserWindow({
@@ -57,9 +61,7 @@ function createWindow(url) {
   // Taskbar pin relaunches this app, not bare Electron.
   if (process.platform === 'win32') win.setAppDetails({ appId: appUserModelId, relaunchCommand: `"${process.execPath}" "${appDir}"`, relaunchDisplayName: 'AI Workspace' });
   if (saved.maximized) win.maximize();
-  win.on('close', () => {
-    try { writeFileSync(boundsPath(), JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
-  });
+  win.on('close', () => saveBounds(win));
   win.loadURL(`${url}?platform=${process.platform}`);
   return win;
 }
@@ -93,7 +95,12 @@ ipcMain.handle('restart', () => {
   log('restart requested');
   app.releaseSingleInstanceLock(); // the new instance must not find the lock still held
   app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== RELAUNCHED), RELAUNCHED] });
-  app.quit();
+  // A plain quit sometimes never finishes on Windows (the windowless process stays and the relauncher waits for
+  // it), so restart saves what quitting would and exits at once.
+  if (mainWindow) saveBounds(mainWindow);
+  server?.kill();
+  log('exiting for restart');
+  app.exit(0);
 });
 
 const appUserModelId = 'AIWorkspace.Desktop';
