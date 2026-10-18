@@ -2,7 +2,7 @@
 // Node, not by Electron) and shows its page in a native window. Closing the window stops the server;
 // tasks keep running in their own processes.
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,16 +107,15 @@ ipcMain.handle('restart', () => {
   log('restart requested');
   app.releaseSingleInstanceLock(); // the new instance must not find the lock still held
   step('lock released');
-  app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== RELAUNCHED), RELAUNCHED] });
-  step('relaunch scheduled');
-  // A plain quit sometimes never finishes on Windows (the windowless process stays and the relauncher waits for
-  // it), so restart saves what quitting would and exits at once.
+  // Quitting, and even app.exit, sometimes leave this process hanging on Windows (log 2026-10-18), and Electron's
+  // relauncher waits for it to end. So the new instance is started here, at once; it waits for the lock and then
+  // ends this process if it is still there.
   if (mainWindow) saveBounds(mainWindow);
   step('window position saved');
   server?.kill();
-  step('exiting for restart');
-  // app.exit itself has also left the process running on Windows (log 2026-10-18): end it for sure.
-  setTimeout(() => { log('app.exit did not end the process; forcing it'); process.exit(0); }, 1000);
+  const args = [...process.argv.slice(1).filter((a) => a !== RELAUNCHED && !a.startsWith(REPLACES)), RELAUNCHED, `${REPLACES}${process.pid}`];
+  spawn(process.execPath, args, { cwd: process.cwd(), detached: true, stdio: 'ignore' }).unref();
+  step('new instance started; exiting');
   app.exit(0);
 });
 
@@ -127,6 +126,7 @@ function log(line) {
 `); } catch { /* best effort */ }
 }
 const RELAUNCHED = '--relaunched';
+const REPLACES = '--replaces='; // the pid of the instance a restart replaces
 let mainWindow;
 
 // One window: a second launch focuses the open one. A restarted instance can start before the old one has
@@ -138,6 +138,14 @@ for (let i = 0; !primary && process.argv.includes(RELAUNCHED) && i < 100; i++) {
 }
 log(`start ${process.argv.includes(RELAUNCHED) ? '(restart) ' : ''}lock ${primary ? 'acquired' : 'held by another instance, quitting'}`);
 if (!primary) app.quit();
+// A restart's old instance may hang while exiting; the new one ends it once it holds the lock.
+const replaces = Number(process.argv.find((a) => a.startsWith(REPLACES))?.slice(REPLACES.length));
+if (primary && replaces) setTimeout(() => {
+  // The pid could belong to another program by now, so only an Electron process is ended.
+  const image = process.platform === 'win32' ? spawnSync('tasklist', ['/FI', `PID eq ${replaces}`, '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true }).stdout : '';
+  if (process.platform === 'win32' && !/^"electron\.exe"/im.test(image)) return;
+  try { process.kill(replaces); log(`ended the old instance ${replaces}, which was still running`); } catch { /* already gone */ }
+}, 3000).unref();
 app.on('second-instance', () => {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
