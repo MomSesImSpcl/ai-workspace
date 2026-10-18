@@ -17,6 +17,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Mobile capture and cross-device task control](features/mobile-client/SUMMARY.md)
 - [Task notifications and privacy-safe previews](features/notifications/SUMMARY.md)
 - [Workspace permission settings for agents](features/agent-permissions/SUMMARY.md)
+- [Responsive workspace with large storage](features/large-storage/SUMMARY.md)
 - [Secure local and remote execution runners](features/runners/SUMMARY.md)
 - [Durable autonomous tasks and context continuation](features/task-runtime/SUMMARY.md) — in progress
 - [Model registry, role routing and provider adapters](features/model-routing/SUMMARY.md) — in progress
