@@ -459,11 +459,12 @@ const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current
 
 // Chat column: the project's sessions and the open session's turns, built from its event log.
 // Polling re-renders only what changed, and never while the user selects text in it, so scroll position and a
-// selection survive.
-function setHtml(el, html) {
+// selection survive. `key` names what is shown (a task id): showing something else always renders.
+function setHtml(el, html, key) {
   if (el.__html === html) return;
   const sel = getSelection();
-  if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) return;
+  if (sel && !sel.isCollapsed && el.contains(sel.anchorNode) && el.__key === key) return;
+  el.__key = key;
   el.__html = html;
   el.innerHTML = html;
 }
@@ -654,7 +655,7 @@ function renderChat() {
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
   setHtml(box, d?.turns.map((t) => turnHtml(t, d.tasks, lastTurnOf)).join('')
-    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`);
+    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`, state.session);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
@@ -686,7 +687,7 @@ async function sessionAction(act, body = {}, id = state.session) {
 async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
   setHtml($('#tasks'), projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>');
-  if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>');
+  if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>', null);
   const id = state.selected;
   const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${id}`);
   if (id !== state.selected) return; // the user picked another task while this one loaded
@@ -695,7 +696,7 @@ async function renderTasks() {
   setHtml($('#detail'), `<div class="detail-head"><h2 title="${esc(t.title)}">${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
     + `<p class="error" id="detail-error" role="alert"></p>${t.session ? '' : pendingCards(t)}`
     + (children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : '')
-    + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''));
+    + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''), t.id);
 }
 
 const RUN_LABELS = { done: 'completed', error: 'failed', stopped: 'paused', interrupted: 'interrupted', working: 'running' };
