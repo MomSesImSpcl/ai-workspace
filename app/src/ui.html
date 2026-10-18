@@ -595,9 +595,11 @@ function taskCardHtml(t) {
   const canReply = t.status !== 'cancelled'; // while the task works, the reply waits for its current step
   return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.title)}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
     ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
-    ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
+    ${t.thread.map((m) => `${m.user ? `<div class="msg user">${esc(m.user)}<time>to the task</time></div>` : ''}${noticesHtml(m.notices)}${m.text && !m.working ? `<div class="msg agent">${esc(m.text)}<time>task</time></div>` : ''}`).join('')}
     ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="${active(t) ? 'Message the task (it gets it when the current step ends)' : 'Reply to continue the task'}" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
 }
+
+const noticesHtml = (list) => list.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
 
 // Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
 // A task the chat sent more messages to shows in full only in the last turn that names it.
@@ -606,13 +608,12 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
     : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
-  const relays = t.relays.map((r) => `<div class="msg user relay">${esc(r.text)}<time>to task ${esc(tasks[r.taskId]?.title ?? r.taskId)}</time></div>`).join('');
-  const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
+  const notices = noticesHtml(t.notices);
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${relays}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
 let shown = '';
@@ -1033,6 +1034,10 @@ document.addEventListener('keydown', (e) => {
 
 
 // Enter sends; Shift+Enter adds a line break.
+// Enter in a task's reply field sends it, like the chat box.
+document.addEventListener('keydown', (e) => {
+  if (e.target.dataset?.replyTask && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $(`[data-reply="${e.target.dataset.replyTask}"]`)?.click(); }
+});
 $('[name=text]').onkeydown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };

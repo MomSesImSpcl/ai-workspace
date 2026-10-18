@@ -191,7 +191,7 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   try {
     const view = await (await fetch(`${base}/api/sessions/${chat.id}`)).json();
     assert.deepEqual([view.tasks[t.id].status, view.tasks[t.id].session.id, view.tasks[t.id].pending], ['completed', chat.id, []]);
-    assert.match(view.tasks[t.id].result, /^turn 1/);
+    assert.match(view.tasks[t.id].thread[0].text, /^turn 1/);
     emit(t.id, 1, { type: 'approval', id: 'a1', tool: 'Bash', detail: 'ls' }); // a card still open in a finished turn is not pending
     assert.deepEqual((await (await fetch(`${base}/api/sessions/${chat.id}`)).json()).tasks[t.id].pending, []);
     const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'more' }) });

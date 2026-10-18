@@ -67,8 +67,9 @@ function taskCard(s: Session) {
     const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
     return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
   });
-  const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
-  return { ...taskView(s), pending, result: last?.state === 'working' ? '' : last?.text ?? '' };
+  // The task's own conversation after its goal: the user's replies and each answer, oldest first.
+  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
+  return { ...taskView(s), pending, thread };
 }
 
 // shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
