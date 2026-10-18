@@ -3,7 +3,7 @@
 // tasks keep running in their own processes.
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,11 +90,18 @@ ipcMain.handle('open-folder', (_event, path) => {
 
 // Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
 ipcMain.handle('restart', () => {
+  log('restart requested');
+  app.releaseSingleInstanceLock(); // the new instance must not find the lock still held
   app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== RELAUNCHED), RELAUNCHED] });
   app.quit();
 });
 
 const appUserModelId = 'AIWorkspace.Desktop';
+// Start and restart decisions, so a restart that does not come back leaves a trace.
+function log(line) {
+  try { appendFileSync(join(app.getPath('userData'), 'startup.log'), `${new Date().toISOString()} pid ${process.pid} ${line}
+`); } catch { /* best effort */ }
+}
 const RELAUNCHED = '--relaunched';
 let mainWindow;
 
@@ -105,6 +112,7 @@ for (let i = 0; !primary && process.argv.includes(RELAUNCHED) && i < 100; i++) {
   await new Promise((r) => setTimeout(r, 100));
   primary = app.requestSingleInstanceLock();
 }
+log(`start ${process.argv.includes(RELAUNCHED) ? '(restart) ' : ''}lock ${primary ? 'acquired' : 'held by another instance, quitting'}`);
 if (!primary) app.quit();
 app.on('second-instance', () => {
   if (!mainWindow) return;
@@ -118,6 +126,7 @@ app.whenReady().then(async () => {
   try {
     mainWindow = createWindow(await startServer());
   } catch (e) {
+    log(`start failed: ${e.message}`);
     dialog.showErrorBox('AI Workspace could not start', e.message);
     app.quit();
   }
