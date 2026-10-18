@@ -134,7 +134,8 @@
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
-  .chat-tokens { flex: none; margin-left: 8px; white-space: nowrap; }
+  .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
+  .chat-tokens { white-space: nowrap; }
   .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
   .task-cap .check { padding-bottom: 0; }
   .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
@@ -315,7 +316,7 @@
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
-        <span aria-hidden="true"></span>
+        <span class="chat-total" id="chat-total"></span>
         <div class="chat-title" id="chat-title"></div>
         <div class="perm" id="perm" tabindex="0"></div>
       </div>
@@ -711,12 +712,13 @@ function renderChat() {
       $('#rename').focus();
       $('#rename').select();
     }
-  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}${sessionTotalHtml(d)}`
+  } else $('#chat-title').innerHTML = s ? `<b title="${esc(s.title)}">${esc(s.title)}</b>${s.archived ? '<small class="meta">archived</small>' : ''}`
     : `<span>${state.newGlobal ? 'New global session (runs in the workspace folder)' : 'New session'}: your first message starts it</span>`;
   const setup = d?.turns.findLast((t) => t.plugins || t.mcp);
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
   const info = d && d.turns.findLast((t) => t.model);
   const warnings = [d?.permissions.warn, d?.turns.at(-1)?.permissionMode === 'bypassPermissions' ? 'running with all permission checks skipped' : '', failed.length ? `not connected: ${failed.map((m) => m.name).join(', ')}` : ''].filter(Boolean);
+  $('#chat-total').innerHTML = s ? sessionTotalHtml(d) : ''; // the session's tokens, left of the title
   $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
   $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${s.role === 'Orchestration' ? 'Orchestrator · ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
