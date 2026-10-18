@@ -305,6 +305,8 @@ test('ui API: a chat cap is set and cleared, pause and resume a task, a changed 
     assert.equal(loadSession(t.id).task!.overridden, true);
     assert.equal((await post(`/api/tasks/${t.id}/resume`, {})).status, 200);
     await until(() => status(t.id) === 'completed');
+    const { runs } = await (await fetch(`${base}/api/tasks/${t.id}`)).json();
+    assert.deepEqual(runs.map((r: { state: string; paused: number }) => [r.state, r.paused]), [['done', 1]]); // Resume joins the paused run
   } finally {
     server.close();
   }

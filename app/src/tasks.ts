@@ -147,13 +147,14 @@ export function cancelTask(id: string): Session {
 
 // Continues a paused, interrupted or finished task, optionally with a new budget. An interrupted attempt's
 // marker goes with the message, so the agent checks the project before repeating anything (sessions-009).
-export function resumeTask(id: string, tokenBudget?: number, text = 'Continue the task.'): Session {
+const RESUME = 'Continue the task.';
+export function resumeTask(id: string, tokenBudget?: number, text = RESUME): Session {
   const s = taskOf(id);
   if (sessionWorking(id)) throw new Error('Task is already running');
   if (tokenBudget !== undefined) s.task.tokenBudget = tokenBudget;
   if (s.task.tokenBudget !== undefined && taskUsed(s) >= s.task.tokenBudget) throw new Error(`Task is at its token budget (${taskUsed(s)} of ${s.task.tokenBudget} used); raise the budget to resume`);
   saveSession(s);
-  addMessage(id, text);
+  addMessage(id, text, text === RESUME);
   return s;
 }
 

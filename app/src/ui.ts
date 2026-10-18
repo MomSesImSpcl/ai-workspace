@@ -68,7 +68,7 @@ function taskCard(s: Session) {
     return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
   });
   // The task's own conversation after its goal: the user's replies and each answer, oldest first.
-  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
+  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i && !t.resume ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
   return { ...taskView(s), pending, thread };
 }
 
@@ -174,11 +174,18 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
     // Each message the task got is its own run: the first is the start, later ones are replies that reused it.
-    const runs = turns(readEvents(id), turnRunning(id)).map((t) => ({
-      n: t.n, request: t.user, result: t.state === 'working' ? '' : t.text, state: t.state, marker: t.marker, model: t.model, permissionMode: t.permissionMode,
-      startedAt: t.startedAt, endedAt: t.endedAt, used: used(t.usage), costUsd: t.usage.costUsd,
-      steps: t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error })),
-    }));
+    // A Resume continues the run it paused, so its steps, tokens and result join that run.
+    type Run = { n: number; request: string; result: string; state: string; marker?: string; model?: string; permissionMode?: string; startedAt: string; endedAt?: string; used: number; costUsd?: number; paused: number; steps: { label: string; done: boolean; error?: boolean }[] };
+    const runs: Run[] = [];
+    for (const t of turns(readEvents(id), turnRunning(id))) {
+      const steps = t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error }));
+      const prev = runs.at(-1);
+      if (t.resume && prev) {
+        Object.assign(prev, { result: t.state === 'working' ? '' : t.text || prev.result, state: t.state, marker: t.marker, model: t.model ?? prev.model, endedAt: t.endedAt, used: prev.used + used(t.usage), costUsd: prev.costUsd === undefined && t.usage.costUsd === undefined ? undefined : (prev.costUsd ?? 0) + (t.usage.costUsd ?? 0), paused: prev.paused + 1, steps: [...prev.steps, ...steps] });
+        continue;
+      }
+      runs.push({ n: t.n, request: t.user, result: t.state === 'working' ? '' : t.text, state: t.state, marker: t.marker, model: t.model, permissionMode: t.permissionMode, startedAt: t.startedAt, endedAt: t.endedAt, used: used(t.usage), costUsd: t.usage.costUsd, paused: 0, steps });
+    }
     return { task: taskCard(s), runs, children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {

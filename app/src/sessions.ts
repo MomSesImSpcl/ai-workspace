@@ -77,7 +77,7 @@ export interface TaskSpec {
 
 // The one event contract every adapter reports (sessions-020). `turn` numbers the user's messages.
 export type SessionEvent = { at: string; turn: number } & (
-  | { type: 'user'; text: string }
+  | { type: 'user'; text: string; resume?: boolean } // resume: Resume of a paused task, not a new message
   | { type: 'start'; integration: string }
   | { type: 'init'; model?: string; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
@@ -317,6 +317,7 @@ export type TurnState = 'working' | 'done' | 'error' | 'stopped' | 'interrupted'
 export interface Turn {
   n: number;
   user: string;
+  resume?: boolean; // continues the paused turn before it
   text: string;
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean; fp?: string }[];
   approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
@@ -347,7 +348,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
   for (const e of events) {
     if (e.type === 'user') {
-      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], tasks: [], relays: [], state: 'working', usage: zero(), startedAt: e.at });
+      out.push({ n: e.turn, user: e.text, resume: e.resume, text: '', activity: [], approvals: [], notices: [], tasks: [], relays: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
@@ -396,12 +397,13 @@ export function transcript(ts: Turn[]): string {
 
 // Records the user's message as a new turn. If the last turn did not finish, its marker is recorded
 // and passed to the agent with the message, so user and agent see the same last step (sessions-009).
-export function addMessage(id: string, text: string): number {
+export function addMessage(id: string, text: string, resume = false): number {
   const s = loadSession(id);
   if (sessionWorking(id)) throw new Error('Session is already working');
   if (s.task?.cancelled) throw new Error('Task is cancelled');
   const events = readEvents(id);
-  text = [...queuedReplies(events), text].filter(Boolean).join('\n\n');
+  const queued = queuedReplies(events);
+  text = [...queued, text].filter(Boolean).join('\n\n');
   if (!text) throw new Error('Unknown message: text is required');
   const ts = turns(events, false);
   const last = ts.at(-1);
@@ -409,7 +411,7 @@ export function addMessage(id: string, text: string): number {
   if (last && last.state === 'interrupted' && !events.some((e) => e.turn === last.n && e.type === 'interrupted')) {
     emit(id, last.n, { type: 'interrupted', step: last.activity.filter((a) => a.done).length, label: last.activity.filter((a) => a.done).at(-1)?.label });
   }
-  emit(id, turn, { type: 'user', text });
+  emit(id, turn, { type: 'user', text, ...(resume && !queued.length ? { resume: true } : {}) });
   if (s.title === 'New session') s.title = text.split('\n')[0].slice(0, 60);
   saveSession(s);
   clearStop(id);

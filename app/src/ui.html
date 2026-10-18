@@ -705,7 +705,7 @@ function runHtml(t, r, i, count, open, permissions) {
   const st = last ? t.status : RUN_LABELS[r.state] ?? r.state;
   const mode = state.agents?.[t.integration]?.modes?.find((m) => m.id === (r.permissionMode ?? t.permissionMode ?? ''));
   const when = new Date(r.startedAt).toLocaleString();
-  const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}`;
+  const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}${r.paused ? ` · paused ${r.paused}×` : ''}`;
   return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta">${line}</summary>
     <dl>
       <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
