@@ -295,10 +295,10 @@ export function codexPermissions(): { line: string; warn?: string } {
 let codexModels: { at: number; catalog: Catalog } | undefined;
 interface CodexModel { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] }
 const CODEX_MODES = [
-  { id: '', label: "Codex's settings" },
-  { id: 'read-only', label: 'Read only, ask for more' },
-  { id: 'auto', label: 'Auto: edit the project, ask for more' },
-  { id: 'full-access', label: 'Full access, never ask', warn: true },
+  { id: '', label: "Codex's settings", hint: 'Your own Codex settings decide' },
+  { id: 'read-only', label: 'Read only', hint: 'Ask before anything else' },
+  { id: 'auto', label: 'Auto', hint: 'Edit the project, ask for more' },
+  { id: 'full-access', label: 'Full access', hint: 'Never ask', warn: true },
 ];
 export function parseCodexModels(json: string, configured?: string): Catalog {
   const list = (JSON.parse(json) as { models?: CodexModel[] }).models ?? [];

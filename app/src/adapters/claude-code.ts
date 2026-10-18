@@ -305,13 +305,13 @@ export function claudeCatalog(): Catalog {
   return {
     models: models.map(([id, label]) => ({ id: id!, label: label!, efforts: CLAUDE_EFFORTS })),
     modes: [
-      { id: '', label: "Claude Code's settings" },
-      { id: 'manual', label: 'Ask before acting (manual)' },
-      { id: 'acceptEdits', label: 'Accept edits (acceptEdits)' },
-      { id: 'auto', label: 'Auto (auto)' },
-      { id: 'plan', label: 'Plan only (plan)' },
-      { id: 'dontAsk', label: 'Deny what is not allowed (dontAsk)' },
-      { id: 'bypassPermissions', label: 'Skip all checks (bypassPermissions)', warn: true },
+      { id: '', label: "Claude Code's settings", hint: 'Your own Claude Code settings decide' },
+      { id: 'manual', label: 'Manual', hint: 'Always ask before making changes' },
+      { id: 'acceptEdits', label: 'Accept edits', hint: 'Automatically accept file edits in the project' },
+      { id: 'auto', label: 'Auto', hint: 'Claude handles permission decisions' },
+      { id: 'plan', label: 'Plan', hint: 'Create a plan before making changes' },
+      { id: 'dontAsk', label: "Don't ask", hint: 'Deny what is not allowed' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Skip every check', warn: true },
     ],
   };
 }

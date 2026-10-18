@@ -126,7 +126,12 @@
   .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
   .task-cap .check { padding-bottom: 0; }
   .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
-  .task-cap select { flex: 1 1 0; min-width: 0; padding: 3px 6px; font-size: 11px; }
+  .task-cap .perm-label { margin-left: auto; }
+  .mode-menu { min-width: 260px; }
+  .mode-menu .menu-title { padding: 6px 10px 4px; font-size: 12px; color: var(--text-muted); }
+  .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .mode-menu button span:first-child { display: grid; gap: 1px; }
+  .mode-menu small { color: var(--text-muted); font-size: 11px; }
   .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
@@ -284,7 +289,8 @@
         </div>
         <!-- Settings for the tasks this chat starts (ADR 0011): layout only here and in renderCap(). -->
         <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span>
-          <select id="task-mode" aria-label="Permission mode of new tasks" title="Permission mode of the tasks this chat starts"></select></div>
+          <span class="meta perm-label">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button></div>
+        <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
         <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -479,12 +485,40 @@ function renderCap(s) {
   $('#cap-on').checked = cap !== undefined;
   if (cap !== undefined) $('#cap').value = cap;
   $('#cap').disabled = cap === undefined;
-  if (document.activeElement?.id === 'task-mode') return;
-  // The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
+  const { mode, list } = taskModes(s);
+  $('#task-mode').textContent = `${list.find((m) => m.id === mode)?.label ?? mode} ▾`;
+}
+// The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
+function taskModes(s) {
   const mode = (s ? s.taskMode : state.draftMode) ?? 'acceptEdits';
   const modes = state.agents[state.roles.Implementation?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
-  const list = modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }];
-  $('#task-mode').innerHTML = list.map((m) => option(m.id, `Tasks: ${m.label}`, m.id === mode)).join('');
+  return { mode, list: modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }] };
+}
+// Permission menu, styled like Claude's mode menu: a title, each mode with its hint, a check on the current one
+// and its number key. A mode that skips every check is turned on only after a confirmation.
+function openModeMenu() {
+  const s = state.sessionData?.session.id === state.session ? state.sessionData.session : null;
+  const { mode, list } = taskModes(s);
+  const menu = $('#mode-menu');
+  menu.innerHTML = '<div class="menu-title">Mode</div>' + list.map((m, i) => `<button type="button" role="menuitemradio" aria-checked="${m.id === mode}" data-mode="${esc(m.id)}">
+    <span><b>${esc(m.label)}</b>${m.hint ? `<small>${esc(m.hint)}</small>` : ''}</span><span class="meta">${m.warn ? 'Enable' : `${m.id === mode ? '✓ ' : ''}${i + 1}`}</span></button>`).join('');
+  menu.hidden = false;
+  const r = $('#task-mode').getBoundingClientRect();
+  menu.style.left = `${Math.min(r.left, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 6)}px`;
+  $('#task-mode').setAttribute('aria-expanded', 'true');
+  menu.querySelector('[aria-checked=true]')?.focus();
+}
+function closeModeMenu() {
+  $('#mode-menu').hidden = true;
+  $('#task-mode').setAttribute('aria-expanded', 'false');
+}
+async function pickMode(id) {
+  closeModeMenu();
+  const m = taskModes(null).list.find((x) => x.id === id) ?? state.agents[state.roles.Implementation?.integration]?.modes?.find((x) => x.id === id);
+  if (m?.warn && !(await ask(`Turn on ${m.label} for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) return;
+  if (!state.session) { state.draftMode = id; return renderCap(null); }
+  await sessionAction('mode', { taskMode: id });
 }
 function renderPickers(s) {
   if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
@@ -788,10 +822,19 @@ async function capChanged() {
   await sessionAction('cap', { taskCap: cap ?? null });
 }
 $('#cap-on').onchange = capChanged;
-$('#task-mode').onchange = async () => {
-  if (!state.session) return void (state.draftMode = $('#task-mode').value);
-  await sessionAction('mode', { taskMode: $('#task-mode').value });
+$('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
+$('#mode-menu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-mode]'); if (b) pickMode(b.dataset.mode); };
+$('#mode-menu').onkeydown = (e) => {
+  const items = $$('#mode-menu [data-mode]');
+  if (e.key === 'Escape') { closeModeMenu(); return $('#task-mode').focus(); }
+  if (/^[1-9]$/.test(e.key) && items[Number(e.key) - 1]) return pickMode(items[Number(e.key) - 1].dataset.mode);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
 };
+document.addEventListener('click', () => $('#mode-menu').hidden || closeModeMenu());
 $('#cap').onchange = capChanged;
 
 // Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.

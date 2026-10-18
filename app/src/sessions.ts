@@ -121,7 +121,7 @@ export interface AgentProcess {
 // What an agent offers, recorded when it is set up (onboarding-008): its models and, per model, the effort
 // levels it accepts, and its own permission modes. The composer and later the orchestrator choose only from this.
 export interface AgentModel { id: string; label: string; efforts: string[]; defaultEffort?: string }
-export interface AgentMode { id: string; label: string; warn?: boolean } // warn: skips every check
+export interface AgentMode { id: string; label: string; hint?: string; warn?: boolean } // warn: skips every check
 export interface Catalog { models: AgentModel[]; modes?: AgentMode[] } // id '' is the agent's own default
 
 export interface SessionAgent {
