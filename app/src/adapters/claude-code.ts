@@ -49,7 +49,7 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   const s = (k: string) => short(String(input[k] ?? ''));
   if (path && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) return { label: `Editing \`${rel(root, path)}\``, outside: outsideRoot(root, path) || undefined };
   if (path && name === 'Read') return { label: `Reading \`${rel(root, path)}\`` };
-  if (name === 'Bash') return { label: `Running \`${s('command')}\`` };
+  if (name === 'Bash' || name === 'PowerShell') return { label: `Running \`${s('command')}\`` }; // PowerShell: Claude Code's shell tool on Windows
   if (name === 'Grep') return { label: `Searching for \`${s('pattern')}\`` };
   if (name === 'Glob') return { label: `Finding \`${s('pattern')}\`` };
   if (name === 'WebFetch') return { label: `Fetching ${s('url')}` };
@@ -58,7 +58,9 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   if (name === 'TodoWrite') return { label: 'Updating the to-do list' };
   if (name === 'mcp__aiws__delegate') return { label: `Subtask: ${s('goal')}` };
   if (name === 'mcp__aiws__start_task') return { label: `Starting task: ${s('goal')}` };
-  return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}` };
+  // Any other tool: its name and the first text it was given, so the step says what it worked on.
+  const first = Object.values(input).find((v) => typeof v === 'string' && v.trim());
+  return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}${first ? `: ${short(first as string)}` : ''}` };
 }
 
 interface StreamLine {
