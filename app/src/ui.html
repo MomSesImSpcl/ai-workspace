@@ -123,6 +123,10 @@
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
+  .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
+  .task-cap .check { padding-bottom: 0; }
+  .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
+  .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -248,6 +252,12 @@
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
       </div>
+      <!-- Override of the orchestrator's agent, model and effort for one task (orchestrator-004). -->
+      <dialog class="confirm" id="task-config" aria-labelledby="task-config-title">
+        <form method="dialog"><h2 id="task-config-title">Change the task's agent</h2><p class="meta">Applies when the task continues. A different agent gets the conversation so far as text.</p>
+          <div class="row pickers"><select id="tc-agent" aria-label="Agent"></select><select id="tc-model" aria-label="Model"></select><select id="tc-effort" aria-label="Effort level"></select></div>
+          <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" value="ok">Apply</button></div></form>
+      </dialog>
       <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
         <form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p>
           <div class="row" style="justify-content:flex-end"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" id="confirm-ok" value="ok"></button></div></form>
@@ -266,10 +276,13 @@
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
         <div class="row pickers">
+          <select id="role" aria-label="Session role" title="Orchestrator: every change runs as a task; questions are answered here. Chat: the agent works itself."><option value="Orchestration">Orchestrator</option><option value="Chat">Chat</option></select>
           <select id="agent" aria-label="Agent" title="Agent"></select>
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
+        <!-- Task cap switch (ADR 0011): layout only here and in renderCap(). -->
+        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span></div>
         <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -357,7 +370,7 @@ async function api(path, body) {
 // Tokens at real cost, as the server counts them (sessions.ts `used`): cache reads at 10 %, cache writes at 125 %.
 const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
 const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
-const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${COST_HINT}">${t.used.toLocaleString()} / ${t.task.tokenBudget.toLocaleString()} tokens</span> · ${esc(t.integration)}`;
+const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${COST_HINT}">${t.used.toLocaleString()} ${t.task.tokenBudget === undefined ? 'tokens, no cap' : `/ ${t.task.tokenBudget.toLocaleString()} tokens`}</span> · ${esc(t.integration)}`;
 const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (reply to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';
@@ -448,14 +461,28 @@ const sessionRows = (list, group) => list.map((s) => `<div class="session-row" d
 
 const EFFORT_LABELS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', ultra: 'Ultra' };
 const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+// A new session starts as the orchestrator unless the user picks Chat; it uses that role's agent.
 function pickerValues(s) {
-  if (s) return { integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
-  const chat = state.roles.Chat ?? { integration: 'claude-code' };
-  return state.draft ?? { integration: chat.integration, model: chat.model ?? '', effort: '' };
+  if (s) return { role: s.role, integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
+  return state.draft ?? roleDraft('Orchestration');
+}
+function roleDraft(role) {
+  const a = state.roles[role] ?? { integration: 'claude-code' };
+  return { role, integration: state.agents[a.integration] ? a.integration : 'claude-code', model: a.model ?? '', effort: '' };
+}
+// The task cap switch next to the chat box (ADR 0011): unchecked, the chat's new tasks run uncapped.
+function renderCap(s) {
+  if (['cap', 'cap-on'].includes(document.activeElement?.id)) return;
+  const cap = s ? s.taskCap : state.draftCap;
+  $('#cap-on').checked = cap !== undefined;
+  if (cap !== undefined) $('#cap').value = cap;
+  $('#cap').disabled = cap === undefined;
 }
 function renderPickers(s) {
   if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
   const v = pickerValues(s);
+  $('#role').value = v.role;
+  $('#role').hidden = !!s;
   const catalog = state.agents[v.integration];
   $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option(v.integration, v.integration, true);
   const models = catalog?.models ?? [{ id: '', label: 'Default', efforts: [] }];
@@ -492,12 +519,28 @@ const approvalCard = (a, taskId, who = '') => `<div class="approval"><b>${who}${
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Deny</button></div></div>`;
 const pendingCards = (t) => t.pending.map((a) => approvalCard(a, a.taskId, a.taskId === t.id ? '' : 'Subtask: ')).join('');
 
+// The orchestrator's choice for a task and its controls (orchestrator-004, runtime-006). Their layout lives
+// only in these two functions.
+function taskChoiceHtml(t) {
+  const what = [t.integration, t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ');
+  const why = t.task.overridden ? 'changed by you' : t.task.reason;
+  return `<div class="meta task-choice">${what}${why ? ` — ${esc(why)}` : ''}</div>`;
+}
+function taskControlsHtml(t) {
+  const open = t.status !== 'cancelled' && t.status !== 'completed';
+  return [
+    active(t) ? `<button class="btn small" data-task-act="pause" data-task="${esc(t.id)}">Pause</button>` : '',
+    open && !active(t) ? `<button class="btn small" data-task-act="resume" data-task="${esc(t.id)}">Resume</button>` : '',
+    t.status !== 'cancelled' && !active(t) ? `<button class="btn small" data-task-config="${esc(t.id)}" title="Change agent, model or effort">Change</button>` : '',
+  ].join('');
+}
+
 // A task the chat's agent started (sessions-002): its approvals, replies and result are answered here.
 function taskCardHtml(t) {
   if (!t) return '';
   const canReply = !active(t) && t.status !== 'cancelled';
-  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} <button class="btn small" data-id="${esc(t.id)}">Details</button></div>
-    <div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
+  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
+    ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
     ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
     ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="Reply to continue the task" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
 }
@@ -535,11 +578,12 @@ function renderChat() {
   const info = d && d.turns.findLast((t) => t.model);
   const warnings = [d?.permissions.warn, d?.turns.at(-1)?.permissionMode === 'bypassPermissions' ? 'running with all permission checks skipped' : '', failed.length ? `not connected: ${failed.map((m) => m.name).join(', ')}` : ''].filter(Boolean);
   $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
-  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
+  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${s.role === 'Orchestration' ? 'Orchestrator · ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
   renderPickers(s);
+  renderCap(s);
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
@@ -587,13 +631,14 @@ async function renderTasks() {
     <dl>
       <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
       <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button> <span class="meta">approvals and replies are there</span>` : 'outside a chat (CLI)'}</dd>
+      <dt>Agent</dt><dd>${taskChoiceHtml(t)}</dd>
       <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
       <dt>Progress</dt><dd>${summary(t)}${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
       <dt>Task</dt><dd>${esc(t.id)} · role ${esc(t.role)}</dd>
       <dt>Updated</dt><dd>${new Date(t.updatedAt).toLocaleString()}</dd>
     </dl>
-    <div class="row" style="margin-top:14px"><button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
+    <div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
     <p class="error" id="detail-error" role="alert"></p>
     ${t.session ? '' : pendingCards(t)}
     <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
@@ -724,6 +769,45 @@ async function pickerChanged(which) {
   await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort });
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
+$('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null); };
+async function capChanged() {
+  const cap = $('#cap-on').checked ? Math.max(1, Math.round(Number($('#cap').value) || 0)) : undefined;
+  $('#cap').disabled = cap === undefined;
+  if (!state.session) return void (state.draftCap = cap);
+  await sessionAction('cap', { taskCap: cap ?? null });
+}
+$('#cap-on').onchange = capChanged;
+$('#cap').onchange = capChanged;
+
+// Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.
+async function changeTask(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return;
+  let v = { integration: t.integration, model: t.model ?? '', effort: t.effort ?? '' };
+  const fill = () => {
+    const models = state.agents[v.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+    $('#tc-agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('');
+    $('#tc-model').innerHTML = models.map((m) => option(m.id, m.label, m.id === v.model)).join('');
+    const efforts = (models.find((m) => m.id === v.model) ?? models[0]).efforts;
+    $('#tc-effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
+  };
+  $('#tc-agent').onchange = () => { v = { integration: $('#tc-agent').value, model: '', effort: '' }; fill(); };
+  $('#tc-model').onchange = () => { v = { ...v, model: $('#tc-model').value, effort: '' }; fill(); };
+  $('#tc-effort').onchange = () => { v = { ...v, effort: $('#tc-effort').value }; };
+  fill();
+  const d = $('#task-config');
+  d.returnValue = '';
+  d.showModal();
+  const ok = await new Promise((resolve) => {
+    const done = (r) => { d.removeEventListener('submit', onSubmit); d.removeEventListener('cancel', onCancel); resolve(r); };
+    const onSubmit = (e) => done(e.submitter?.value === 'ok');
+    const onCancel = () => done(false);
+    d.addEventListener('submit', onSubmit);
+    d.addEventListener('cancel', onCancel);
+  });
+  if (ok) await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort }, id);
+  await poll();
+}
 
 // Styled confirmation (the native confirm() dialog does not match the workspace).
 function ask(title, text, ok, danger = false) {
@@ -835,8 +919,14 @@ document.addEventListener('click', async (e) => {
     return openMenu(menuBtn.dataset.kind, menuBtn.dataset.menu, r.left, r.bottom + 4);
   }
   if (!e.target.closest('.menu')) closeMenu();
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve],[data-reply]');
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve],[data-reply],[data-task-act],[data-task-config]');
   if (!el) return;
+  if (el.dataset.taskAct) {
+    try { await api(`/api/tasks/${el.dataset.task}/${el.dataset.taskAct}`, {}); $('#new-error').textContent = ''; }
+    catch (err) { $('#new-error').textContent = err.message; }
+    return poll();
+  }
+  if (el.dataset.taskConfig) return changeTask(el.dataset.taskConfig);
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
   if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' }, el.dataset.task).then(poll);
@@ -880,8 +970,10 @@ $('#new').onsubmit = async (e) => {
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
-    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', ...config } : { projectId: state.project, role: 'Chat', ...config })).id;
+    const fresh = { role: $('#role').value, taskCap: state.draftCap, ...config };
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
+    state.draftCap = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';

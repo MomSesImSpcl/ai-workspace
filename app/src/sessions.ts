@@ -35,6 +35,12 @@ export function addUsage(a: Usage, b: Usage): Usage {
 // Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
 export const TASK_NOTE = 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.';
 
+// A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
+// whatever agent the role uses, so this rule is not the only guard.
+export const ORCHESTRATION = 'Orchestration';
+export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents']; // its workspace tools, run without a card
+export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It continues or corrects a task started in this chat: send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something): start a task with start_task. Choose its agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason. Write a self-contained goal with the acceptance criteria. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level.`;
+
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
 
@@ -52,13 +58,16 @@ export interface Session {
   pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
   permissionMode?: string; // the agent's own mode for this session (catalog `modes`); unset: the agent's settings
-  task?: TaskSpec; // set for a task: delegated background work with a token cap (task-runtime 4.7)
+  task?: TaskSpec; // set for a task: delegated background work, optionally with a token cap (task-runtime 4.7)
+  taskCap?: number; // a chat's cap for the tasks it starts (the switch next to the chat box); unset: uncapped
   createdAt: string;
   updatedAt: string;
 }
 
 export interface TaskSpec {
-  tokenBudget: number;
+  tokenBudget?: number; // unset: uncapped (ADR 0011)
+  reason?: string; // why the orchestrator chose its agent, model and effort (orchestrator-004)
+  overridden?: boolean; // the user changed that choice
   parentId?: string; // a subtask started by the parent's `delegate` call
   sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
@@ -364,12 +373,12 @@ function marker(t: Turn): string {
   return t.reason ? `${at} (${t.reason})` : at;
 }
 
-// Tool calls the previous attempt completed, when it was interrupted (the runner died): a matching call
-// in the re-run is a possible repeat (runtime-004). Keyed by fingerprint, valued by the step it was.
+// Tool calls the previous attempt completed, when it was interrupted (the runner died) or paused: a matching
+// call in the re-run is a possible repeat (runtime-004, runtime-006). Keyed by fingerprint, valued by the step it was.
 export function repeatsFor(ts: Turn[]): Map<string, string> {
   const prev = ts.at(-2);
   const out = new Map<string, string>();
-  if (prev?.state !== 'interrupted') return out;
+  if (prev?.state !== 'interrupted' && prev?.state !== 'stopped') return out;
   prev.activity.forEach((a, i) => a.done && !a.error && a.fp && out.set(a.fp, `step ${i + 1}: ${a.label}`));
   return out;
 }

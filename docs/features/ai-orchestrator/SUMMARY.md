@@ -1,6 +1,6 @@
 # Configurable orchestration, agent roles and context delegation
 
-**Status:** in-progress: orchestrator delegates to Implementation via broker (core slice 1)
+**Status:** in-progress: orchestrator chat runs every change as a task, replies to its tasks, picks agent, model and effort with an override (orchestrator-004, 006; ADR 0011); planning handoff, compatibility checks and lean setup not built
 
 Choose compatible planning/design, orchestration and implementation agents independently, locally or through hosted services. The orchestrator selects agents and supported effort, gathers authorized context and constructs inspectable requests. Preserve plans and results across role handoffs, respect manual overrides and fixed-context choices, and leave authority enforcement to deterministic services. Browser planning supports controlled manual transfer; named products are examples whose integration support must be verified.
 

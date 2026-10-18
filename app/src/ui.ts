@@ -4,8 +4,8 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
-import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
-import { cancelTask, childrenOf, listTasks, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
+import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
+import { cancelTask, childrenOf, listTasks, pauseTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
@@ -72,22 +72,9 @@ function sessionView(s: Session) {
   return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + taskCard(t).pending.length, 0) };
 }
 
-// Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
-// effort means the agent's own default.
+// Agent, model and effort, checked against what the agent offers (its catalog).
 function agentConfig(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
-  const integration = b.integration === undefined ? current.integration : b.integration;
-  if (typeof integration !== 'string' || !sessionAgents[integration]) throw new HttpError(400, `agent must be one of ${Object.keys(sessionAgents).join(', ')}`);
-  const catalog = sessionAgents[integration]!.catalog();
-  const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
-  const model = pick(b.model, integration === current.integration ? current.model : undefined);
-  const entry = catalog.models.find((m) => m.id === (model ?? ''));
-  if (model !== undefined && (typeof model !== 'string' || !entry)) throw new HttpError(400, `model must be one of ${catalog.models.map((m) => m.id || 'default').join(', ')}`);
-  let effort = pick(b.effort, current.effort);
-  if (effort !== undefined && !(entry ?? catalog.models[0])?.efforts.includes(effort as string)) {
-    if (b.effort !== undefined) throw new HttpError(400, `effort must be one of ${(entry ?? catalog.models[0])?.efforts.join(', ')}`);
-    effort = undefined; // a kept level the new agent or model does not offer falls back to its default
-  }
-  return { integration, model: model as string | undefined, effort: effort as string | undefined };
+  try { return agentChoice(b, current); } catch (e) { throw new HttpError(400, (e as Error).message); }
 }
 
 const text = (v: unknown, name: string) => {
@@ -115,6 +102,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
     const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
     s.effort = config.effort;
+    if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
     saveSession(s);
     return sessionView(s);
   }
@@ -142,6 +130,11 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
       s.vendorSessionId = undefined;
     }
     Object.assign(s, config);
+    if (s.task) s.task.overridden = true; // the user changed the orchestrator's choice (orchestrator-004)
+    saveSession(s);
+  } else if (action === 'cap') {
+    if (b.taskCap !== null && (!Number.isInteger(b.taskCap) || (b.taskCap as number) <= 0)) throw new HttpError(400, 'taskCap must be a positive whole number or null');
+    s.taskCap = (b.taskCap as number | null) ?? undefined;
     saveSession(s);
   } else if (action === 'pin') {
     setPinned(id, b.pinned === true);
@@ -212,6 +205,12 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return taskView(task);
   }
   if (req.method === 'POST' && kind === 'tasks' && action === 'cancel') return taskView(cancelTask(id));
+  if (req.method === 'POST' && kind === 'tasks' && action === 'pause') return taskView(pauseTask(id));
+  if (req.method === 'POST' && kind === 'tasks' && action === 'resume') {
+    const task = resumeTask(id);
+    if (!turnRunning(id)) startTurn(id);
+    return taskView(task);
+  }
   throw new HttpError(404, 'not found');
 }
 

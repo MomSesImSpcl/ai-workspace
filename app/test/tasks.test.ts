@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { hostSession, runTurn, sessionAgent } from '../src/turn.ts';
+import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { registerProject } from '../src/store.ts';
 
@@ -209,8 +209,96 @@ test('the workspace MCP server offers start_task to a chat session and delegate 
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
-  assert.deepEqual(await tools(chat.id), ['approve', 'start_task']);
+  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'reply_task', 'start_task', 'task_status']);
   assert.deepEqual(await tools(task('t').id), ['approve', 'delegate']);
+});
+
+test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
+  const orch = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(orch.id, 'args');
+  await runTurn(orch.id);
+  const args = JSON.parse(last(orch.id).text) as string[];
+  assert.match(args[args.indexOf('--disallowedTools') + 1]!, /^Bash,Edit,Write/);
+  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator/);
+  const t = task('args');
+  await runTurn(t.id);
+  assert.ok(!(JSON.parse(last(t.id).text) as string[]).includes('--disallowedTools'));
+  const codex = createSession('P', 'Orchestration', { integration: 'codex' });
+  addMessage(codex.id, 'hi');
+  await runTurn(codex.id);
+  const init = readEvents(codex.id).find((e) => e.type === 'init');
+  assert.equal(init?.type === 'init' && init.permissionMode, 'approval never · sandbox read-only');
+});
+
+test('tasks run uncapped unless asked; the chat cap applies; the chosen agent, model and effort are checked and recorded', () => {
+  const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(chat.id, 'build it');
+  assert.equal(startFromSession(chat.id, { goal: 'a', role: 'Implementation' }).task!.tokenBudget, undefined);
+  saveSession({ ...loadSession(chat.id), taskCap: 3000 });
+  assert.equal(startFromSession(chat.id, { goal: 'b', role: 'Implementation' }).task!.tokenBudget, 3000);
+  const effort = sessionAgent('claude-code').catalog().models[0]!.efforts[0]!;
+  const t = startFromSession(chat.id, { goal: 'c', role: 'Implementation', agent: 'codex', effort: undefined, reason: 'small fix' });
+  assert.deepEqual([t.integration, t.task!.reason], ['codex', 'small fix']);
+  assert.equal(startFromSession(chat.id, { goal: 'd', role: 'Implementation', effort }).effort, effort);
+  assert.throws(() => startFromSession(chat.id, { goal: 'e', role: 'Implementation', effort: 'warp' }), /Unknown effort/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none' }), /Unknown agent/);
+});
+
+test('pause interrupts a task and keeps its conversation; resume continues it and flags calls already run', async () => {
+  const t = task('slow work');
+  const run = runTurn(t.id);
+  await until(() => sessionWorking(t.id) && readEvents(t.id).some((e) => e.type === 'init'));
+  pauseTask(t.id);
+  await run;
+  assert.equal(status(t.id), 'paused');
+  assert.equal(last(t.id).reason, 'paused');
+  assert.equal(loadSession(t.id).vendorSessionId, 'fake-session');
+  assert.throws(() => pauseTask(t.id), /not running/);
+  resumeTask(t.id);
+  await runTurn(t.id);
+  assert.equal(status(t.id), 'completed');
+  const ts = turns(readEvents(t.id), false);
+  ts[0]!.activity.push({ id: 'x', label: 'Bash ls', done: true, fp: 'f1' });
+  assert.equal(repeatsFor(ts).get('f1'), 'step 1: Bash ls');
+});
+
+test('reply_task continues a task of this chat only; the chat runner starts it', async () => {
+  const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(chat.id, 'go');
+  const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation' });
+  startPendingTasks(chat.id);
+  await until(() => status(t.id) === 'completed');
+  assert.throws(() => replyFromSession(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
+  replyFromSession(chat.id, t.id, 'also this');
+  await until(() => !turnRunning(t.id));
+  startPendingTasks(chat.id);
+  await until(() => turns(readEvents(t.id), turnRunning(t.id)).length === 2 && status(t.id) === 'completed');
+});
+
+test('ui API: a chat cap is set and cleared, pause and resume a task, a changed agent is marked as overridden', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const chat = await (await post('/api/sessions', { projectId: 'P', role: 'Orchestration', taskCap: 5000 })).json();
+    assert.equal(loadSession(chat.id).taskCap, 5000);
+    assert.equal((await post(`/api/sessions/${chat.id}/cap`, { taskCap: 0 })).status, 400);
+    await post(`/api/sessions/${chat.id}/cap`, { taskCap: null });
+    assert.equal(loadSession(chat.id).taskCap, undefined);
+    const t = task('slow work');
+    startTurn(t.id);
+    await until(() => sessionWorking(t.id) && readEvents(t.id).some((e) => e.type === 'init'));
+    assert.equal((await post(`/api/tasks/${t.id}/pause`, {})).status, 200);
+    await until(() => status(t.id) === 'paused');
+    assert.equal((await post(`/api/tasks/${t.id}/pause`, {})).status, 400);
+    assert.equal((await post(`/api/sessions/${t.id}/config`, { effort: sessionAgent('claude-code').catalog().models[0]!.efforts[0] })).status, 200);
+    assert.equal(loadSession(t.id).task!.overridden, true);
+    assert.equal((await post(`/api/tasks/${t.id}/resume`, {})).status, 200);
+    await until(() => status(t.id) === 'completed');
+  } finally {
+    server.close();
+  }
 });
 
 test('tasks recorded before they were sessions are converted once and keep their conversation and state', () => {

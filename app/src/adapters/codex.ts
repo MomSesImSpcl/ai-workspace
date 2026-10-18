@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, TASK_NOTE } from '../sessions.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_NOTE, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -143,7 +143,11 @@ export class CodexProcess implements AgentProcess {
     } else if (!task) {
       // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task with a token budget, use the workspace start_task tool.';
+      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool.';
+    }
+    if (!task && this.session.role === ORCHESTRATION) {
+      // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
+      Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${ORCHESTRATOR_NOTE}` });
     }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {

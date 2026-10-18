@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, TASK_NOTE } from '../sessions.ts';
+import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_NOTE, ORCHESTRATOR_TOOLS, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
 // workspace server, which shows them as approval cards (sessions-019) and offers tasks `delegate`.
@@ -175,14 +175,18 @@ export class ClaudeProcess implements AgentProcess {
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
       if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
-    } else args.push('--allowedTools', 'mcp__aiws__start_task'); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    } else if (session.role === ORCHESTRATION) {
+      // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006).
+      // shortcut: tools of the user's own MCP servers stay allowed (#16); deny them too once the setup inventory (onboarding-010) lists them.
+      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','), '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit');
+    } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
     if (session.task) {
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       args.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [hook] }] } }));
     }
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : ' To run self-contained work in the background as a task with a token budget, use the mcp__aiws__start_task tool.'}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${ORCHESTRATOR_NOTE}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;

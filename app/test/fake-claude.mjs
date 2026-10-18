@@ -1,6 +1,6 @@
 // Stand-in for `claude -p --input-format stream-json` in tests: one process answers many turns.
 // It keeps a turn counter in memory, so a reply shows whether the same process handled earlier turns.
-// A message containing "slow" streams nothing until an interrupt arrives.
+// A message containing "slow" streams nothing until an interrupt arrives; one containing "args" answers with its arguments.
 import { createInterface } from 'node:readline';
 
 let turns = 0;
@@ -21,6 +21,6 @@ for await (const line of createInterface({ input: process.stdin })) {
   const text = msg.message.content[0].text;
   out({ type: 'system', subtype: 'init', session_id: 'fake-session', permissionMode: 'default', plugins: [], mcp_servers: [] });
   if (text.includes('slow')) { waiting = true; continue; }
-  out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `turn ${turns} pid ${process.pid} effort ${effort}` } } });
+  out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: text.includes('args') ? JSON.stringify(process.argv.slice(2)) : `turn ${turns} pid ${process.pid} effort ${effort}` } } });
   result(`turn ${turns}`);
 }

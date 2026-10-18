@@ -16,7 +16,13 @@ export function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(value, null, 2));
-  renameSync(tmp, path);
+  // Windows refuses to replace a file another process has open for a moment (a poller reading it): retry briefly.
+  for (let i = 0; ; i++) {
+    try { return renameSync(tmp, path); } catch (e) {
+      if (i >= 50 || !['EPERM', 'EACCES', 'EBUSY'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
 }
 
 export function appendJsonl(path: string, value: unknown): void {

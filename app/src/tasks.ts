@@ -1,4 +1,4 @@
-// Tasks are sessions run in the background with a token cap (task-runtime 4.7, ADR 0007): the agent starts
+// Tasks are sessions run in the background, optionally with a token cap (task-runtime 4.7, ADRs 0007, 0011): the agent starts
 // with its own setup, its "ask" becomes an approval card that waits, and cancel or the cap ends its process
 // tree. Status is read from the session's event log.
 import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { assignmentFor } from './roles.ts';
 import { addMessage, addUsage, allSessions, createSession, emit, loadSession, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
-import { sessionAgent, startTurn } from './turn.ts';
+import { agentChoice, pending, sessionAgent, startTurn } from './turn.ts';
 
 export type TaskStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'interrupted' | 'cancelled';
 
@@ -28,19 +28,22 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
   return last.state === 'done' ? 'completed' : last.state === 'error' ? 'failed' : last.state === 'stopped' ? 'paused' : 'interrupted';
 }
 
-export interface NewTask { projectId: string; goal: string; role: string; tokenBudget: number; permissionMode?: string; parentId?: string; sessionId?: string }
+// agent, model, effort and reason: the orchestrator's choice (orchestrator-004); unset, the role's assignment.
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string }
 
-// The goal is the first message. The agent comes from the role's assignment; the mode must be one the agent offers.
+// The goal is the first message. Agent, model, effort and mode must be ones the agent offers.
 export function createTask(f: NewTask): Session {
-  const { integration, model } = assignmentFor(f.role);
+  if (f.tokenBudget !== undefined && (!Number.isInteger(f.tokenBudget) || f.tokenBudget <= 0)) throw new Error('Unknown token budget: a positive whole number is required');
+  const { integration, model, effort } = agentChoice({ integration: f.agent, model: f.model, effort: f.effort }, assignmentFor(f.role));
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   const s = createSession(f.projectId, f.role, { integration, model });
-  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId };
+  s.effort = effort;
+  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason };
   s.permissionMode = f.permissionMode || undefined;
   saveSession(s);
   addMessage(s.id, f.goal);
-  audit({ kind: 'task', taskId: s.id, event: 'created', integration, permissionMode: s.permissionMode, parentId: f.parentId, sessionId: f.sessionId });
+  audit({ kind: 'task', taskId: s.id, event: 'created', integration, model, effort, reason: f.reason, permissionMode: s.permissionMode, parentId: f.parentId, sessionId: f.sessionId });
   return loadSession(s.id);
 }
 
@@ -51,15 +54,31 @@ export function createTask(f: NewTask): Session {
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
-  if (!Number.isInteger(f.tokenBudget) || f.tokenBudget <= 0) throw new Error('Unknown token budget: a positive whole number is required');
-  const t = createTask({ ...f, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, tokenBudget: f.tokenBudget ?? chat.taskCap, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
 
-// Starts the chat's tasks that were recorded but never run.
+// Starts the chat's tasks that have a message no runner took: new tasks and replies sent with reply_task.
 export function startPendingTasks(sessionId: string): void {
-  for (const t of startedIn(sessionId)) if (!t.task!.cancelled && !turnRunning(t.id) && readEvents(t.id).every((e) => e.type === 'user')) startTurn(t.id);
+  for (const t of startedIn(sessionId)) if (!t.task!.cancelled && !turnRunning(t.id) && pending(t.id)) startTurn(t.id);
+}
+
+// A reply to a task started in this chat (the orchestrator's reply_task, orchestrator-006). The chat's runner
+// starts it, like a new task.
+export function replyFromSession(sessionId: string, taskId: string, text: string): Session {
+  if (!startedIn(sessionId).some((t) => t.id === taskId)) throw new Error(`Unknown task in this chat: ${taskId}`);
+  if (sessionWorking(taskId)) throw new Error('Task is working; wait for it to finish, or ask the user to pause it');
+  return resumeTask(taskId, undefined, text);
+}
+
+// Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).
+export function pauseTask(id: string): Session {
+  const s = taskOf(id);
+  if (!sessionWorking(id)) throw new Error('Task is not running');
+  requestStop(id);
+  audit({ kind: 'task', taskId: id, event: 'paused' });
+  return s;
 }
 
 const taskOf = (id: string) => {
@@ -87,7 +106,7 @@ export function resumeTask(id: string, tokenBudget?: number, text = 'Continue th
   const s = taskOf(id);
   if (sessionWorking(id)) throw new Error('Task is already running');
   if (tokenBudget !== undefined) s.task.tokenBudget = tokenBudget;
-  if (taskUsed(s) >= s.task.tokenBudget) throw new Error(`Task is at its token budget (${taskUsed(s)} of ${s.task.tokenBudget} used); raise the budget to resume`);
+  if (s.task.tokenBudget !== undefined && taskUsed(s) >= s.task.tokenBudget) throw new Error(`Task is at its token budget (${taskUsed(s)} of ${s.task.tokenBudget} used); raise the budget to resume`);
   saveSession(s);
   addMessage(id, text);
   return s;
@@ -101,8 +120,8 @@ const lastTurn = (id: string) => turns(readEvents(id), turnRunning(id)).at(-1);
 export async function delegate(parentId: string, goal: string, role = 'Implementation'): Promise<string> {
   const parent = taskOf(parentId);
   if (parent.task.parentId) throw new Error('Delegation depth limit: subtasks cannot delegate');
-  const remaining = parent.task.tokenBudget - taskUsed(parent);
-  if (remaining <= 0) throw new Error('Parent token budget exhausted');
+  const remaining = parent.task.tokenBudget === undefined ? undefined : parent.task.tokenBudget - taskUsed(parent);
+  if (remaining !== undefined && remaining <= 0) throw new Error('Parent token budget exhausted');
   let child = childrenOf(parentId).find((c) => turns(readEvents(c.id), true)[0]?.user === goal);
   if (child?.task?.cancelled) throw new Error(`Subtask ${child.id} was cancelled`);
   if (!child) {
@@ -112,7 +131,7 @@ export async function delegate(parentId: string, goal: string, role = 'Implement
   } else if (lastTurn(child.id)?.state === 'done') {
     return `subtask ${child.id} completed\n${lastTurn(child.id)!.text}`;
   } else if (lastTurn(child.id)?.state !== 'working') {
-    resumeTask(child.id, used(usageOf(child.id)) + remaining);
+    resumeTask(child.id, remaining === undefined ? undefined : used(usageOf(child.id)) + remaining);
   }
   startTurn(child.id);
   let last = lastTurn(child.id);
