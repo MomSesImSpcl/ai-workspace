@@ -114,6 +114,8 @@ ipcMain.handle('restart', () => {
   step('window position saved');
   server?.kill();
   step('exiting for restart');
+  // app.exit itself has also left the process running on Windows (log 2026-10-18): end it for sure.
+  setTimeout(() => { log('app.exit did not end the process; forcing it'); process.exit(0); }, 1000);
   app.exit(0);
 });
 
