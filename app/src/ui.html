@@ -413,13 +413,13 @@ async function api(path, body) {
 const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
 const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
 // What each token kind adds to the count, for the hover on a token figure (weights as in `cost`).
-function breakdown(u) {
+function breakdown(u, subtasks = 0) {
   if (!u) return COST_HINT;
   const read = u.cachedInputTokens ?? 0, write = u.cacheWriteTokens ?? 0;
   const n = (v) => Math.round(v).toLocaleString();
-  return [`Uncached input: ${n(u.inputTokens - read - write)}`, `Cache reads (×0.1): ${n(0.1 * read)}`, `Cache writes (×1.25): ${n(1.25 * write)}`, `Output: ${n(u.outputTokens)}`, '', COST_HINT].join('\n');
+  return [`Uncached input: ${n(u.inputTokens - read - write)}`, `Cache reads (×0.1): ${n(0.1 * read)}`, `Cache writes (×1.25): ${n(1.25 * write)}`, `Output: ${n(u.outputTokens)}`, ...(subtasks ? [`Subtasks: ${n(subtasks)}`] : []), '', COST_HINT].join('\n');
 }
-const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${esc(breakdown(t.usage))}">${t.used.toLocaleString()} ${t.task.tokenBudget === undefined ? 'tokens, no cap' : `/ ${t.task.tokenBudget.toLocaleString()} tokens`}</span> · ${esc(t.integration)}`;
+const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${esc(breakdown(t.usage, t.subtaskUsed))}">${t.used.toLocaleString()} ${t.task.tokenBudget === undefined ? 'tokens, no cap' : `/ ${t.task.tokenBudget.toLocaleString()} tokens`}</span> · ${esc(t.integration)}`;
 const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (reply to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';

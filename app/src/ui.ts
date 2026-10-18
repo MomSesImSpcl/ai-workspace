@@ -55,7 +55,8 @@ function taskView(s: Session) {
   const chat = s.task?.sessionId ? loadSession(s.task.sessionId) : undefined;
   const status = taskStatus(s, ts);
   return {
-    ...s, goal: ts[0]?.user ?? s.title, status, reason: last?.marker, used: taskUsed(s) + (last?.state === 'working' ? used(turnUsage(last)) : 0), usage: last?.state === 'working' ? addUsage(usageOf(s.id), turnUsage(last)) : usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined,
+    ...s, goal: ts[0]?.user ?? s.title, status, reason: last?.marker, subtaskUsed: childrenOf(s.id).reduce((n, c) => n + used(usageOf(c.id)), 0), // part of `used`, shown as its own line
+    used: taskUsed(s) + (last?.state === 'working' ? used(turnUsage(last)) : 0), usage: last?.state === 'working' ? addUsage(usageOf(s.id), turnUsage(last)) : usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined,
     ranModel: ts.findLast((t) => t.model)?.model, // the model the agent reported, also when the task used the agent's default
     finishedAt: status === 'running' || status === 'waiting' ? undefined : last?.endedAt,
     session: chat && { id: chat.id, title: chat.title },
