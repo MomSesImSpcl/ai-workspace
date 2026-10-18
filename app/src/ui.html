@@ -198,7 +198,8 @@
   .task-list { display: grid; gap: 8px; }
   .task-scope { margin-bottom: 16px; gap: 6px; }
   .task-group { display: grid; gap: 8px; margin-bottom: 10px; }
-  .task-group > .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-group > .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .task-group { padding-bottom: 10px; border-bottom: 1px solid var(--hairline); }
   .goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 11px; color: var(--text-dim); }
   .empty { color: var(--text-muted); font-size: 12px; padding: 14px 2px; }
@@ -345,7 +346,7 @@
         <h1 class="display">Tasks</h1>
         <p class="lede" style="margin-bottom:16px">Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.</p>
         <!-- Which tasks the list shows: the open chat's, or all of its project (or of all global sessions), grouped by chat. -->
-        <div class="row task-scope" role="group" aria-label="Tasks to show"><button class="btn small" data-scope="session" type="button">This session</button><button class="btn small" data-scope="all" type="button" id="scope-all"></button></div>
+        <div class="row task-scope" role="group" aria-label="Tasks to show"><button class="btn small" data-scope="session" type="button" title="All tasks in this Session">Session</button><button class="btn small" data-scope="all" type="button" id="scope-all"></button></div>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -746,7 +747,10 @@ async function renderTasks() {
   const global = globalScope();
   const scope = pref.get('taskScope', 'session');
   $('#tasks-eyebrow').textContent = global ? 'Global sessions' : `Project / ${state.project ?? '—'}`;
-  $('#scope-all').textContent = global ? 'All global sessions' : 'Whole project';
+  $('#scope-all').textContent = global ? 'Global' : 'Project';
+  $('#scope-all').title = global ? 'All tasks in all global Sessions' : 'All tasks in this Project';
+  // Back in the Session view, a task of another chat is no longer listed, so its details close.
+  if (scope === 'session' && state.selected && !sessionTasks().some((t) => t.id === state.selected)) state.selected = null;
   for (const b of $$('[data-scope]')) b.classList.toggle('primary', b.dataset.scope === scope);
   setHtml($('#tasks'), scope === 'session' ? sessionTasks().map(row).join('') || `<p class="empty">${state.session ? 'No tasks in this session yet.' : 'Open a chat to see its tasks.'}</p>` : groupedTasks(), `${scope}:${state.session}`);
   if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>', null);
