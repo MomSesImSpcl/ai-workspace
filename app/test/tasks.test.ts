@@ -276,7 +276,7 @@ test('reply_task queues for a running task of this chat; a finished one gets a n
   assert.equal(turns(readEvents(t.id), false)[1]!.user, 'also this\n\nand that');
   assert.throws(() => replyFromSession(chat.id, t.id, 'more'), /is completed; start a new task with basedOn/);
   const next = startFromSession(chat.id, { goal: 'same again', role: 'Implementation', basedOn: t.id });
-  assert.match(turns(readEvents(next.id), false)[0]!.user, /^Earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2[\s\S]*same again$/);
+  assert.match(turns(readEvents(next.id), false)[0]!.user, /^same again\n\nContext from an earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2/);
   saveSession({ ...loadSession(chat.id), taskMode: '' });
   assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation' }).permissionMode, undefined);
 });

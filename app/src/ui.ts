@@ -51,7 +51,7 @@ function taskView(s: Session) {
   const last = ts.at(-1);
   const step = last?.activity.at(-1);
   const chat = s.task?.sessionId ? loadSession(s.task.sessionId) : undefined;
-  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined, session: chat && { id: chat.id, title: chat.title } };
+  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined, session: chat && { id: chat.id, title: chat.title }, request: chat && turns(readEvents(chat.id), true).findLast((t) => t.tasks.includes(s.id))?.user };
 }
 
 // A task as its starting chat shows it (sessions-002): status, its and its subtasks' pending approvals, the result.

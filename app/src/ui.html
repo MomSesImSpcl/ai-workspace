@@ -651,6 +651,7 @@ async function renderTasks() {
     <div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
     <p class="error" id="detail-error" role="alert"></p>
     ${t.session ? '' : pendingCards(t)}
+    ${t.request ? `<h3>Your request in the chat</h3><pre>${esc(t.request)}</pre>` : ''}
     <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
     ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
     <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;

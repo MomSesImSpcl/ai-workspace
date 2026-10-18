@@ -60,7 +60,7 @@ export function createTask(f: NewTask): Session {
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
-  const t = createTask({ ...f, goal: f.basedOn ? `${handoff(chat.projectId, f.basedOn)}\n\n${f.goal}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
@@ -102,7 +102,7 @@ function handoff(projectId: string, id: string): string {
   if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
   const ts = turns(readEvents(id), turnRunning(id));
   const result = ts.findLast((t) => t.text)?.text ?? '(no reply yet)';
-  return `Earlier related task ${id} (${taskStatus(earlier, ts)}).\nIts goal: ${ts[0]?.user.slice(0, 4000)}\nIts last reply: ${result.slice(-4000)}\n\nThe new task:`;
+  return `Context from an earlier related task (${id}, ${taskStatus(earlier, ts)}).\nIts goal: ${ts[0]?.user.slice(0, 4000)}\nIts last reply: ${result.slice(-4000)}`;
 }
 
 // Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).
