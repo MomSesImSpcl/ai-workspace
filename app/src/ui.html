@@ -461,7 +461,7 @@ function renderProjects() {
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
-  <span class="goal">${esc(t.title)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
+  <span class="goal" title="${esc(t.title)}">${esc(t.title)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
 
 // Chat column: the project's sessions and the open session's turns, built from its event log.
 // Polling re-renders only what changed, and never while the user selects text in it, so scroll position and a
@@ -487,7 +487,7 @@ const isGlobal = (s) => s.projectId === '';
 
 // Pinned sessions come first (the server sorts them) and can be dragged to reorder.
 const sessionRows = (list, group) => list.map((s) => `<div class="session-row" data-row="${esc(s.id)}" data-group="${group}" ${s.pinOrder !== undefined ? 'draggable="true"' : ''}><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
-    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
+    ${sessionState(s)}<span title="${esc(s.title)}">${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
     <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('');
 
 const EFFORT_LABELS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', ultra: 'Ultra' };
