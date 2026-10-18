@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, addUsage, forgetSessionList, GLOBAL, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -171,7 +171,13 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const id = kind === 'projects' && rawId !== undefined ? decodeURIComponent(rawId) : rawId;
   if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'POST' && kind === 'settings') {
+    const b = await body(req);
+    if (typeof b.orchestratorInstructions !== 'string' || b.orchestratorInstructions.length > 4000) throw new HttpError(400, 'orchestratorInstructions must be text up to 4000 characters');
+    setSettings({ orchestratorInstructions: b.orchestratorInstructions });
+    return getSettings();
+  }
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);

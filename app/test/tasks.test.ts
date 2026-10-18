@@ -221,6 +221,13 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   const args = JSON.parse(last(orch.id).text) as string[];
   assert.match(args[args.indexOf('--disallowedTools') + 1]!, /^Bash,Edit,Write/);
   assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator/);
+  const { setSettings } = await import('../src/sessions.ts');
+  setSettings({ orchestratorInstructions: 'Keep goals under 50 words.' });
+  const orch2 = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(orch2.id, 'args');
+  await runTurn(orch2.id);
+  const args2 = JSON.parse(last(orch2.id).text) as string[];
+  assert.match(args2[args2.indexOf('--append-system-prompt') + 1]!, /user's own instructions .*Keep goals under 50 words\./);
   const t = task('args');
   await runTurn(t.id);
   assert.ok(!(JSON.parse(last(t.id).text) as string[]).includes('--disallowedTools'));

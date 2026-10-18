@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_NOTE, TASK_NOTE } from '../sessions.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -147,7 +147,7 @@ export class CodexProcess implements AgentProcess {
     }
     if (!task && this.session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
-      Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${ORCHESTRATOR_NOTE}` });
+      Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${orchestratorNote()}` });
     }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {

@@ -368,6 +368,9 @@
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
+        <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
+        <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
+        <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
       </div>
     </aside>
 
@@ -800,6 +803,7 @@ function runHtml(t, r, i, count, open, permissions) {
 
 function renderDrawer() {
   if (state.tool === 'settings') {
+    if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
       return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
@@ -929,6 +933,10 @@ async function capChanged() {
   await sessionAction('cap', { taskCap: cap ?? null });
 }
 $('#cap-on').onchange = capChanged;
+$('#orch-rules').onchange = async () => {
+  try { state.settings = await api('/api/settings', { orchestratorInstructions: $('#orch-rules').value }); $('#orch-rules-saved').textContent = 'Saved. Applies to orchestrator chats from their next agent start.'; }
+  catch (err) { $('#orch-rules-saved').textContent = err.message; }
+};
 for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
 $('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
 $('#mode-menu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-mode]'); if (b) pickMode(b.dataset.mode); };
