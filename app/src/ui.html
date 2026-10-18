@@ -134,6 +134,18 @@
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .mode-menu button span:first-child { display: grid; gap: 1px; }
   .mode-menu small { color: var(--text-muted); font-size: 11px; }
+  /* Markdown in replies: compact spacing inside a chat bubble */
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 8px; }
+  .md ul, .md ol { padding-left: 20px; }
+  .md h1, .md h2, .md h3, .md h4 { font-size: 1em; margin: 10px 0 6px; }
+  .md pre { padding: 8px 10px; background: var(--code); }
+  .md code { font-size: .92em; }
+  .md table { border-collapse: collapse; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--hairline-strong); padding: 3px 8px; text-align: left; }
+  .md blockquote { border-left: 3px solid var(--hairline-strong); padding-left: 10px; color: var(--text-dim); }
+  .md a { color: var(--blue); }
+  .msg.agent { white-space: normal; }
   details.run { margin-bottom: 10px; padding: 10px 14px; }
   .steps li, .turn-activity li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style-position: inside; } /* one line per step; full text on hover */
   details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -360,7 +372,16 @@
     </nav>
   </div>
 </div>
+<script src="/vendor/marked.js"></script>
 <script>
+// Agent replies are Markdown. Raw HTML in them is shown as text, links keep only http(s) and mailto, and
+// images become links, so a reply cannot inject markup or load anything.
+marked.use({ gfm: true, breaks: true, renderer: {
+  html: ({ text }) => esc(text),
+  link({ href, tokens }) { const label = this.parser.parseInline(tokens); return /^(https?:|mailto:)/i.test(href) ? `<a href="${esc(href)}" target="_blank" rel="noreferrer">${label}</a>` : label; },
+  image: ({ href, text }) => (/^https?:/i.test(href) ? `<a href="${esc(href)}" target="_blank" rel="noreferrer">${esc(text || href)}</a>` : esc(text)),
+} });
+const md = (text) => `<div class="md">${marked.parse(text)}</div>`;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -606,7 +627,7 @@ function taskCardHtml(t) {
   const canReply = t.status !== 'cancelled'; // while the task works, the reply waits for its current step
   return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.title)}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
     ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
-    ${t.thread.map((m) => `${m.user ? `<div class="msg user">${esc(m.user)}<time>to the task</time></div>` : ''}${noticesHtml(m.notices)}${m.text && !m.working ? `<div class="msg agent">${esc(m.text)}<time>task</time></div>` : ''}`).join('')}
+    ${t.thread.map((m) => `${m.user ? `<div class="msg user">${esc(m.user)}<time>to the task</time></div>` : ''}${noticesHtml(m.notices)}${m.text && !m.working ? `<div class="msg agent">${md(m.text)}<time>task</time></div>` : ''}`).join('')}
     ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="${active(t) ? 'Message the task (it gets it when the current step ends)' : 'Reply to continue the task'}" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
 }
 
@@ -624,7 +645,7 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
+    ${t.text ? `<div class="msg agent">${md(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
 let shown = '';
@@ -734,7 +755,7 @@ function runHtml(t, r, i, count, open, permissions) {
     ${last ? `<div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>` : ''}
     ${i === 0 && t.request ? `<h3>Request that started the task</h3><pre>${esc(t.request)}</pre>` : ''}
     <h3>${i ? 'Message that reused the task' : 'Starting prompt'}</h3><pre>${esc(r.request)}</pre>
-    ${r.result ? `<h3>Result</h3><pre>${esc(r.result)}</pre>` : ''}
+    ${r.result ? `<h3>Result</h3><div class="result">${md(r.result)}</div>` : ''}
   </details>`;
 }
 

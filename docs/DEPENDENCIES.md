@@ -36,6 +36,7 @@ The user assigns any agent to any role ([routing-001](features/model-routing/SPE
 |---|---|---|
 | `@modelcontextprotocol/sdk` | runtime | Workspace MCP server: the broker's scoped file and delegate tools |
 | `zod` | runtime | MCP tool input schemas |
+| `marked` (15.0.12, exact) | runtime | Markdown in chat replies and task results; raw HTML shown as text, only http(s)/mailto links |
 | `electron` | dev (desktop app) | Desktop window, native folder dialog; 44.8.0 tested on Windows 10. Downloads a ~100 MB binary on install (CI skips it with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`); npm 11 may skip that download, so the Windows launcher runs `node_modules/electron/install.js` when `electron.exe` is missing |
 | `typescript` | dev | `npm run typecheck` only; no build step |
 | `@types/node` | dev | Node typings for the typecheck |
