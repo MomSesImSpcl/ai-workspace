@@ -196,6 +196,9 @@
   .task-row:hover { background: var(--surface-2); }
   .task-row[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .task-list { display: grid; gap: 8px; }
+  .task-scope { margin-bottom: 16px; gap: 6px; }
+  .task-group { display: grid; gap: 8px; margin-bottom: 10px; }
+  .task-group > .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 11px; color: var(--text-dim); }
   .empty { color: var(--text-muted); font-size: 12px; padding: 14px 2px; }
@@ -340,7 +343,9 @@
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
         <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:24px">Background work for this project. A chat's agent starts tasks; their approval cards, replies and results appear in that chat. Here you see what each task is doing, and can cancel it. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <p class="lede" style="margin-bottom:16px">Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.</p>
+        <!-- Which tasks the list shows: the open chat's, or all of its project (or of all global sessions), grouped by chat. -->
+        <div class="row task-scope" role="group" aria-label="Tasks to show"><button class="btn small" data-scope="session" type="button">This session</button><button class="btn small" data-scope="all" type="button" id="scope-all"></button></div>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -423,7 +428,10 @@ const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span titl
 const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (reply to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';
-const projectTasks = () => state.tasks.filter((t) => t.projectId === state.project && !t.task.parentId);
+// The open chat decides the scope: its project, or all global sessions for a global chat (they never mix).
+const globalScope = () => (state.session ? isGlobal(allSessions().find((x) => x.id === state.session) ?? {}) : state.newGlobal);
+const scopeTasks = () => state.tasks.filter((t) => t.projectId === (globalScope() ? '' : state.project) && !t.task.parentId);
+const sessionTasks = () => scopeTasks().filter((t) => state.session && t.task.sessionId === state.session);
 const current = () => state.projects.find((p) => p.id === state.project);
 
 function setPage(page) {
@@ -466,10 +474,14 @@ function renderShell() {
   $('#crumb').disabled = !p || !window.desktop;
   const chat = state.roles.Chat;
   $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
-  const running = state.tasks.filter(active).length;
+  // Top right: the whole project (or all global sessions); under the chat: only the open chat's tasks.
+  const running = scopeTasks().filter(active).length;
   $('#running-pill').innerHTML = `<span class="dot s-running"></span>${running} running`;
-  const mine = projectTasks();
-  $('#foot-status').innerHTML = p ? `<span class="dot s-running"></span> ${mine.filter(active).length} running · ${mine.length} tasks` : '';
+  $('#running-pill').title = globalScope() ? 'Running in all global sessions' : 'Running in this project';
+  // Any task anywhere waiting for an approval makes the taskbar button blink (desktop app only).
+  window.desktop?.attention?.(state.tasks.some((t) => t.status === 'waiting'));
+  const mine = sessionTasks();
+  $('#foot-status').innerHTML = state.session ? `<span class="dot s-running"></span> ${mine.filter(active).length} running · ${mine.length} task${mine.length === 1 ? '' : 's'} in this session` : '';
 }
 
 function renderProjects() {
@@ -718,9 +730,25 @@ async function sessionAction(act, body = {}, id = state.session) {
   render();
 }
 
+// All tasks of the scope, under the title of the chat that started them; the open chat's group first.
+function groupedTasks() {
+  const groups = new Map();
+  for (const t of scopeTasks()) {
+    const key = t.task.sessionId ?? '';
+    if (!groups.has(key)) groups.set(key, { title: t.session?.title ?? (key ? 'Deleted session' : 'Started outside a chat (CLI)'), tasks: [] });
+    groups.get(key).tasks.push(t);
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === state.session ? -1 : b === state.session ? 1 : 0));
+  return order.map((k) => `<div class="task-group"><div class="eyebrow" title="${esc(groups.get(k).title)}">${esc(groups.get(k).title)}</div>${groups.get(k).tasks.map(row).join('')}</div>`).join('') || '<p class="empty">No tasks yet.</p>';
+}
+
 async function renderTasks() {
-  $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
-  setHtml($('#tasks'), projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>');
+  const global = globalScope();
+  const scope = pref.get('taskScope', 'session');
+  $('#tasks-eyebrow').textContent = global ? 'Global sessions' : `Project / ${state.project ?? '—'}`;
+  $('#scope-all').textContent = global ? 'All global sessions' : 'Whole project';
+  for (const b of $$('[data-scope]')) b.classList.toggle('primary', b.dataset.scope === scope);
+  setHtml($('#tasks'), scope === 'session' ? sessionTasks().map(row).join('') || `<p class="empty">${state.session ? 'No tasks in this session yet.' : 'Open a chat to see its tasks.'}</p>` : groupedTasks(), `${scope}:${state.session}`);
   if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>', null);
   const id = state.selected;
   const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${id}`);
@@ -897,6 +925,7 @@ async function capChanged() {
   await sessionAction('cap', { taskCap: cap ?? null });
 }
 $('#cap-on').onchange = capChanged;
+for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
 $('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
 $('#mode-menu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-mode]'); if (b) pickMode(b.dataset.mode); };
 $('#mode-menu').onkeydown = (e) => {

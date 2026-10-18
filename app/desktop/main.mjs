@@ -62,6 +62,8 @@ function createWindow(url) {
   if (process.platform === 'win32') win.setAppDetails({ appId: appUserModelId, relaunchCommand: `"${process.execPath}" "${appDir}"`, relaunchDisplayName: 'AI Workspace' });
   if (saved.maximized) win.maximize();
   win.on('close', () => saveBounds(win));
+  win.on('focus', () => win.flashFrame(false));
+  win.on('blur', () => wantsAttention && win.flashFrame(true));
   win.loadURL(`${url}?platform=${process.platform}`);
   return win;
 }
@@ -91,6 +93,13 @@ ipcMain.handle('open-folder', (_event, path) => {
 });
 
 // Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
+// The taskbar button blinks while a task waits for the user's approval and the window is not in front.
+let wantsAttention = false;
+ipcMain.on('attention', (_e, on) => {
+  wantsAttention = on;
+  if (mainWindow) mainWindow.flashFrame(on && !mainWindow.isFocused());
+});
+
 ipcMain.handle('restart', () => {
   log('restart requested');
   app.releaseSingleInstanceLock(); // the new instance must not find the lock still held
