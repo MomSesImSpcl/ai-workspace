@@ -41,7 +41,8 @@ const outsideRoot = (root: string, p: string) => {
   return r.startsWith('..') || isAbsolute(r);
 };
 const rel = (root: string, p: string) => (outsideRoot(root, p) ? p : relative(root, resolve(root, p)).replaceAll('\\', '/'));
-const short = (s: string, n = 80) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+// Long enough to show in full on hover; the page cuts each step to one line.
+const short = (s: string, n = 400) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 // A readable label for one tool call, for the live activity list (sessions-007).
 export function activityLabel(name: string, input: Record<string, unknown>, root: string): { label: string; outside?: boolean } {

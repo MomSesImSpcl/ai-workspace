@@ -133,6 +133,7 @@
   .mode-menu button span:first-child { display: grid; gap: 1px; }
   .mode-menu small { color: var(--text-muted); font-size: 11px; }
   details.run { margin-bottom: 10px; }
+  .steps li, .turn-activity li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* one line per step; full text on hover */
   details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
   details.run > summary::-webkit-details-marker { display: none; }
   details.run > summary::after { content: '▾'; margin-left: auto; font-size: 16px; line-height: 1; color: var(--text); transition: transform .15s; }
@@ -571,7 +572,7 @@ function renderSessions() {
 }
 
 function activityList(t) {
-  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
+  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
   const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
   return `<ol>${items}${answered}</ol>`;
 }
@@ -716,7 +717,7 @@ function runHtml(t, r, i, count, open, permissions) {
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       ${last && t.current ? `<dt>Working on</dt><dd>${code(t.current)}</dd>` : ''}
-      <dt>Progress</dt><dd><details class="steps" data-steps="${esc(t.id)}:${r.n}" ${state.openSteps?.has(`${t.id}:${r.n}`) ? 'open' : ''}><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
+      <dt>Progress</dt><dd><details class="steps" data-steps="${esc(t.id)}:${r.n}" ${state.openSteps?.has(`${t.id}:${r.n}`) ? 'open' : ''}><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
       <dt>Started</dt><dd>${when}</dd>
       <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
