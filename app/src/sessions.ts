@@ -203,9 +203,10 @@ export function sessionRoot(s: Pick<Session, 'projectId'>): string {
 const inDirs = (dirs: string[]) => dirs.filter((d) => existsSync(d)).flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))));
 
 // Every session and task in storage.
-// One page refresh asks for it many times (each chat's tasks, each task's subtasks), so it is kept for half a
-// second; a write in this process clears it at once, other processes' writes show on the next refresh.
+// One page request asks for it many times (each chat's tasks, each task's subtasks), so it is built once per
+// request (forgetSessionList); elsewhere it is kept for half a second. A write in this process clears it at once.
 let listed: { at: number; sessions: Session[] } | undefined;
+export const forgetSessionList = () => { listed = undefined; };
 export const allSessions = (): Session[] => {
   if (!listed || Date.now() - listed.at > 500) listed = { at: Date.now(), sessions: inDirs(storageDirs('sessions')) };
   return listed.sessions.map((x) => structuredClone(x));

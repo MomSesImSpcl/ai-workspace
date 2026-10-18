@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, addUsage, GLOBAL, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, addUsage, forgetSessionList, GLOBAL, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -251,6 +251,7 @@ export function serve(port: number): Server {
     const host = req.headers.host ?? '';
     const send = (code: number, type: string, data: string) => res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }).end(data);
     try {
+      forgetSessionList(); // each request sees other processes' changes at once
       const { port: actual } = server.address() as { port: number };
       if (host !== `127.0.0.1:${actual}` && host !== `localhost:${actual}`) throw new HttpError(403, 'bad host');
       if (req.method !== 'GET' && req.headers.origin !== `http://${host}`) throw new HttpError(403, 'bad origin');
