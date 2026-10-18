@@ -100,6 +100,8 @@
   .turn-activity ol { margin: 4px 0 0; padding-left: 18px; }
   .turn-activity li.err { color: var(--red); }
   .turn-activity li.run::marker { color: var(--blue); }
+  .steps li.run { color: var(--blue); } /* the step being worked on */
+  .steps li.err { color: var(--red); }
   .marker { margin-top: 4px; color: var(--amber); font-weight: 600; }
   .approval { align-self: stretch; padding: 10px 12px; border: 1px solid var(--accent-edge); border-radius: 10px; background: var(--accent-dim); display: grid; gap: 6px; }
   .approval code, .turn-activity code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
@@ -703,6 +705,14 @@ async function renderTasks() {
     + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''), t.id);
 }
 
+// The run's steps as a foldout; the step being worked on is blue. Without steps there is nothing to unfold.
+function stepsHtml(t, r) {
+  const head = `${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}`;
+  if (!r.steps.length) return head;
+  const key = `${t.id}:${r.n}`;
+  return `<details class="steps" data-steps="${esc(key)}" ${state.openSteps?.has(key) ? 'open' : ''}><summary>${head}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}</li>`).join('')}</ol></details>`;
+}
+
 const RUN_LABELS = { done: 'completed', error: 'failed', stopped: 'paused', interrupted: 'interrupted', working: 'running' };
 // One run of a task as a detail bubble. Its layout lives only here; a closed bubble shows one summary line.
 function runHtml(t, r, i, count, open, permissions) {
@@ -716,8 +726,7 @@ function runHtml(t, r, i, count, open, permissions) {
       <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
-      ${last && t.current ? `<dt>Working on</dt><dd>${code(t.current)}</dd>` : ''}
-      <dt>Progress</dt><dd><details class="steps" data-steps="${esc(t.id)}:${r.n}" ${state.openSteps?.has(`${t.id}:${r.n}`) ? 'open' : ''}><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
+      <dt>Progress</dt><dd>${stepsHtml(t, r)}</dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
       <dt>Started</dt><dd>${when}</dd>
       <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
