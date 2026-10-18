@@ -25,6 +25,12 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - [self-development](features/self-development/SPEC.md) selfdev-001–006
 - [version-control](features/version-control/SPEC.md) vcs-002 (status and changes), vcs-003 (commit), vcs-004 (sync), vcs-006 (branches), vcs-008 (safety)
 - [sessions](features/sessions/SPEC.md) sessions-017 (project defaults for agent, model and effort), sessions-021 (turn-start project state)
+- Lean orchestrator and tasks (added 2026-10-18 by the user, to cut token use, also while testing):
+  - First measure what the orchestrator and a task load today by default: rule files, plugins, skills, MCP servers, tools, and their tokens per call, for Claude Code and Codex.
+  - [onboarding](features/onboarding/SPEC.md) onboarding-010 (agent setup inventory).
+  - [ai-orchestrator](features/ai-orchestrator/SPEC.md) orchestrator-005: tasks start from a clean slate with only the items the orchestrator picks.
+  - The orchestrator itself runs as lean as possible. This decides orchestrator-005's open question for orchestrator chats; plain Chat sessions keep their full setup.
+  - It also closes [#16](https://github.com/MomSesImSpcl/ai-workspace/issues/16), since the orchestrator no longer loads the user's MCP servers that can write.
 - Codex in sessions through `codex app-server` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)), so Codex supports the same flow as Claude Code
 - Already built and reused: sessions-001–008, 010, 018, 019 (session, live activity, Stop, approvals)
 
@@ -34,6 +40,8 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - [ui-verification](features/ui-verification/SPEC.md) uiverify-001–004, 007: evidence for UI changes before merge
 - sessions-011–013 (replies and tasks continue after the window closes)
 - vcs-005 (history), vcs-007 (a conflict view in the workspace; for M1 the agent resolves conflicts)
+
+**Decision (2026-10-18):** lean orchestrator and tasks are part of M1, so later M1 work and its tests cost fewer tokens.
 
 **Decisions (2026-10-17):** merge conflicts go to the session's agent, no own conflict view for M1; the fallback start of the previous version (selfdev-006) is required, so a broken merge never leaves the user without a working workspace; both Claude Code and Codex must complete the flow.
 
