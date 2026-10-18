@@ -147,7 +147,9 @@
   .md blockquote { border-left: 3px solid var(--hairline-strong); padding-left: 10px; color: var(--text-dim); }
   .md a { color: var(--blue); }
   .msg.agent { white-space: normal; }
-  .msg.turn-start:not(:first-child) { margin-top: 18px; } /* a new request stands apart from the previous reply */
+  /* One block per request with everything it caused: tight inside, clear space between requests. */
+  .messages { gap: 26px; }
+  .turn { display: flex; flex-direction: column; gap: 6px; }
   details.run { margin-bottom: 10px; padding: 10px 14px; }
   .steps li, .turn-activity li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style-position: inside; } /* one line per step; full text on hover */
   details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -719,7 +721,7 @@ function renderChat() {
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
-  setHtml(box, d?.turns.map((t) => turnHtml(t, d.tasks, lastTurnOf)).join('')
+  setHtml(box, d?.turns.map((t) => `<div class="turn">${turnHtml(t, d.tasks, lastTurnOf)}</div>`).join('')
     || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`, state.session);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
