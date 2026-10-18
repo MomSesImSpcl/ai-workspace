@@ -9,7 +9,7 @@ Status: accepted (2026-10-18, chosen by the user); implemented 2026-10-18 ([hist
 - When a request is too vague to start, the orchestrator asks first. The rule it follows must be clear enough that this is rare.
 - The orchestrator chooses each task's agent, model and effort level and shows its choice with a short reason; the user may override it.
 - Tasks run uncapped by default. A token cap is set only when the user asks for one: through a switch next to the chat box, or by accepting the orchestrator's suggestion. Details are decided when it is built.
-- A separate chat mode for talking and planning without starting tasks is planned and not yet specified.
+- A separate chat mode for talking and planning without starting tasks is specified as Plan Mode ([orchestrator-007](../../features/ai-orchestrator/SPEC.md#independently-selectable-roles)), not built.
 
 ## Implementation decisions (2026-10-18, with the user)
 
