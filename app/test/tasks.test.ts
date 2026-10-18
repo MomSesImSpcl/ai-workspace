@@ -178,7 +178,7 @@ test('delegate runs a subtask under a role, charges the parent, reuses it for th
 test('a chat starts a task: the task records the chat, which shows it with its approvals and result, and takes replies', async () => {
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(chat.id, 'please start one');
-  const t = startFromSession(chat.id, { goal: 'background goal', role: 'Implementation', tokenBudget: 5000 });
+  const t = startFromSession(chat.id, { goal: 'background goal', role: 'Implementation', tokenBudget: 5000, setup: ['tool:Read'] });
   assert.equal(t.task!.sessionId, chat.id);
   assert.deepEqual(last(chat.id).tasks, [t.id]);
   startPendingTasks(chat.id); // the chat's runner does this while its turn runs
@@ -211,7 +211,7 @@ test('the workspace MCP server offers start_task to a chat session and delegate 
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
   assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'rename_task', 'reply_task', 'start_task', 'task_status']);
-  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate']);
+  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate', 'request_setup']); // a command-line task gets every allowed item
 });
 
 test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
@@ -270,20 +270,37 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   assert.equal(flag(args, '--setting-sources'), 'project,local');
   assert.ok(args.includes('--disable-slash-commands') === false); // no standalone skills listed in this test's Claude home
   assert.match(flag(args, '--append-system-prompt')!, /workspace's own rules[\s\S]*be kind/);
-  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.map((i) => i.id), ['plugin:demo@market', 'mcp:claude.ai github']);
+  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.slice(0, 3).map((i) => i.id), ['plugin:demo@market', 'mcp:claude.ai github', 'tool:Read']);
   // A task: an item the orchestrator decides loads only when picked; an always-on item always; global rules per role.
   setItemState('Implementation', 'claude-code', 'plugin:demo@market', 'on');
   setGlobalRules('Implementation', true);
-  const plain = task('args');
+  const plain = createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['tool:Read'] });
   args = await argsOf(plain.id);
   assert.match(flag(args, '--disallowedTools')!, /mcp__claude_ai_github/);
+  assert.equal(flag(args, '--tools'), 'Read'); // only the picked built-in tool
+  assert.match(flag(args, '--system-prompt')!, /^You are a coding agent/); // its own system prompt is an item too
   assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins, undefined);
   assert.equal(flag(args, '--setting-sources'), undefined);
-  const picked = createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['mcp:claude.ai github'] });
+  const picked = createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['mcp:claude.ai github', 'tool:Read'] });
   args = await argsOf(picked.id);
   assert.equal(flag(args, '--disallowedTools'), undefined);
   assert.ok(JSON.parse(flag(args, '--settings')!).hooks.PreToolUse.length); // the workspace's repeat hook stays
   assert.throws(() => setItemState('Chat', 'claude-code', 'x', 'on'), /Unknown role/);
+  // A chat's task with no built-in tool is refused; a running task asks for what it misses and continues with it.
+  const { startFromSession: start, requestSetup } = await import('../src/tasks.ts');
+  assert.throws(() => start(orch.id, { goal: 'x', role: 'Implementation' }), /No built-in tool picked/);
+  const lacking = start(orch.id, { goal: 'args', role: 'Implementation', setup: ['tool:Read'] });
+  await runTurn(lacking.id);
+  assert.throws(() => requestSetup(lacking.id, ['tool:Nope'], 'x'), /Unknown setup items/);
+  setItemState('Implementation', 'claude-code', 'tool:Bash', 'off');
+  assert.throws(() => requestSetup(lacking.id, ['tool:Bash'], 'x'), /switched these off/);
+  assert.match(requestSetup(lacking.id, ['tool:Edit'], 'needs to change a file'), /End your turn/);
+  assert.ok(readEvents(lacking.id).some((e) => e.type === 'notice' && /Asked for Edit: needs to change a file/.test(e.text)));
+  assert.ok(readEvents(orch.id).some((e) => e.type === 'relay' && /Asked for Edit/.test(e.text))); // shown in the chat too
+  await runTurn(lacking.id);
+  assert.match(turns(readEvents(lacking.id), false).at(-1)!.user, /The workspace enabled tool:Edit/);
+  assert.match(last(lacking.id).text, /^turn 1 /); // a new process, started with the added item
+  assert.deepEqual(loadSession(lacking.id).task!.setup, ['tool:Read', 'tool:Edit']);
   // Codex: plugins off per turn, MCP servers, apps, standalone skills and hooks off in the thread config.
   const cx = createSession('P', 'Orchestration', { integration: 'codex' });
   addMessage(cx.id, 'args');
@@ -324,7 +341,7 @@ test('pause interrupts a task and keeps its conversation; resume continues it an
 test('reply_task queues for a running task of this chat; a finished one gets a new task based on it', async () => {
   const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
   addMessage(chat.id, 'go');
-  const t = startFromSession(chat.id, { goal: 'first delay', role: 'Implementation' });
+  const t = startFromSession(chat.id, { goal: 'first delay', role: 'Implementation', setup: ['tool:Read'] });
   assert.equal(t.permissionMode, 'acceptEdits'); // a chat's tasks edit without asking unless it picks a mode
   startPendingTasks(chat.id);
   await until(() => sessionWorking(t.id));
@@ -339,7 +356,7 @@ test('reply_task queues for a running task of this chat; a finished one gets a n
   const next = startFromSession(chat.id, { goal: 'same again', role: 'Implementation', basedOn: t.id });
   assert.match(turns(readEvents(next.id), false)[0]!.user, /^same again\n\nContext from an earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2/);
   saveSession({ ...loadSession(chat.id), taskMode: '' });
-  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation' }).permissionMode, undefined);
+  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation', setup: ['tool:Read'] }).permissionMode, undefined);
 });
 
 test('ui API: a chat cap is set and cleared, pause and resume a task, a changed agent is marked as overridden', async () => {
@@ -381,7 +398,7 @@ test('a reply typed under a task goes to it directly; the chat records it and it
     const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
     addMessage(chat.id, 'go');
     emit(chat.id, 1, { type: 'done' });
-    const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation' });
+    const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation', setup: ['tool:Read'] });
     await runTurn(t.id);
     const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'make it red' }) });
     assert.equal(r.status, 200);

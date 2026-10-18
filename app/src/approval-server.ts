@@ -9,8 +9,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
-import { decidable } from './setup.ts';
-import { delegate, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
+import { decidable, getAgentSetup, itemOn } from './setup.ts';
+import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
@@ -36,8 +36,24 @@ server.registerTool(
   },
 );
 
-const task = loadSession(sessionId).task;
-if (task && !task.parentId) {
+const session = loadSession(sessionId);
+const task = session.task;
+if (task) {
+  // A task that finds an item missing asks for it and continues with it (orchestrator-005).
+  const ids = (getAgentSetup().inventory?.[session.integration] ?? []).map((i) => i.id);
+  server.registerTool(
+    'request_setup',
+    {
+      description: `Asks the workspace to enable built-in tools or setup items this task is missing, then continues the task with them in a new process. End your turn right after calling it. Ids: ${ids.join(', ')}`,
+      inputSchema: { items: z.array(z.string()), reason: z.string().describe('One line: why the task needs them') },
+    },
+    async (a) => {
+      try { return { content: [{ type: 'text' as const, text: requestSetup(sessionId, a.items, a.reason) }] }; }
+      catch (e) { return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true }; }
+    },
+  );
+}
+if (task && !task.parentId && itemOn(session, 'delegate')) {
   server.registerTool(
     'delegate',
     {

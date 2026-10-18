@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
@@ -59,6 +59,14 @@ function approvalCard(method: string, p: Record<string, unknown>): { tool: strin
   return { tool: 'Permissions', detail: String(p.reason ?? JSON.stringify(p.permissions)).slice(0, 400) };
 }
 
+// Codex built-in parts that can be switched off for one run (codex-cli 0.163.0, measured on a task call).
+const CODEX_FEATURES = [
+  ['memories', 'Memories', 'What Codex remembers across sessions, about 3.8k tokens per call'],
+  ['shell_tool', 'Shell tool', 'The classic shell tool; commands still run through exec'],
+  ['goals', 'Goals', 'Goal tracking tools'],
+  ['image_generation', 'Image generation', 'Generate images'],
+];
+
 export class CodexProcess implements AgentProcess {
   private child?: ChildProcessWithoutNullStreams;
   private next = 0;
@@ -74,6 +82,7 @@ export class CodexProcess implements AgentProcess {
   readonly model?: string;
   readonly effort?: string;
   readonly permissionMode?: string;
+  readonly setup?: string;
 
   private session: Session;
   private root: string;
@@ -84,6 +93,7 @@ export class CodexProcess implements AgentProcess {
     this.model = session.model;
     this.effort = session.effort;
     this.permissionMode = session.permissionMode;
+    this.setup = session.task?.setup?.join(',');
   }
 
   private start(): void {
@@ -151,6 +161,10 @@ export class CodexProcess implements AgentProcess {
     const skills = data.flatMap((d) => d.skills).filter((k) => k.enabled !== false && !k.pluginId);
     if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}` });
     if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json' });
+    // Built-in parts with a feature switch; editing (apply_patch) and command execution always stay.
+    for (const [flag, title, description] of CODEX_FEATURES) items.push({ id: `feature:${flag}`, kind: 'feature', title, description });
+    items.push(DELEGATE);
+    items.push({ id: 'prompt', kind: 'prompt', title: "Codex's own instructions", description: 'Its base prompt: coding conventions, editing and sandbox guidance, answer format. Off: a short workspace prompt, about 4k tokens less per call' });
     return { items, skillPaths: skills.map((k) => k.path) };
   }
 
@@ -162,7 +176,7 @@ export class CodexProcess implements AgentProcess {
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.`;
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}`;
     } else if (task) {
       params.developerInstructions = `AI Workspace task: ${TASK_NOTE}`;
     } else if (!task) {
@@ -188,6 +202,8 @@ export class CodexProcess implements AgentProcess {
         else if (i.kind === 'apps') config['features.apps'] = false;
         else if (i.kind === 'skills') config['skills.config'] = skillPaths.map((path) => ({ path, enabled: false }));
         else if (i.kind === 'hooks') config['features.codex_hooks'] = false;
+        else if (i.kind === 'feature') config[`features.${i.id.slice('feature:'.length)}`] = false;
+        else if (i.kind === 'prompt') params.baseInstructions = minimalPrompt(this.root);
       }
       if (setup.workspaceRules) params.developerInstructions = `${params.developerInstructions ?? ''}\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}`;
     }

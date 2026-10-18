@@ -7,6 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { assignmentFor } from './roles.ts';
 import { addMessage, addUsage, allSessions, createSession, emit, loadSession, queueReply, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
+import { checkRequest, setupRole, toolsFor } from './setup.ts';
 import { agentChoice, pending, sessionAgent, startTurn } from './turn.ts';
 
 export type TaskStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'interrupted' | 'cancelled';
@@ -42,9 +43,11 @@ export function createTask(f: NewTask): Session {
   const { integration, model, effort } = agentChoice({ integration: f.agent, model: f.model, effort: f.effort }, assignmentFor(f.role));
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
+  // A chat's task without a built-in tool could only talk: the orchestrator must pick them (orchestrator-005).
+  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(`No built-in tool picked for this ${integration} task: pass in setup the tools the goal needs (tool:… ids from list_agents)`);
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
-  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn, setup: f.setup?.length ? f.setup : undefined };
+  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn, setup: f.setup };
   const offers = (m?: string) => !!m && !!agent.catalog().modes?.some((x) => x.id === m);
   s.permissionMode = f.permissionMode || (offers(f.defaultMode) ? f.defaultMode : undefined);
   saveSession(s);
@@ -61,7 +64,9 @@ export function createTask(f: NewTask): Session {
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
-  const t = createTask({ ...f, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
+  // A task based on an earlier one keeps that one's setup items.
+  const setup = [...new Set([...(f.basedOn ? loadSession(f.basedOn).task?.setup ?? [] : []), ...(f.setup ?? [])])];
+  const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
@@ -107,6 +112,20 @@ export function replyTask(id: string, text: string): Session {
 // The reply field under a task goes to the task directly (option 2, chosen 2026-10-18 to test): the chat
 // records it, so the orchestrator hears it with the next message and the card moves to the latest turn.
 // Option 1, sending it through the orchestrator, stays open (ADR 0011).
+// A task's request_setup (orchestrator-005): the items are added at once, shown in the task and its chat, and
+// the host continues the task with them once this turn ends.
+export function requestSetup(id: string, ids: string[], reason: string): string {
+  const s = taskOf(id);
+  const items = checkRequest(s.integration, setupRole(s), ids);
+  s.task.setup = [...new Set([...(s.task.setup ?? []), ...ids])];
+  s.task.setupAdded = [...new Set([...(s.task.setupAdded ?? []), ...ids])];
+  saveSession(s);
+  const text = `Asked for ${items.map((i) => i.title).join(', ')}: ${reason}. The workspace restarts the agent with them and continues.`;
+  emit(id, turns(readEvents(id), true).at(-1)?.n ?? 0, { type: 'notice', text });
+  relayToChat(s, text);
+  return `Enabled ${ids.join(', ')}. End your turn now in one line; the workspace continues the task with them.`;
+}
+
 export function relayToChat(task: Session, text: string): void {
   const chatId = task.task?.sessionId;
   if (!chatId) return;
@@ -117,7 +136,7 @@ export function relayToChat(task: Session, text: string): void {
 
 // What a new task learns from an earlier related one (orchestrator-006): its goal and final reply, not its
 // whole conversation, so it skips rediscovering the earlier work.
-// shortcut: carries text only; add the tools the earlier task used once tasks run lean (orchestrator-005).
+// Its setup items carry over in startFromSession.
 function handoff(projectId: string, id: string): string {
   const earlier = loadSession(id);
   if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
@@ -181,7 +200,7 @@ export async function delegate(parentId: string, goal: string, role = 'Implement
   if (child?.task?.cancelled) throw new Error(`Subtask ${child.id} was cancelled`);
   if (!child) {
     const { integration } = assignmentFor(role);
-    child = createTask({ projectId: parent.projectId, goal, role, tokenBudget: remaining, permissionMode: integration === parent.integration ? parent.permissionMode : undefined, parentId });
+    child = createTask({ projectId: parent.projectId, goal, role, tokenBudget: remaining, permissionMode: integration === parent.integration ? parent.permissionMode : undefined, parentId, setup: integration === parent.integration ? parent.task.setup : undefined });
     audit({ kind: 'delegate', taskId: parentId, childId: child.id, role, integration });
   } else if (lastTurn(child.id)?.state === 'done') {
     return `subtask ${child.id} completed\n${lastTurn(child.id)!.text}`;

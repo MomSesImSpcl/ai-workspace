@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
@@ -123,6 +123,16 @@ function claudeCommand(): [string, string[]] {
 // MCP servers the user added for every project (`claude mcp add --scope user`); they load with the user source.
 const userMcpServers = () => readJsonFile<{ mcpServers?: Record<string, unknown> }>(process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : join(homedir(), '.claude.json'))?.mcpServers ?? {};
 
+// Claude Code's built-in tools that a background task can use (2.1.301). shortcut: a fixed list, since only a
+// model run reports them; tools Claude Code adds later are not offered until they are added here.
+const CLAUDE_TOOLS: Record<string, string> = {
+  Read: 'Read a file', Write: 'Create or overwrite a file', Edit: 'Change part of a file', Glob: 'Find files by name pattern', Grep: 'Search file contents',
+  Bash: 'Run shell commands: builds, tests, git, scripts', PowerShell: 'Run PowerShell commands on Windows', NotebookEdit: 'Edit Jupyter notebooks',
+  WebFetch: 'Fetch a web page', WebSearch: 'Search the web', Task: 'Start a subagent for a self-contained part', Skill: 'Run a skill',
+  ToolSearch: 'Load deferred tools', Monitor: 'Watch a long-running command', TaskStop: 'Stop a background command',
+  EnterWorktree: 'Work in a git worktree', ExitWorktree: 'Leave a git worktree',
+};
+
 // What Claude Code loads besides its own prompt and tools (onboarding-010), read from its own CLI without a model
 // call: enabled plugins, MCP servers including claude.ai connectors, standalone skills as one item, the user's hooks.
 export function claudeInventory(root: string): SetupItem[] {
@@ -143,6 +153,9 @@ export function claudeInventory(root: string): SetupItem[] {
   let skills: string[] = [];
   try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
   if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}` });
+  for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
+  items.push(DELEGATE);
+  items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
   const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
   if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}` });
   return items;
@@ -189,6 +202,7 @@ export class ClaudeProcess implements AgentProcess {
   readonly effort?: string; // what this process was started with; a change needs a new process
   readonly model?: string;
   readonly permissionMode?: string;
+  readonly setup?: string;
   sessionId?: string;
 
   private session: Session;
@@ -200,6 +214,7 @@ export class ClaudeProcess implements AgentProcess {
     this.effort = session.effort;
     this.model = session.model;
     this.permissionMode = session.permissionMode;
+    this.setup = session.task?.setup?.join(',');
   }
 
   get alive() {
@@ -211,6 +226,7 @@ export class ClaudeProcess implements AgentProcess {
     const mcpServers: Record<string, unknown> = { aiws: { command: process.execPath, args: [workspaceServer, session.id], env: { AI_WORKSPACE_HOME: home() } } };
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'mcp__aiws__approve'];
     const disallowed: string[] = [];
+    const tools: string[] = session.role === ORCHESTRATION && !session.task ? ['Read', 'Glob', 'Grep'] : [];
     let settings: ClaudeSettings = {};
     if (this.model) args.push('--model', this.model);
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
@@ -226,6 +242,9 @@ export class ClaudeProcess implements AgentProcess {
         settings = readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json')) ?? {};
         Object.assign(mcpServers, userMcpServers());
       }
+      tools.push(...setup.items.filter((i) => i.kind === 'tool' && setup.on(i)).map((i) => i.title));
+      // Without its own system prompt the agent gets a short one (about 3k tokens less per call).
+      if (setup.items.some((i) => i.kind === 'prompt' && !setup.on(i))) args.push('--system-prompt', minimalPrompt(this.root));
       for (const i of setup.items.filter((i) => !setup.on(i))) {
         if (i.kind === 'plugin') settings.enabledPlugins = { ...settings.enabledPlugins, [i.id.slice('plugin:'.length)]: false };
         else if (i.kind === 'mcp') { disallowed.push(`mcp__${i.title.replace(/[^\w-]/g, '_')}`); delete mcpServers[i.title]; }
@@ -235,21 +254,22 @@ export class ClaudeProcess implements AgentProcess {
     }
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
-      if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
+      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : 'mcp__aiws__delegate,mcp__aiws__request_setup');
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: '*', hooks: [hook] }] };
     } else if (session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006). The unused
-      // built-in tools cost about 24k prompt tokens per call, so it gets only the reading ones.
-      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','), '--tools', 'Read,Glob,Grep');
+      // built-in tools cost about 24k prompt tokens per call, so it gets only the reading ones (`tools`).
+      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','));
       disallowed.push('Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit');
     } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    if (setup) args.push('--tools', [...new Set(tools)].join(',')); // '' leaves the agent no built-in tool
     args.push('--mcp-config', JSON.stringify({ mcpServers }));
     if (disallowed.length) args.push('--disallowedTools', disallowed.join(','));
     if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
@@ -390,6 +410,7 @@ class ClaudeAgent implements AgentProcess {
   get model() { return this.proc.model; }
   get effort() { return this.proc.effort; }
   get permissionMode() { return this.proc.permissionMode; }
+  get setup() { return this.proc.setup; }
   async turn(input: TurnInput): Promise<TurnEnd> {
     const r = await this.proc.turn(input);
     if (!r.staleHint) return r;

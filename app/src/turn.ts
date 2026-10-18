@@ -120,7 +120,17 @@ function sendQueued(id: string): void {
 }
 
 // A process is started with its model, effort and permission mode; a change restarts it, resuming the conversation.
-const outdated = (proc: AgentProcess, s: Session) => proc.effort !== s.effort || proc.model !== s.model || proc.permissionMode !== s.permissionMode;
+const outdated = (proc: AgentProcess, s: Session) => proc.effort !== s.effort || proc.model !== s.model || proc.permissionMode !== s.permissionMode || proc.setup !== s.task?.setup?.join(',');
+
+// Items a task asked for with request_setup: its next message continues it with them, in a new process.
+function continueWithSetup(id: string): void {
+  const s = loadSession(id);
+  const added = s.task?.setupAdded;
+  if (!added?.length || s.task!.cancelled || !['done', 'error'].includes(turns(readEvents(id), true).at(-1)?.state ?? '')) return;
+  s.task!.setupAdded = undefined;
+  saveSession(s);
+  addMessage(id, `The workspace enabled ${added.join(', ')}. Continue the task.`);
+}
 
 // Keeps one agent process for the session and feeds it each new message, so plugins and hooks keep their
 // state between turns (issue #15). Ends after idleMs() without a message (at once with `once`), or when
@@ -133,6 +143,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
     closeOrphanedTurn(id);
     let idleSince = Date.now();
     while (existsSync(sessionFile(id, '.json'))) {
+      continueWithSetup(id);
       sendQueued(id);
       if (pending(id)) {
         const session = loadSession(id);
