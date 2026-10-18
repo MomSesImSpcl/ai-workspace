@@ -90,15 +90,21 @@ ipcMain.handle('open-folder', (_event, path) => {
 
 // Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
 ipcMain.handle('restart', () => {
-  app.relaunch();
+  app.relaunch({ args: [...process.argv.slice(1).filter((a) => a !== RELAUNCHED), RELAUNCHED] });
   app.quit();
 });
 
 const appUserModelId = 'AIWorkspace.Desktop';
+const RELAUNCHED = '--relaunched';
 let mainWindow;
 
-// One window: a second launch focuses the open one.
-const primary = app.requestSingleInstanceLock();
+// One window: a second launch focuses the open one. A restarted instance can start before the old one has
+// let go of the lock, so it waits for it instead of quitting.
+let primary = app.requestSingleInstanceLock();
+for (let i = 0; !primary && process.argv.includes(RELAUNCHED) && i < 100; i++) {
+  await new Promise((r) => setTimeout(r, 100));
+  primary = app.requestSingleInstanceLock();
+}
 if (!primary) app.quit();
 app.on('second-instance', () => {
   if (!mainWindow) return;
