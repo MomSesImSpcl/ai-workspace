@@ -21,7 +21,7 @@ Costs grow with the total history and with the number of tasks per chat.
   - title, state, pending approvals, token totals, last activity, and the chat that started a task.
 
   A list request MUST NOT read event logs. A summary that is missing or older than its log MUST be rebuilt from the log; the log stays the source of truth.
-- **scale-003 — Recent turns first:** Opening a session MUST return only its most recent turns (a fixed number, for example 50) and the total count. The page MUST offer "load older", which fetches the previous block without moving what the user is reading. The task thread inside a chat follows the same rule.
+- **scale-003 — Recent turns first:** Opening a session MUST return only its most recent turns (a fixed number, for example 50) and the total count. The page MUST offer "load older", which fetches the previous block without moving what the user is reading. The task thread inside a chat follows the same rule. A remembered scroll position in older turns ([sessions-027](../sessions/SPEC.md)) loads the blocks it needs.
 - **scale-004 — Only what changed:** A refresh of an open session MUST transfer only events after the last one the page has (a cursor), not the whole history. Pushing events over a live connection instead of polling MAY replace this, if it keeps the same guarantees after a restart.
 - **scale-005 — Bounded memory:** The server's in-memory cache of parsed logs MUST have a size limit and drop the least recently used logs first. Dropped logs are read again when needed.
 - **scale-006 — Rendering:** The page MUST stay responsive with a long visible chat: rendering one refresh MUST NOT redo the work for unchanged turns. Showing only the visible turns MAY be added if measurement shows it is needed.
