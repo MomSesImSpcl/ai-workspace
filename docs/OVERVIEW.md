@@ -13,6 +13,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Chat sessions and project structure](features/sessions/SUMMARY.md)
 - [Version control in the workspace](features/version-control/SUMMARY.md)
 - [Agent setup onboarding and readiness in the UI](features/onboarding/SUMMARY.md)
+- [Prompt-cache awareness and cold-session cost control](features/prompt-cache/SUMMARY.md)
 - [Mobile capture and cross-device task control](features/mobile-client/SUMMARY.md)
 - [Task notifications and privacy-safe previews](features/notifications/SUMMARY.md)
 - [Secure local and remote execution runners](features/runners/SUMMARY.md)
