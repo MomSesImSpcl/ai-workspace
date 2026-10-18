@@ -147,6 +147,7 @@
   .md blockquote { border-left: 3px solid var(--hairline-strong); padding-left: 10px; color: var(--text-dim); }
   .md a { color: var(--blue); }
   .msg.agent { white-space: normal; }
+  .msg.turn-start:not(:first-child) { margin-top: 18px; } /* a new request stands apart from the previous reply */
   details.run { margin-bottom: 10px; padding: 10px 14px; }
   .steps li, .turn-activity li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style-position: inside; } /* one line per step; full text on hover */
   details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -681,7 +682,7 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
-  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
+  return `<div class="msg user turn-start">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
     ${t.text ? `<div class="msg agent">${md(t.text)}${used ? `<time title="${esc(breakdown(t.usage))}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
