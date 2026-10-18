@@ -246,6 +246,7 @@
   dl { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 14px; margin: 0; font-size: 12px; }
   dt { color: var(--text-muted); } dd { margin: 0; overflow-wrap: anywhere; }
   h3 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; margin: 22px 0 8px; }
+  .result { padding: 12px; background: var(--code); border: 1px solid var(--hairline); border-radius: 8px; overflow-wrap: anywhere; }
   pre { margin: 0; padding: 12px; background: var(--code); border: 1px solid var(--hairline); border-radius: 8px; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
   .error { color: var(--red); font-size: 12px; min-height: 1em; margin: 0; }
 
@@ -391,6 +392,12 @@
         <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
         <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
         <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
+        <!-- What orchestrator chats and tasks load (orchestrator-005, onboarding-010), switched for each run only. -->
+        <div style="display:grid;gap:6px;margin-top:18px"><b>Agent setup</b>
+          <p class="meta" style="margin:0">What orchestrator chats and tasks load. It is switched for each run only; your agents' own settings stay unchanged. <i>Always on</i>: every run of that role. <i>Orchestrator decides</i>: a task gets it when its goal needs it. <i>Off</i>: never. Applies from the next agent start.</p>
+          <div id="rule-switches" style="display:grid;gap:4px"></div>
+          <div class="row" style="align-items:center"><button class="btn small" id="list-setup" type="button">List again</button><span class="meta" id="setup-status" role="status"></span></div>
+          <div id="setup-items" style="display:grid;gap:10px"></div></div>
       </div>
     </aside>
 
@@ -832,6 +839,7 @@ function runHtml(t, r, i, count, open, permissions) {
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       <dt>Progress</dt><dd>${stepsHtml(t, r)}</dd>
+      ${t.loaded ? `<dt>Tools</dt><dd><details><summary>${t.loaded.length} enabled</summary>${t.loaded.length ? `<ul style="margin:4px 0 0;padding-left:18px">${t.loaded.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="meta">None</span>'}</details></dd>` : ''}
       <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
       <dt>Started</dt><dd>${when}</dd>
       <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
@@ -845,6 +853,7 @@ function runHtml(t, r, i, count, open, permissions) {
 
 function renderDrawer() {
   if (state.tool === 'settings') {
+    renderAgentSetup();
     if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
@@ -975,6 +984,32 @@ async function capChanged() {
   await sessionAction('cap', { taskCap: cap ?? null });
 }
 $('#cap-on').onchange = capChanged;
+// Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
+const ROLE_NAMES = { ArchitectureReasoning: 'Design', Orchestration: 'Orchestrator', Implementation: 'Implementation' };
+const STATE_NAMES = { on: 'Always on', decide: 'Orchestrator decides', off: 'Off' };
+function renderAgentSetup() {
+  const s = state.agentSetup;
+  if (!s) { if (!state.agentSetupLoading) { state.agentSetupLoading = true; api('/api/agent-setup').then((v) => { state.agentSetup = v; renderAgentSetup(); }, (e) => { $('#setup-status').textContent = e.message; }); } return; }
+  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label>`).join('')
+    + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
+  const agents = Object.entries(s.inventory);
+  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div><b>${esc(agent)}</b>
+    <table class="meta" style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr>
+    ${items.map((i) => `<tr><td title="${esc(i.description ?? '')}">${esc(i.title)}<br><span style="opacity:.8">${esc(i.description ?? '')}</span></td>${s.roles.map((r) => `<td><select aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([v, l]) => `<option value="${v}" ${s.states[r]?.[agent]?.[i.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}</tr>`).join('')}</table></div>`).join('')
+    : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
+}
+async function setupChange(body) {
+  try { state.agentSetup = await api('/api/agent-setup', body); $('#setup-status').textContent = 'Saved. Applies from the next agent start.'; }
+  catch (err) { $('#setup-status').textContent = err.message; }
+  renderAgentSetup();
+}
+$('#rule-switches').onchange = (e) => e.target.dataset.rules && setupChange({ role: e.target.dataset.rules, globalRules: e.target.checked });
+$('#setup-items').onchange = (e) => { const d = e.target.dataset; if (d.item) setupChange({ role: d.role, agent: d.agent, item: d.item, state: e.target.value }); };
+$('#list-setup').onclick = async () => {
+  $('#setup-status').textContent = 'Listing what each agent loads…';
+  try { state.agentSetup = await api('/api/agent-setup/list', {}); $('#setup-status').textContent = 'Listed.'; } catch (err) { $('#setup-status').textContent = err.message; }
+  renderAgentSetup();
+};
 $('#orch-rules').onchange = async () => {
   try { state.settings = await api('/api/settings', { orchestratorInstructions: $('#orch-rules').value }); $('#orch-rules-saved').textContent = 'Saved. Applies to orchestrator chats from their next agent start.'; }
   catch (err) { $('#orch-rules-saved').textContent = err.message; }

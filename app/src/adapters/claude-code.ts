@@ -1,9 +1,10 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
@@ -110,6 +111,55 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
 }
 
 const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+const readJsonFile = <T>(file: string): T | undefined => { try { return JSON.parse(readFileSync(file, 'utf8')) as T; } catch { return undefined; } };
+type ClaudeSettings = { enabledPlugins?: Record<string, boolean>; hooks?: Record<string, unknown[]> } & Record<string, unknown>;
+
+// CLAUDE_BIN may name a script (tests use a fake CLI), which runs with this Node.
+function claudeCommand(): [string, string[]] {
+  const bin = process.env.CLAUDE_BIN ?? 'claude';
+  return /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin]] : [bin, []];
+}
+
+// MCP servers the user added for every project (`claude mcp add --scope user`); they load with the user source.
+const userMcpServers = () => readJsonFile<{ mcpServers?: Record<string, unknown> }>(process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : join(homedir(), '.claude.json'))?.mcpServers ?? {};
+
+// Claude Code's built-in tools that a background task can use (2.1.301). shortcut: a fixed list, since only a
+// model run reports them; tools Claude Code adds later are not offered until they are added here.
+const CLAUDE_TOOLS: Record<string, string> = {
+  Read: 'Read a file', Write: 'Create or overwrite a file', Edit: 'Change part of a file', Glob: 'Find files by name pattern', Grep: 'Search file contents',
+  Bash: 'Run shell commands: builds, tests, git, scripts', PowerShell: 'Run PowerShell commands on Windows', NotebookEdit: 'Edit Jupyter notebooks',
+  WebFetch: 'Fetch a web page', WebSearch: 'Search the web', Task: 'Start a subagent for a self-contained part', Skill: 'Run a skill',
+  ToolSearch: 'Load deferred tools', Monitor: 'Watch a long-running command', TaskStop: 'Stop a background command',
+  EnterWorktree: 'Work in a git worktree', ExitWorktree: 'Leave a git worktree',
+};
+
+// What Claude Code loads besides its own prompt and tools (onboarding-010), read from its own CLI without a model
+// call: enabled plugins, MCP servers including claude.ai connectors, standalone skills as one item, the user's hooks.
+export function claudeInventory(root: string): SetupItem[] {
+  const [cmd, pre] = claudeCommand();
+  const run = (args: string[]) => spawnSync(cmd, [...pre, ...args], { cwd: root, encoding: 'utf8', env: agentEnv(process.env), windowsHide: true, timeout: 60000 }).stdout ?? '';
+  const items: SetupItem[] = [];
+  let plugins: { id: string; enabled?: boolean; installPath?: string }[] = [];
+  try { plugins = JSON.parse(run(['plugin', 'list', '--json'])); } catch { /* none listed */ }
+  for (const p of plugins.filter((p) => p.enabled)) {
+    const manifest = p.installPath ? readJsonFile<{ description?: string }>(join(p.installPath, '.claude-plugin', 'plugin.json')) : undefined;
+    items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.id.split('@')[0], description: manifest?.description });
+  }
+  // Lines read "<name>: <command or URL> - <status>".
+  for (const line of run(['mcp', 'list']).split('\n')) {
+    const m = /^(.+?): (.+) - \S+ \w/.exec(line.trim());
+    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}` });
+  }
+  let skills: string[] = [];
+  try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
+  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}` });
+  for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
+  items.push(DELEGATE);
+  items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
+  const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
+  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}` });
+  return items;
+}
 
 // Allow/ask/deny rules are not in the stream, so they are read from the settings files (user,
 // project, local; later wins for the mode). shortcut: managed (enterprise) settings are not read.
@@ -152,6 +202,7 @@ export class ClaudeProcess implements AgentProcess {
   readonly effort?: string; // what this process was started with; a change needs a new process
   readonly model?: string;
   readonly permissionMode?: string;
+  readonly setup?: string;
   sessionId?: string;
 
   private session: Session;
@@ -163,6 +214,7 @@ export class ClaudeProcess implements AgentProcess {
     this.effort = session.effort;
     this.model = session.model;
     this.permissionMode = session.permissionMode;
+    this.setup = session.task?.setup?.join(',');
   }
 
   get alive() {
@@ -171,32 +223,58 @@ export class ClaudeProcess implements AgentProcess {
 
   private start(resume?: string): void {
     const { session } = this;
-    const mcpConfig = JSON.stringify({ mcpServers: { aiws: { command: process.execPath, args: [workspaceServer, session.id], env: { AI_WORKSPACE_HOME: home() } } } });
-    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcpConfig, '--permission-prompt-tool', 'mcp__aiws__approve'];
+    const mcpServers: Record<string, unknown> = { aiws: { command: process.execPath, args: [workspaceServer, session.id], env: { AI_WORKSPACE_HOME: home() } } };
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'mcp__aiws__approve'];
+    const disallowed: string[] = [];
+    const tools: string[] = session.role === ORCHESTRATION && !session.task ? ['Read', 'Glob', 'Grep'] : [];
+    let settings: ClaudeSettings = {};
     if (this.model) args.push('--model', this.model);
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
+    // Orchestrator chats and tasks load only the chosen items, switched for this run only (orchestrator-005).
+    const setup = setupApplies(session) ? runSetup(session, claudeInventory(this.root), this.root) : undefined;
+    if (setup) {
+      saveInventory('claude-code', setup.items);
+      if (!setup.globalRules) {
+        // The user source also loads the user's CLAUDE.md and rules; the rest of their settings (env, plugins,
+        // hooks) and their user-scope MCP servers are passed on, since only the rule files are to go.
+        // shortcut: passed with --settings they rank above the project's settings, not below; merge them per key if a project setting must win.
+        args.push('--setting-sources', 'project,local');
+        settings = readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json')) ?? {};
+        Object.assign(mcpServers, userMcpServers());
+      }
+      tools.push(...setup.items.filter((i) => i.kind === 'tool' && setup.on(i)).map((i) => i.title));
+      // Without its own system prompt the agent gets a short one (about 3k tokens less per call).
+      if (setup.items.some((i) => i.kind === 'prompt' && !setup.on(i))) args.push('--system-prompt', minimalPrompt(this.root));
+      for (const i of setup.items.filter((i) => !setup.on(i))) {
+        if (i.kind === 'plugin') settings.enabledPlugins = { ...settings.enabledPlugins, [i.id.slice('plugin:'.length)]: false };
+        else if (i.kind === 'mcp') { disallowed.push(`mcp__${i.title.replace(/[^\w-]/g, '_')}`); delete mcpServers[i.title]; }
+        else if (i.kind === 'skills') args.push('--disable-slash-commands');
+        else if (i.kind === 'hooks') delete settings.hooks; // shortcut: with global rules on, the user's hooks cannot be switched off for one run and stay on
+      }
+    }
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
-      if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
-    } else if (session.role === ORCHESTRATION) {
-      // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006).
-      // shortcut: tools of the user's own MCP servers stay allowed (#16); deny them too once the setup inventory (onboarding-010) lists them.
-      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','), '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit');
-    } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
-    if (session.task) {
+      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : 'mcp__aiws__delegate,mcp__aiws__request_setup');
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
-      args.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [hook] }] } }));
-    }
+      settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: '*', hooks: [hook] }] };
+    } else if (session.role === ORCHESTRATION) {
+      // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006). The unused
+      // built-in tools cost about 24k prompt tokens per call, so it gets only the reading ones (`tools`).
+      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','));
+      disallowed.push('Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit');
+    } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    if (setup) args.push('--tools', [...new Set(tools)].join(',')); // '' leaves the agent no built-in tool
+    args.push('--mcp-config', JSON.stringify({ mcpServers }));
+    if (disallowed.length) args.push('--disallowedTools', disallowed.join(','));
+    if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
     this.err = '';
-    // CLAUDE_BIN may name a script (tests use a fake CLI), which runs with this Node.
-    const bin = process.env.CLAUDE_BIN ?? 'claude';
-    const [cmd, pre] = /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin]] : [bin, []];
+    const [cmd, pre] = claudeCommand();
     // Approvals wait for the user without a time limit (runtime-002): the longest timeout Node allows.
     const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '2147483647' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
@@ -332,6 +410,7 @@ class ClaudeAgent implements AgentProcess {
   get model() { return this.proc.model; }
   get effort() { return this.proc.effort; }
   get permissionMode() { return this.proc.permissionMode; }
+  get setup() { return this.proc.setup; }
   async turn(input: TurnInput): Promise<TurnEnd> {
     const r = await this.proc.turn(input);
     if (!r.staleHint) return r;
@@ -347,4 +426,5 @@ export const claudeSession: SessionAgent = {
   open: (session, root) => new ClaudeAgent(session, root),
   permissions: claudePermissions,
   catalog: claudeCatalog,
+  inventory: async (root) => claudeInventory(root),
 };
