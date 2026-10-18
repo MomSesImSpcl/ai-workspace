@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { assignmentFor } from './roles.ts';
-import { addMessage, addUsage, allSessions, createSession, emit, loadSession, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
+import { addMessage, addUsage, allSessions, createSession, emit, loadSession, queueReply, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
 import { agentChoice, pending, sessionAgent, startTurn } from './turn.ts';
 
@@ -29,7 +29,12 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
 }
 
 // agent, model, effort and reason: the orchestrator's choice (orchestrator-004); unset, the role's assignment.
-export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string }
+// defaultMode: used when no mode is given and the agent offers it; basedOn: an earlier related task.
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string }
+
+// Tasks a chat starts edit files without asking unless the chat picks another mode; agents without this mode
+// keep their own settings.
+export const DEFAULT_TASK_MODE = 'acceptEdits';
 
 // The goal is the first message. Agent, model, effort and mode must be ones the agent offers.
 export function createTask(f: NewTask): Session {
@@ -39,8 +44,9 @@ export function createTask(f: NewTask): Session {
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
-  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason };
-  s.permissionMode = f.permissionMode || undefined;
+  s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn };
+  const offers = (m?: string) => !!m && !!agent.catalog().modes?.some((x) => x.id === m);
+  s.permissionMode = f.permissionMode || (offers(f.defaultMode) ? f.defaultMode : undefined);
   saveSession(s);
   addMessage(s.id, f.goal);
   audit({ kind: 'task', taskId: s.id, event: 'created', integration, model, effort, reason: f.reason, permissionMode: s.permissionMode, parentId: f.parentId, sessionId: f.sessionId });
@@ -54,7 +60,7 @@ export function createTask(f: NewTask): Session {
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
-  const t = createTask({ ...f, tokenBudget: f.tokenBudget ?? chat.taskCap, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, goal: f.basedOn ? `${handoff(chat.projectId, f.basedOn)}\n\n${f.goal}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
@@ -67,9 +73,36 @@ export function startPendingTasks(sessionId: string): void {
 // A reply to a task started in this chat (the orchestrator's reply_task, orchestrator-006). The chat's runner
 // starts it, like a new task.
 export function replyFromSession(sessionId: string, taskId: string, text: string): Session {
-  if (!startedIn(sessionId).some((t) => t.id === taskId)) throw new Error(`Unknown task in this chat: ${taskId}`);
-  if (sessionWorking(taskId)) throw new Error('Task is working; wait for it to finish, or ask the user to pause it');
-  return resumeTask(taskId, undefined, text);
+  const t = startedIn(sessionId).find((x) => x.id === taskId);
+  if (!t) throw new Error(`Unknown task in this chat: ${taskId}`);
+  // A finished task is continued only by the user, from the reply field under it (orchestrator-006).
+  const status = taskStatus(t, turns(readEvents(taskId), turnRunning(taskId)));
+  if (status !== 'running' && status !== 'waiting' && status !== 'paused') throw new Error(`Task ${taskId} is ${status}; start a new task with basedOn: ${taskId}`);
+  if (status === 'paused') queueReply(taskId, text); // sent with Resume
+  else replyTask(taskId, text);
+  // The chat shows the task again in this turn, where its new cards and result appear.
+  emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: taskId });
+  return t;
+}
+
+// A reply to a working task is queued and sent when its turn ends; otherwise it continues the task at once.
+export function replyTask(id: string, text: string): Session {
+  if (!sessionWorking(id)) return resumeTask(id, undefined, text);
+  const s = taskOf(id);
+  if (s.task.cancelled) throw new Error('Task is cancelled');
+  queueReply(id, text);
+  return s;
+}
+
+// What a new task learns from an earlier related one (orchestrator-006): its goal and final reply, not its
+// whole conversation, so it skips rediscovering the earlier work.
+// shortcut: carries text only; add the tools the earlier task used once tasks run lean (orchestrator-005).
+function handoff(projectId: string, id: string): string {
+  const earlier = loadSession(id);
+  if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
+  const ts = turns(readEvents(id), turnRunning(id));
+  const result = ts.findLast((t) => t.text)?.text ?? '(no reply yet)';
+  return `Earlier related task ${id} (${taskStatus(earlier, ts)}).\nIts goal: ${ts[0]?.user.slice(0, 4000)}\nIts last reply: ${result.slice(-4000)}\n\nThe new task:`;
 }
 
 // Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).

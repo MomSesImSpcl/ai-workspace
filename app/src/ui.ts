@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
-import { cancelTask, childrenOf, listTasks, pauseTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
+import { cancelTask, childrenOf, listTasks, pauseTask, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
@@ -103,6 +103,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
     s.effort = config.effort;
     if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
+    if (typeof b.taskMode === 'string' && b.taskMode.length <= 40) s.taskMode = b.taskMode;
     saveSession(s);
     return sessionView(s);
   }
@@ -131,6 +132,10 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     }
     Object.assign(s, config);
     if (s.task) s.task.overridden = true; // the user changed the orchestrator's choice (orchestrator-004)
+    saveSession(s);
+  } else if (action === 'mode') {
+    if (b.taskMode !== null && (typeof b.taskMode !== 'string' || b.taskMode.length > 40)) throw new HttpError(400, 'taskMode must be a permission mode, an empty string or null');
+    s.taskMode = (b.taskMode as string | null) ?? undefined;
     saveSession(s);
   } else if (action === 'cap') {
     if (b.taskCap !== null && (!Number.isInteger(b.taskCap) || (b.taskCap as number) <= 0)) throw new HttpError(400, 'taskCap must be a positive whole number or null');
@@ -200,7 +205,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   // Tasks start from a chat (start_task); the user answers them there (ADR 0010).
   if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
     const b = await body(req);
-    const task = resumeTask(id, undefined, text(b.text, 'text'));
+    const task = replyTask(id, text(b.text, 'text')); // queued while the task works
     if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
     return taskView(task);
   }

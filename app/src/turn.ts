@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
-import { acquireRunner, clearStop, emit, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
+import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
 
 export const sessionAgents: Record<string, SessionAgent> = { 'claude-code': claudeSession, codex: codexSession };
@@ -105,6 +105,14 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
   return {};
 }
 
+// Replies queued while the task worked become its next message once the turn has ended; a paused task
+// keeps them for Resume.
+function sendQueued(id: string): void {
+  const events = readEvents(id);
+  const state = turns(events, true).at(-1)?.state;
+  if ((state === 'done' || state === 'error') && queuedReplies(events).length && !loadSession(id).task?.cancelled) addMessage(id, '');
+}
+
 // A process is started with its model, effort and permission mode; a change restarts it, resuming the conversation.
 const outdated = (proc: AgentProcess, s: Session) => proc.effort !== s.effort || proc.model !== s.model || proc.permissionMode !== s.permissionMode;
 
@@ -119,6 +127,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
     closeOrphanedTurn(id);
     let idleSince = Date.now();
     while (existsSync(sessionFile(id, '.json'))) {
+      sendQueued(id);
       if (pending(id)) {
         const session = loadSession(id);
         if (proc && (running !== session.integration || outdated(proc, session))) {

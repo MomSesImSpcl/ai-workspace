@@ -262,17 +262,23 @@ test('pause interrupts a task and keeps its conversation; resume continues it an
   assert.equal(repeatsFor(ts).get('f1'), 'step 1: Bash ls');
 });
 
-test('reply_task continues a task of this chat only; the chat runner starts it', async () => {
+test('reply_task queues for a running task of this chat; a finished one gets a new task based on it', async () => {
   const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
   addMessage(chat.id, 'go');
-  const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation' });
+  const t = startFromSession(chat.id, { goal: 'first delay', role: 'Implementation' });
+  assert.equal(t.permissionMode, 'acceptEdits'); // a chat's tasks edit without asking unless it picks a mode
   startPendingTasks(chat.id);
-  await until(() => status(t.id) === 'completed');
+  await until(() => sessionWorking(t.id));
   assert.throws(() => replyFromSession(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
   replyFromSession(chat.id, t.id, 'also this');
-  await until(() => !turnRunning(t.id));
-  startPendingTasks(chat.id);
+  replyFromSession(chat.id, t.id, 'and that');
   await until(() => turns(readEvents(t.id), turnRunning(t.id)).length === 2 && status(t.id) === 'completed');
+  assert.equal(turns(readEvents(t.id), false)[1]!.user, 'also this\n\nand that');
+  assert.throws(() => replyFromSession(chat.id, t.id, 'more'), /is completed; start a new task with basedOn/);
+  const next = startFromSession(chat.id, { goal: 'same again', role: 'Implementation', basedOn: t.id });
+  assert.match(turns(readEvents(next.id), false)[0]!.user, /^Earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2[\s\S]*same again$/);
+  saveSession({ ...loadSession(chat.id), taskMode: '' });
+  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation' }).permissionMode, undefined);
 });
 
 test('ui API: a chat cap is set and cleared, pause and resume a task, a changed agent is marked as overridden', async () => {
@@ -286,6 +292,9 @@ test('ui API: a chat cap is set and cleared, pause and resume a task, a changed 
     assert.equal((await post(`/api/sessions/${chat.id}/cap`, { taskCap: 0 })).status, 400);
     await post(`/api/sessions/${chat.id}/cap`, { taskCap: null });
     assert.equal(loadSession(chat.id).taskCap, undefined);
+    await post(`/api/sessions/${chat.id}/mode`, { taskMode: 'auto' });
+    assert.equal(loadSession(chat.id).taskMode, 'auto');
+    assert.equal((await post(`/api/sessions/${chat.id}/mode`, { taskMode: 5 })).status, 400);
     const t = task('slow work');
     startTurn(t.id);
     await until(() => sessionWorking(t.id) && readEvents(t.id).some((e) => e.type === 'init'));
@@ -299,6 +308,13 @@ test('ui API: a chat cap is set and cleared, pause and resume a task, a changed 
   } finally {
     server.close();
   }
+});
+
+test('the page script parses', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { Script } = await import('node:vm');
+  const html = readFileSync(new URL('../src/ui.html', import.meta.url), 'utf8');
+  for (const [, js] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(js!);
 });
 
 test('tasks recorded before they were sessions are converted once and keep their conversation and state', () => {

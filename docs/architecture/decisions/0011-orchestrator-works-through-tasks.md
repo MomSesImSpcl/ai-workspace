@@ -19,6 +19,17 @@ Status: accepted (2026-10-18, chosen by the user); implemented 2026-10-18 ([hist
 - The cap switch next to the chat box sets the chat's cap for the tasks it starts; unchecked, tasks run uncapped. Card and switch layout live in small functions of `ui.html`, so they can be reworked.
 - Token cost weights (onboarding-009), the planner handoff (orchestrator-002) and the lean setup (orchestrator-005) stay for later.
 
+## Change (2026-10-18, chosen by the user after testing)
+
+The first rule ("a follow-up or correction goes to that task") reused finished tasks for new, similar work. Their approval cards then appeared under an old turn. Replaced by:
+
+- A message goes to a task only while that task is running or paused; it is queued until the current step ends.
+- Anything for a finished task becomes a new task, which names the earlier one (`basedOn`) and starts with its goal and last reply.
+- The user continues a finished task with the reply field under its card.
+- The card moves to the turn that last sent the task a message.
+
+Why a handoff instead of reuse: a reused task resends its whole growing history on every model call. A new task pays a fixed setup, which drops further once tasks run lean (orchestrator-005).
+
 ## Consequences
 
 - The orchestrator's own context stays small; implementation happens in tasks, visible with Cancel in their chat and in the Task Center.

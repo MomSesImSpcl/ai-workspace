@@ -126,6 +126,7 @@
   .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
   .task-cap .check { padding-bottom: 0; }
   .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
+  .task-cap select { flex: 1 1 0; min-width: 0; padding: 3px 6px; font-size: 11px; }
   .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
@@ -281,8 +282,9 @@
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
-        <!-- Task cap switch (ADR 0011): layout only here and in renderCap(). -->
-        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span></div>
+        <!-- Settings for the tasks this chat starts (ADR 0011): layout only here and in renderCap(). -->
+        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span>
+          <select id="task-mode" aria-label="Permission mode of new tasks" title="Permission mode of the tasks this chat starts"></select></div>
         <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -477,6 +479,12 @@ function renderCap(s) {
   $('#cap-on').checked = cap !== undefined;
   if (cap !== undefined) $('#cap').value = cap;
   $('#cap').disabled = cap === undefined;
+  if (document.activeElement?.id === 'task-mode') return;
+  // The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
+  const mode = (s ? s.taskMode : state.draftMode) ?? 'acceptEdits';
+  const modes = state.agents[state.roles.Implementation?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
+  const list = modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }];
+  $('#task-mode').innerHTML = list.map((m) => option(m.id, `Tasks: ${m.label}`, m.id === mode)).join('');
 }
 function renderPickers(s) {
   if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
@@ -538,15 +546,16 @@ function taskControlsHtml(t) {
 // A task the chat's agent started (sessions-002): its approvals, replies and result are answered here.
 function taskCardHtml(t) {
   if (!t) return '';
-  const canReply = !active(t) && t.status !== 'cancelled';
+  const canReply = t.status !== 'cancelled'; // while the task works, the reply waits for its current step
   return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
     ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
     ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
-    ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="Reply to continue the task" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
+    ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="${active(t) ? 'Message the task (it gets it when the current step ends)' : 'Reply to continue the task'}" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
 }
 
 // Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
-function turnHtml(t, tasks = {}) {
+// A task the chat sent more messages to shows in full only in the last turn that names it.
+function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const steps = t.activity.length;
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
@@ -556,7 +565,7 @@ function turnHtml(t, tasks = {}) {
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${t.tasks.map((id) => taskCardHtml(tasks[id])).join('')}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].goal.split('\n')[0])} — continued below</div>` : '')).join('')}${switched}`;
 }
 
 let shown = '';
@@ -591,7 +600,8 @@ function renderChat() {
   shown = key;
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = d?.turns.map((t) => turnHtml(t, d.tasks)).join('')
+  const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
+  box.innerHTML = d?.turns.map((t) => turnHtml(t, d.tasks, lastTurnOf)).join('')
     || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
@@ -777,6 +787,10 @@ async function capChanged() {
   await sessionAction('cap', { taskCap: cap ?? null });
 }
 $('#cap-on').onchange = capChanged;
+$('#task-mode').onchange = async () => {
+  if (!state.session) return void (state.draftMode = $('#task-mode').value);
+  await sessionAction('mode', { taskMode: $('#task-mode').value });
+};
 $('#cap').onchange = capChanged;
 
 // Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.
@@ -970,10 +984,11 @@ $('#new').onsubmit = async (e) => {
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
-    const fresh = { role: $('#role').value, taskCap: state.draftCap, ...config };
+    const fresh = { role: $('#role').value, taskCap: state.draftCap, taskMode: state.draftMode, ...config };
     const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
     state.draftCap = undefined;
+    state.draftMode = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';

@@ -39,7 +39,7 @@ export const TASK_NOTE = 'This is a background task: nobody answers until it end
 // whatever agent the role uses, so this rule is not the only guard.
 export const ORCHESTRATION = 'Orchestration';
 export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents']; // its workspace tools, run without a card
-export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It continues or corrects a task started in this chat: send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something): start a task with start_task. Choose its agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason. Write a self-contained goal with the acceptance criteria. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level.`;
+export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Choose the agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason. Write a self-contained goal with the acceptance criteria. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you.`;
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
@@ -60,6 +60,7 @@ export interface Session {
   permissionMode?: string; // the agent's own mode for this session (catalog `modes`); unset: the agent's settings
   task?: TaskSpec; // set for a task: delegated background work, optionally with a token cap (task-runtime 4.7)
   taskCap?: number; // a chat's cap for the tasks it starts (the switch next to the chat box); unset: uncapped
+  taskMode?: string; // the permission mode of the tasks a chat starts; unset: acceptEdits, '': the agent's settings
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +69,7 @@ export interface TaskSpec {
   tokenBudget?: number; // unset: uncapped (ADR 0011)
   reason?: string; // why the orchestrator chose its agent, model and effort (orchestrator-004)
   overridden?: boolean; // the user changed that choice
+  basedOn?: string; // an earlier related task whose goal and reply this one started with
   parentId?: string; // a subtask started by the parent's `delegate` call
   sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
@@ -80,6 +82,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'init'; model?: string; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
   | { type: 'notice'; text: string; blocked?: boolean }
+  | { type: 'queued'; text: string } // a reply that arrived while the task worked; sent with its next message
   | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string }
   | { type: 'activity-done'; id: string; error?: boolean }
@@ -395,6 +398,8 @@ export function addMessage(id: string, text: string): number {
   if (sessionWorking(id)) throw new Error('Session is already working');
   if (s.task?.cancelled) throw new Error('Task is cancelled');
   const events = readEvents(id);
+  text = [...queuedReplies(events), text].filter(Boolean).join('\n\n');
+  if (!text) throw new Error('Unknown message: text is required');
   const ts = turns(events, false);
   const last = ts.at(-1);
   const turn = (last?.n ?? 0) + 1;
@@ -406,6 +411,14 @@ export function addMessage(id: string, text: string): number {
   saveSession(s);
   clearStop(id);
   return turn;
+}
+
+// Replies queued since the last message: a task takes them with its next one (orchestrator-006).
+export const queuedReplies = (events: SessionEvent[]) => events.slice(events.findLastIndex((e) => e.type === 'user') + 1).flatMap((e) => (e.type === 'queued' ? [e.text] : []));
+
+// A reply to a working task waits in its log; the task's host sends it when the turn ends.
+export function queueReply(id: string, text: string): void {
+  emit(id, turns(readEvents(id), true).at(-1)?.n ?? 0, { type: 'queued', text });
 }
 
 // The last turn's message, prefixed with the previous turn's marker when it did not finish.

@@ -69,18 +69,19 @@ if (!task) {
         effort: z.string().optional().describe("One of the model's effort levels"),
         reason: z.string().optional().describe('One line: why this agent, model and effort'),
         tokenBudget: z.number().int().positive().optional().describe('Token cap at real cost; only when the user asked for one'),
+        basedOn: z.string().optional().describe('Id of an earlier related task; the new task starts with its goal and result'),
         role: z.string().optional(),
         permissionMode: z.string().optional().describe("One of the agent's own permission modes; omit for the agent's settings"),
       },
     },
-    tool((a: { goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string }) => {
+    tool((a: { goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string }) => {
       const t = startFromSession(sessionId, { ...a, role: a.role ?? 'Implementation' });
       return `task ${t.id} started (${[t.integration, t.model, t.effort].filter(Boolean).join(', ')}); it runs in the background and shows in this chat`;
     }),
   );
   server.registerTool(
     'reply_task',
-    { description: 'Sends a follow-up or correction to a task started in this chat; the task continues with it.', inputSchema: { taskId: z.string(), text: z.string() } },
+    { description: 'Sends a change or correction to a running task of this chat; it gets the message when its current step ends. A finished task is not continued this way: start a new one with basedOn.', inputSchema: { taskId: z.string(), text: z.string() } },
     tool((a: { taskId: string; text: string }) => `sent to task ${replyFromSession(sessionId, a.taskId, a.text).id}`),
   );
   server.registerTool(
