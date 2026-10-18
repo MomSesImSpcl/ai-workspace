@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, GLOBAL, used, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -173,8 +173,13 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
-    const stepList = turns(readEvents(id), turnRunning(id)).flatMap((t) => t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error })));
-    return { task: taskCard(s), stepList, children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
+    // Each message the task got is its own run: the first is the start, later ones are replies that reused it.
+    const runs = turns(readEvents(id), turnRunning(id)).map((t) => ({
+      n: t.n, request: t.user, result: t.state === 'working' ? '' : t.text, state: t.state, marker: t.marker, model: t.model, permissionMode: t.permissionMode,
+      startedAt: t.startedAt, endedAt: t.endedAt, used: used(t.usage), costUsd: t.usage.costUsd,
+      steps: t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error })),
+    }));
+    return { task: taskCard(s), runs, children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);

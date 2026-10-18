@@ -132,6 +132,10 @@
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .mode-menu button span:first-child { display: grid; gap: 1px; }
   .mode-menu small { color: var(--text-muted); font-size: 11px; }
+  details.run { margin-bottom: 10px; }
+  details.run > summary { cursor: pointer; list-style: none; }
+  details.run > summary { padding: 2px 0; }
+  details.run[open] > summary { margin-bottom: 8px; }
   .detail-head { display: flex; align-items: baseline; gap: 12px; }
   .detail-head h2 { flex: 1; min-width: 0; }
   .task-id { flex: none; width: 8ch; text-align: right; font-size: 11px; color: var(--text-muted); }
@@ -683,27 +687,39 @@ async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
   setHtml($('#tasks'), projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>');
   if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>');
-  const { task: t, stepList, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
-  const open = $('#detail details.steps')?.open; // keep the steps foldout as the user left it
-  const mode = state.agents[t.integration]?.modes?.find((m) => m.id === (t.permissionMode ?? ''));
-  setHtml($('#detail'), `<div class="detail-head"><h2>${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>
+  const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
+  // One bubble per run (the start, then each reply that reused the task); one is open, the latest by default.
+  const openRun = state.openRun?.[t.id] ?? runs.at(-1)?.n;
+  setHtml($('#detail'), `<div class="detail-head"><h2>${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
+    + `<p class="error" id="detail-error" role="alert"></p>${t.session ? '' : pendingCards(t)}`
+    + (children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : '')
+    + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''));
+}
+
+const RUN_LABELS = { done: 'completed', error: 'failed', stopped: 'paused', interrupted: 'interrupted', working: 'running' };
+// One run of a task as a detail bubble. Its layout lives only here; a closed bubble shows one summary line.
+function runHtml(t, r, i, count, open, permissions) {
+  const last = i === count - 1;
+  const st = last ? t.status : RUN_LABELS[r.state] ?? r.state;
+  const mode = state.agents?.[t.integration]?.modes?.find((m) => m.id === (r.permissionMode ?? t.permissionMode ?? ''));
+  const when = new Date(r.startedAt).toLocaleString();
+  const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}`;
+  return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta">${line}</summary>
     <dl>
-      <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
-      <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button>` : 'outside a chat (CLI)'}</dd>
-      <dt>Agent</dt><dd>${[t.integration, t.ranModel ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
-      <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
-      <dt>Progress</dt><dd><details class="steps" ${open ? 'open' : ''}><summary>${summary(t)}</summary><ol>${stepList.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps yet</li>'}</ol></details>${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
-      <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
-      <dt>Started</dt><dd>${new Date(t.createdAt).toLocaleString()}</dd>
-      <dt>Finished</dt><dd>${t.finishedAt ? new Date(t.finishedAt).toLocaleString() : '—'}</dd>
+      <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
+      ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
+      <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
+      ${last && t.current ? `<dt>Working on</dt><dd>${code(t.current)}</dd>` : ''}
+      <dt>Progress</dt><dd><details class="steps"><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
+      <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
+      <dt>Started</dt><dd>${when}</dd>
+      <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
     </dl>
-    <div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
-    <p class="error" id="detail-error" role="alert"></p>
-    ${t.session ? '' : pendingCards(t)}
-    ${t.request ? `<h3>Request that started the task</h3><pre>${esc(t.request)}</pre>` : ''}
-    <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
-    ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
-    ${log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''}`);
+    ${last ? `<div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>` : ''}
+    ${i === 0 && t.request ? `<h3>Request that started the task</h3><pre>${esc(t.request)}</pre>` : ''}
+    <h3>${i ? 'Message that reused the task' : 'Starting prompt'}</h3><pre>${esc(r.request)}</pre>
+    ${r.result ? `<h3>Result</h3><pre>${esc(r.result)}</pre>` : ''}
+  </details>`;
 }
 
 function renderDrawer() {
@@ -1035,6 +1051,13 @@ document.addEventListener('keydown', (e) => {
 
 // Enter sends; Shift+Enter adds a line break.
 // Enter in a task's reply field sends it, like the chat box.
+// Only one run bubble is open at a time; the one the user opened stays open across refreshes.
+$('#detail').addEventListener('toggle', (e) => {
+  const run = e.target.closest?.('details.run');
+  if (!run || e.target !== run || !run.open) return;
+  state.openRun = { ...state.openRun, [run.dataset.task]: Number(run.dataset.run) };
+  for (const other of $$('#detail details.run')) if (other !== run) other.open = false;
+}, true);
 document.addEventListener('keydown', (e) => {
   if (e.target.dataset?.replyTask && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $(`[data-reply="${e.target.dataset.replyTask}"]`)?.click(); }
 });
