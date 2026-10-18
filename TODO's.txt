@@ -1,4 +1,14 @@
-Use the TypeScript Compiler API combined with the TypeScript Language Service for semantic search for the orchestrator (Candidates: TypeScript Compiler API, ts-morph, Tree-sitter)
 
+
+The workspace needs a name in the taks manager its called "Electron"
+Remove the border on the drop downs under the chat window so it looks the same as in the claude app. Should have a fixed widht so the position doesnt move when the text changes
+
+Top right over the chat window, sometimes show a orange triangle, on hover says that some connectors are not active, what does that mean?
+Let the orchestrator create a concise title for the session based on the first prompt
+Make the settings window "absolute", it shouldnt share layout space with the other ui, meaning it on top of everything else
+Text buffer (or whatever that is called, so in long chats not everything is loded into memory)
+On first start during the dependecy installs, it should show what dependecies are being installed, maybe even with a progress bar if that is possible
+Add color scheme picker in settings (maybe auto detect OS color scheme on first start?)
 On first release add About section + topics update check on every merge (already exists for the readme)
 ALso add currently implemented features on every release to the readme
+Sometimes the App just pops up into the foregrouund, randomly (happens rarely but still annoying)
