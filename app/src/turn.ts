@@ -72,14 +72,19 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
   };
   const committed = task ? taskUsed(session) : 0;
   const budget = task?.tokenBudget;
-  const live = budget !== undefined ? (u: Usage) => committed + used(u) >= budget && halt(true, `token budget ${budget.toLocaleString('en')} reached`) : undefined;
+  // Streamed usage: checked against the cap at once, and recorded every 2 s so the page shows tokens while it works.
+  let shownAt = 0;
+  const live = (u: Usage) => {
+    if (Date.now() - shownAt > 2000) { shownAt = Date.now(); say({ type: 'live-usage', usage: u }); }
+    if (budget !== undefined && committed + used(u) >= budget) halt(true, `token budget ${budget.toLocaleString('en')} reached`);
+  };
   const watch = setInterval(() => {
     if (stopRequested(id)) halt(!!task && !!loadSession(id).task?.cancelled, task && !loadSession(id).task?.cancelled ? 'paused' : undefined);
     if (!task) startPendingTasks(id); // tasks its agent started with start_task
   }, 300);
   try {
     say({ type: 'start', integration: session.integration });
-    live?.({ inputTokens: 0, outputTokens: 0 });
+    live({ inputTokens: 0, outputTokens: 0 });
     if (stop.signal.aborted) {
       say({ type: 'stopped', reason: stopped });
       return {};

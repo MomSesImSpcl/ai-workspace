@@ -22,6 +22,9 @@ export const CACHE_READ = 0.1;
 export const CACHE_WRITE = 1.25;
 export const used = (u: Usage) => Math.round(u.inputTokens - cacheTokens(u) + u.outputTokens + CACHE_READ * (u.cachedInputTokens ?? 0) + CACHE_WRITE * (u.cacheWriteTokens ?? 0));
 
+// A turn's usage as shown: what it streamed so far while it works, its recorded usage once it ended.
+export const turnUsage = (t: { state: string; usage: Usage; liveUsage?: Usage }) => (t.state === 'working' && t.liveUsage ? t.liveUsage : t.usage);
+
 export function addUsage(a: Usage, b: Usage): Usage {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
@@ -91,6 +94,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'approval-answer'; id: string; allow: boolean }
   | { type: 'task'; id: string } // the agent started this task from the chat (sessions-002)
   | { type: 'usage'; usage: Usage }
+  | { type: 'live-usage'; usage: Usage } // the running turn's usage so far, replaced by its 'usage' when it ends
   | { type: 'done' }
   | { type: 'error'; message: string }
   | { type: 'stopped'; reason?: string } // reason: the workspace stopped it (budget, a repeat), not the user
@@ -329,6 +333,7 @@ export interface Turn {
   error?: string;
   reason?: string; // why the workspace stopped the turn (budget, a possible repeat)
   usage: Usage;
+  liveUsage?: Usage; // while working: usage streamed so far
   model?: string;
   permissionMode?: string;
   ruleFiles?: string[];
@@ -364,6 +369,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'task') t.tasks.push(e.id);
     else if (e.type === 'relay') t.relays.push({ taskId: e.taskId, text: e.text });
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
+    else if (e.type === 'live-usage') t.liveUsage = e.usage;
     else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
     else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });
   }

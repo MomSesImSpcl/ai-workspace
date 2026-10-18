@@ -137,6 +137,7 @@ test('codex: the cap kills the process from streamed usage; Stop in a session in
   await runTurn(t.id);
   assert.equal(status(t.id), 'paused');
   assert.equal(taskUsed(loadSession(t.id)), 650);
+  assert.ok(readEvents(t.id).some((e) => e.type === 'live-usage')); // tokens show while the task works
   const s = createSession('P', 'Chat', { integration: 'codex' });
   addMessage(s.id, 'slow');
   const run = runTurn(s.id);
