@@ -310,6 +310,28 @@ test('ui API: a chat cap is set and cleared, pause and resume a task, a changed 
   }
 });
 
+test('a reply typed under a task goes to it directly; the chat records it and its agent hears it next', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+    addMessage(chat.id, 'go');
+    emit(chat.id, 1, { type: 'done' });
+    const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation' });
+    await runTurn(t.id);
+    const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'make it red' }) });
+    assert.equal(r.status, 200);
+    assert.equal(turns(readEvents(t.id), true).at(-1)!.user, 'make it red');
+    assert.deepEqual(turns(readEvents(chat.id), false)[0]!.relays, [{ taskId: t.id, text: 'make it red' }]);
+    addMessage(chat.id, 'what now?');
+    const { turnPrompt } = await import('../src/sessions.ts');
+    assert.equal(turnPrompt(turns(readEvents(chat.id), true)), `[Since your last reply the user wrote directly to task ${t.id}: "make it red"]\n\nwhat now?`);
+  } finally {
+    server.close();
+  }
+});
+
 test('the page script parses', async () => {
   const { readFileSync } = await import('node:fs');
   const { Script } = await import('node:vm');

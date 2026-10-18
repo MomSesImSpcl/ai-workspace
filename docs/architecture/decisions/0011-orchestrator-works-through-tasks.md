@@ -28,6 +28,15 @@ The first rule ("a follow-up or correction goes to that task") reused finished t
 - The user continues a finished task with the reply field under its card.
 - The card moves to the turn that last sent the task a message.
 
+## Reply field under a task: under test (2026-10-18, chosen by the user)
+
+Two designs were weighed for text the user types under a task's card:
+
+1. **Through the orchestrator.** The text becomes a chat message tagged for that task, and the orchestrator forwards it with `reply_task` (then allowed for a finished task). The orchestrator can check or rewrite it first. Cost: one orchestrator turn and its delay per reply.
+2. **Direct, and the orchestrator is told.** The text goes to the task at once. The chat records it (`relay` event, shown as the user's message "to task …"), and the orchestrator's agent gets it as a note before the user's next message.
+
+Option 2 is built for testing. Revisit option 1 if the orchestrator needs to review or steer what the user sends to tasks; the switch is in `ui.ts` (task reply route) and `relayToChat` in `tasks.ts`.
+
 Why a handoff instead of reuse: a reused task resends its whole growing history on every model call. A new task pays a fixed setup, which drops further once tasks run lean (orchestrator-005).
 
 ## Consequences

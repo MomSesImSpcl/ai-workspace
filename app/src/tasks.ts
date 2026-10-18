@@ -95,6 +95,17 @@ export function replyTask(id: string, text: string): Session {
   return s;
 }
 
+// The reply field under a task goes to the task directly (option 2, chosen 2026-10-18 to test): the chat
+// records it, so the orchestrator hears it with the next message and the card moves to the latest turn.
+// Option 1, sending it through the orchestrator, stays open (ADR 0011).
+export function relayToChat(task: Session, text: string): void {
+  const chatId = task.task?.sessionId;
+  if (!chatId) return;
+  const n = turns(readEvents(chatId), true).at(-1)?.n ?? 0;
+  emit(chatId, n, { type: 'relay', taskId: task.id, text });
+  emit(chatId, n, { type: 'task', id: task.id });
+}
+
 // What a new task learns from an earlier related one (orchestrator-006): its goal and final reply, not its
 // whole conversation, so it skips rediscovering the earlier work.
 // shortcut: carries text only; add the tools the earlier task used once tasks run lean (orchestrator-005).

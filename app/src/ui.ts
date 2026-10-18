@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
-import { cancelTask, childrenOf, listTasks, pauseTask, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
+import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
@@ -214,6 +214,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
     const b = await body(req);
     const task = replyTask(id, text(b.text, 'text')); // queued while the task works
+    relayToChat(task, text(b.text, 'text'));
     if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
     return taskView(task);
   }

@@ -83,6 +83,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'text'; text: string }
   | { type: 'notice'; text: string; blocked?: boolean }
   | { type: 'queued'; text: string } // a reply that arrived while the task worked; sent with its next message
+  | { type: 'relay'; taskId: string; text: string } // the user wrote to a task of this chat directly; the agent hears it with the next message
   | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string }
   | { type: 'activity-done'; id: string; error?: boolean }
@@ -321,6 +322,7 @@ export interface Turn {
   approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
   tasks: string[]; // tasks the agent started in this turn
+  relays: { taskId: string; text: string }[]; // what the user wrote to those tasks directly after this turn
   switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
@@ -345,7 +347,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
   for (const e of events) {
     if (e.type === 'user') {
-      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], tasks: [], state: 'working', usage: zero(), startedAt: e.at });
+      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], tasks: [], relays: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
@@ -359,6 +361,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail, repeat: e.repeat });
     else if (e.type === 'approval-answer') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { allow: e.allow });
     else if (e.type === 'task') t.tasks.push(e.id);
+    else if (e.type === 'relay') t.relays.push({ taskId: e.taskId, text: e.text });
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
     else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
     else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });
@@ -424,5 +427,7 @@ export function queueReply(id: string, text: string): void {
 // The last turn's message, prefixed with the previous turn's marker when it did not finish.
 export function turnPrompt(ts: Turn[]): string {
   const [prev, cur] = [ts.at(-2), ts.at(-1)!];
-  return prev?.marker ? `[${prev.marker}. Check the current project state before repeating anything.]\n\n${cur.user}` : cur.user;
+  const relays = prev?.relays.map((r) => `[Since your last reply the user wrote directly to task ${r.taskId}: "${r.text}"]`).join('\n') ?? '';
+  const head = [prev?.marker ? `[${prev.marker}. Check the current project state before repeating anything.]` : '', relays].filter(Boolean).join('\n');
+  return head ? `${head}\n\n${cur.user}` : cur.user;
 }

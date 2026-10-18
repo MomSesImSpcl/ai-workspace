@@ -132,6 +132,9 @@
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .mode-menu button span:first-child { display: grid; gap: 1px; }
   .mode-menu small { color: var(--text-muted); font-size: 11px; }
+  .detail-head { display: flex; align-items: baseline; gap: 12px; }
+  .detail-head h2 { flex: 1; min-width: 0; }
+  .task-id { flex: none; width: 8ch; text-align: right; font-size: 11px; color: var(--text-muted); }
   .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
@@ -603,12 +606,13 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
     : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
+  const relays = t.relays.map((r) => `<div class="msg user relay">${esc(r.text)}<time>to task ${esc(tasks[r.taskId]?.title ?? r.taskId)}</time></div>`).join('');
   const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${relays}${switched}`;
 }
 
 let shown = '';
@@ -681,7 +685,7 @@ async function renderTasks() {
   const { task: t, stepList, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
   const open = $('#detail details.steps')?.open; // keep the steps foldout as the user left it
   const mode = state.agents[t.integration]?.modes?.find((m) => m.id === (t.permissionMode ?? ''));
-  setHtml($('#detail'), `<h2>${esc(t.title)}</h2>
+  setHtml($('#detail'), `<div class="detail-head"><h2>${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>
     <dl>
       <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
       <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button>` : 'outside a chat (CLI)'}</dd>
@@ -689,7 +693,6 @@ async function renderTasks() {
       <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
       <dt>Progress</dt><dd><details class="steps" ${open ? 'open' : ''}><summary>${summary(t)}</summary><ol>${stepList.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps yet</li>'}</ol></details>${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
-      <dt>Task</dt><dd>${esc(t.id)} · role ${esc(t.role)}</dd>
       <dt>Started</dt><dd>${new Date(t.createdAt).toLocaleString()}</dd>
       <dt>Finished</dt><dd>${t.finishedAt ? new Date(t.finishedAt).toLocaleString() : '—'}</dd>
     </dl>

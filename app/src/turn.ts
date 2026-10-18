@@ -110,7 +110,8 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
 function sendQueued(id: string): void {
   const events = readEvents(id);
   const state = turns(events, true).at(-1)?.state;
-  if ((state === 'done' || state === 'error') && queuedReplies(events).length && !loadSession(id).task?.cancelled) addMessage(id, '');
+  const s = loadSession(id);
+  if ((state === 'done' || state === 'error') && queuedReplies(events).length && s.task && !s.task.cancelled) addMessage(id, '');
 }
 
 // A process is started with its model, effort and permission mode; a change restarts it, resuming the conversation.
