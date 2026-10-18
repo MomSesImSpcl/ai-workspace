@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { hostSession, runTurn, sessionAgent } from '../src/turn.ts';
+import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
 import { registerProject } from '../src/store.ts';
 
@@ -137,6 +137,7 @@ test('codex: the cap kills the process from streamed usage; Stop in a session in
   await runTurn(t.id);
   assert.equal(status(t.id), 'paused');
   assert.equal(taskUsed(loadSession(t.id)), 650);
+  assert.ok(readEvents(t.id).some((e) => e.type === 'live-usage')); // tokens show while the task works
   const s = createSession('P', 'Chat', { integration: 'codex' });
   addMessage(s.id, 'slow');
   const run = runTurn(s.id);
@@ -191,7 +192,7 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   try {
     const view = await (await fetch(`${base}/api/sessions/${chat.id}`)).json();
     assert.deepEqual([view.tasks[t.id].status, view.tasks[t.id].session.id, view.tasks[t.id].pending], ['completed', chat.id, []]);
-    assert.match(view.tasks[t.id].result, /^turn 1/);
+    assert.match(view.tasks[t.id].thread[0].text, /^turn 1/);
     emit(t.id, 1, { type: 'approval', id: 'a1', tool: 'Bash', detail: 'ls' }); // a card still open in a finished turn is not pending
     assert.deepEqual((await (await fetch(`${base}/api/sessions/${chat.id}`)).json()).tasks[t.id].pending, []);
     const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'more' }) });
@@ -209,8 +210,162 @@ test('the workspace MCP server offers start_task to a chat session and delegate 
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
-  assert.deepEqual(await tools(chat.id), ['approve', 'start_task']);
+  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'rename_task', 'reply_task', 'start_task', 'task_status']);
   assert.deepEqual(await tools(task('t').id), ['approve', 'delegate']);
+});
+
+test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
+  const orch = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(orch.id, 'args');
+  await runTurn(orch.id);
+  const args = JSON.parse(last(orch.id).text) as string[];
+  assert.match(args[args.indexOf('--disallowedTools') + 1]!, /^Bash,Edit,Write/);
+  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator/);
+  const { setSettings } = await import('../src/sessions.ts');
+  setSettings({ orchestratorInstructions: 'Keep goals under 50 words.' });
+  const orch2 = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(orch2.id, 'args');
+  await runTurn(orch2.id);
+  const args2 = JSON.parse(last(orch2.id).text) as string[];
+  assert.match(args2[args2.indexOf('--append-system-prompt') + 1]!, /user's own instructions .*Keep goals under 50 words\./);
+  const t = task('args');
+  await runTurn(t.id);
+  assert.ok(!(JSON.parse(last(t.id).text) as string[]).includes('--disallowedTools'));
+  const codex = createSession('P', 'Orchestration', { integration: 'codex' });
+  addMessage(codex.id, 'hi');
+  await runTurn(codex.id);
+  const init = readEvents(codex.id).find((e) => e.type === 'init');
+  assert.equal(init?.type === 'init' && init.permissionMode, 'approval never · sandbox read-only');
+});
+
+test('tasks run uncapped unless asked; the chat cap applies; the chosen agent, model and effort are checked and recorded', () => {
+  const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(chat.id, 'build it');
+  assert.equal(startFromSession(chat.id, { goal: 'a', role: 'Implementation' }).task!.tokenBudget, undefined);
+  saveSession({ ...loadSession(chat.id), taskCap: 3000 });
+  assert.equal(startFromSession(chat.id, { goal: 'b', role: 'Implementation' }).task!.tokenBudget, 3000);
+  const effort = sessionAgent('claude-code').catalog().models[0]!.efforts[0]!;
+  const t = startFromSession(chat.id, { goal: 'c', role: 'Implementation', agent: 'codex', effort: undefined, reason: 'small fix' });
+  assert.deepEqual([t.integration, t.task!.reason], ['codex', 'small fix']);
+  assert.equal(startFromSession(chat.id, { goal: 'd', role: 'Implementation', effort }).effort, effort);
+  assert.throws(() => startFromSession(chat.id, { goal: 'e', role: 'Implementation', effort: 'warp' }), /Unknown effort/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none' }), /Unknown agent/);
+});
+
+test('pause interrupts a task and keeps its conversation; resume continues it and flags calls already run', async () => {
+  const t = task('slow work');
+  const run = runTurn(t.id);
+  await until(() => sessionWorking(t.id) && readEvents(t.id).some((e) => e.type === 'init'));
+  pauseTask(t.id);
+  await run;
+  assert.equal(status(t.id), 'paused');
+  assert.equal(last(t.id).reason, 'paused');
+  assert.equal(loadSession(t.id).vendorSessionId, 'fake-session');
+  assert.throws(() => pauseTask(t.id), /not running/);
+  resumeTask(t.id);
+  await runTurn(t.id);
+  assert.equal(status(t.id), 'completed');
+  const ts = turns(readEvents(t.id), false);
+  ts[0]!.activity.push({ id: 'x', label: 'Bash ls', done: true, fp: 'f1' });
+  assert.equal(repeatsFor(ts).get('f1'), 'step 1: Bash ls');
+});
+
+test('reply_task queues for a running task of this chat; a finished one gets a new task based on it', async () => {
+  const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  addMessage(chat.id, 'go');
+  const t = startFromSession(chat.id, { goal: 'first delay', role: 'Implementation' });
+  assert.equal(t.permissionMode, 'acceptEdits'); // a chat's tasks edit without asking unless it picks a mode
+  startPendingTasks(chat.id);
+  await until(() => sessionWorking(t.id));
+  assert.throws(() => replyFromSession(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
+  replyFromSession(chat.id, t.id, 'also this');
+  replyFromSession(chat.id, t.id, 'and that');
+  await until(() => turns(readEvents(t.id), turnRunning(t.id)).length === 2 && status(t.id) === 'completed');
+  assert.equal(turns(readEvents(t.id), false)[1]!.user, 'also this\n\nand that');
+  assert.throws(() => replyFromSession(chat.id, t.id, 'more'), /is completed; start a new task with basedOn/);
+  assert.equal(renameTask(chat.id, t.id, '  New name ').title, 'New name');
+  assert.throws(() => renameTask(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
+  const next = startFromSession(chat.id, { goal: 'same again', role: 'Implementation', basedOn: t.id });
+  assert.match(turns(readEvents(next.id), false)[0]!.user, /^same again\n\nContext from an earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2/);
+  saveSession({ ...loadSession(chat.id), taskMode: '' });
+  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation' }).permissionMode, undefined);
+});
+
+test('ui API: a chat cap is set and cleared, pause and resume a task, a changed agent is marked as overridden', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const chat = await (await post('/api/sessions', { projectId: 'P', role: 'Orchestration', taskCap: 5000 })).json();
+    assert.equal(loadSession(chat.id).taskCap, 5000);
+    assert.equal((await post(`/api/sessions/${chat.id}/cap`, { taskCap: 0 })).status, 400);
+    await post(`/api/sessions/${chat.id}/cap`, { taskCap: null });
+    assert.equal(loadSession(chat.id).taskCap, undefined);
+    await post(`/api/sessions/${chat.id}/mode`, { taskMode: 'auto' });
+    assert.equal(loadSession(chat.id).taskMode, 'auto');
+    assert.equal((await post(`/api/sessions/${chat.id}/mode`, { taskMode: 5 })).status, 400);
+    const t = task('slow work');
+    startTurn(t.id);
+    await until(() => sessionWorking(t.id) && readEvents(t.id).some((e) => e.type === 'init'));
+    assert.equal((await post(`/api/tasks/${t.id}/pause`, {})).status, 200);
+    await until(() => status(t.id) === 'paused');
+    assert.equal((await post(`/api/tasks/${t.id}/pause`, {})).status, 400);
+    assert.equal((await post(`/api/sessions/${t.id}/config`, { effort: sessionAgent('claude-code').catalog().models[0]!.efforts[0] })).status, 200);
+    assert.equal(loadSession(t.id).task!.overridden, true);
+    assert.equal((await post(`/api/tasks/${t.id}/resume`, {})).status, 200);
+    await until(() => status(t.id) === 'completed');
+    const { runs } = await (await fetch(`${base}/api/tasks/${t.id}`)).json();
+    assert.deepEqual(runs.map((r: { state: string; paused: number }) => [r.state, r.paused]), [['done', 1]]); // Resume joins the paused run
+  } finally {
+    server.close();
+  }
+});
+
+test('a reply typed under a task goes to it directly; the chat records it and its agent hears it next', async () => {
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
+    addMessage(chat.id, 'go');
+    emit(chat.id, 1, { type: 'done' });
+    const t = startFromSession(chat.id, { goal: 'first', role: 'Implementation' });
+    await runTurn(t.id);
+    const r = await fetch(`${base}/api/tasks/${t.id}/reply`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'make it red' }) });
+    assert.equal(r.status, 200);
+    assert.equal(turns(readEvents(t.id), true).at(-1)!.user, 'make it red');
+    assert.deepEqual(turns(readEvents(chat.id), false)[0]!.relays, [{ taskId: t.id, text: 'make it red' }]);
+    addMessage(chat.id, 'what now?');
+    const { turnPrompt } = await import('../src/sessions.ts');
+    assert.equal(turnPrompt(turns(readEvents(chat.id), true)), `[Since your last reply the user wrote directly to task ${t.id}: "make it red"]\n\nwhat now?`);
+  } finally {
+    server.close();
+  }
+});
+
+test('a cached log picks up appended events, waits for a half-written line and survives a rewrite', async () => {
+  const { appendFileSync, writeFileSync } = await import('node:fs');
+  const { sessionFile } = await import('../src/sessions.ts');
+  const s = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(s.id, 'one');
+  assert.equal(readEvents(s.id).length, 1);
+  emit(s.id, 1, { type: 'text', text: 'hi' });
+  assert.equal(readEvents(s.id).length, 2);
+  const path = sessionFile(s.id, '.jsonl');
+  appendFileSync(path, '{"at":"x","turn":1,"type":"do');
+  assert.equal(readEvents(s.id).length, 2);
+  appendFileSync(path, 'ne"}\n');
+  assert.equal(readEvents(s.id).at(-1)!.type, 'done');
+  writeFileSync(path, '{"at":"x","turn":1,"type":"user","text":"new"}\n');
+  assert.deepEqual(readEvents(s.id).map((e) => e.type), ['user']);
+});
+
+test('the page script parses', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { Script } = await import('node:vm');
+  const html = readFileSync(new URL('../src/ui.html', import.meta.url), 'utf8');
+  for (const [, js] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(js!);
 });
 
 test('tasks recorded before they were sessions are converted once and keep their conversation and state', () => {

@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, TASK_NOTE } from '../sessions.ts';
+import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
 // workspace server, which shows them as approval cards (sessions-019) and offers tasks `delegate`.
@@ -41,7 +41,8 @@ const outsideRoot = (root: string, p: string) => {
   return r.startsWith('..') || isAbsolute(r);
 };
 const rel = (root: string, p: string) => (outsideRoot(root, p) ? p : relative(root, resolve(root, p)).replaceAll('\\', '/'));
-const short = (s: string, n = 80) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+// Long enough to show in full on hover; the page cuts each step to one line.
+const short = (s: string, n = 400) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 // A readable label for one tool call, for the live activity list (sessions-007).
 export function activityLabel(name: string, input: Record<string, unknown>, root: string): { label: string; outside?: boolean } {
@@ -49,7 +50,7 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   const s = (k: string) => short(String(input[k] ?? ''));
   if (path && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) return { label: `Editing \`${rel(root, path)}\``, outside: outsideRoot(root, path) || undefined };
   if (path && name === 'Read') return { label: `Reading \`${rel(root, path)}\`` };
-  if (name === 'Bash') return { label: `Running \`${s('command')}\`` };
+  if (name === 'Bash' || name === 'PowerShell') return { label: `Running \`${s('command')}\`` }; // PowerShell: Claude Code's shell tool on Windows
   if (name === 'Grep') return { label: `Searching for \`${s('pattern')}\`` };
   if (name === 'Glob') return { label: `Finding \`${s('pattern')}\`` };
   if (name === 'WebFetch') return { label: `Fetching ${s('url')}` };
@@ -58,7 +59,9 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   if (name === 'TodoWrite') return { label: 'Updating the to-do list' };
   if (name === 'mcp__aiws__delegate') return { label: `Subtask: ${s('goal')}` };
   if (name === 'mcp__aiws__start_task') return { label: `Starting task: ${s('goal')}` };
-  return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}` };
+  // Any other tool: its name and the first text it was given, so the step says what it worked on.
+  const first = Object.values(input).find((v) => typeof v === 'string' && v.trim());
+  return { label: `Using ${name.replace(/^mcp__/, '').replaceAll('__', ' ')}${first ? `: ${short(first as string)}` : ''}` };
 }
 
 interface StreamLine {
@@ -175,14 +178,18 @@ export class ClaudeProcess implements AgentProcess {
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
       if (!session.task.parentId) args.push('--allowedTools', 'mcp__aiws__delegate');
-    } else args.push('--allowedTools', 'mcp__aiws__start_task'); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    } else if (session.role === ORCHESTRATION) {
+      // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006).
+      // shortcut: tools of the user's own MCP servers stay allowed (#16); deny them too once the setup inventory (onboarding-010) lists them.
+      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','), '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit');
+    } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
     if (session.task) {
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       args.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [hook] }] } }));
     }
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : ' To run self-contained work in the background as a task with a token budget, use the mcp__aiws__start_task tool.'}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
@@ -301,13 +308,13 @@ export function claudeCatalog(): Catalog {
   return {
     models: models.map(([id, label]) => ({ id: id!, label: label!, efforts: CLAUDE_EFFORTS })),
     modes: [
-      { id: '', label: "Claude Code's settings" },
-      { id: 'manual', label: 'Ask before acting (manual)' },
-      { id: 'acceptEdits', label: 'Accept edits (acceptEdits)' },
-      { id: 'auto', label: 'Auto (auto)' },
-      { id: 'plan', label: 'Plan only (plan)' },
-      { id: 'dontAsk', label: 'Deny what is not allowed (dontAsk)' },
-      { id: 'bypassPermissions', label: 'Skip all checks (bypassPermissions)', warn: true },
+      { id: '', label: "Claude Code's settings", hint: 'Your own Claude Code settings decide' },
+      { id: 'manual', label: 'Manual', hint: 'Always ask before making changes' },
+      { id: 'acceptEdits', label: 'Accept edits', hint: 'Automatically accept file edits in the project' },
+      { id: 'auto', label: 'Auto', hint: 'Claude handles permission decisions' },
+      { id: 'plan', label: 'Plan', hint: 'Create a plan before making changes' },
+      { id: 'dontAsk', label: "Don't ask", hint: 'Deny what is not allowed' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Skip every check', warn: true },
     ],
   };
 }

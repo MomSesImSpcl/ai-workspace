@@ -1,15 +1,17 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, GLOBAL, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
-import { sessionAgent, sessionAgents, startTurn } from './turn.ts';
-import { cancelTask, childrenOf, listTasks, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
+import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
+import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
+const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
 const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
 // Integrations a role may name; only those with a session agent can run.
 const integrations = [...Object.keys(sessionAgents), 'manual-browser'];
@@ -51,17 +53,29 @@ function taskView(s: Session) {
   const last = ts.at(-1);
   const step = last?.activity.at(-1);
   const chat = s.task?.sessionId ? loadSession(s.task.sessionId) : undefined;
-  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined, session: chat && { id: chat.id, title: chat.title } };
+  const status = taskStatus(s, ts);
+  return {
+    ...s, goal: ts[0]?.user ?? s.title, status, reason: last?.marker, subtaskUsed: childrenOf(s.id).reduce((n, c) => n + used(usageOf(c.id)), 0), // part of `used`, shown as its own line
+    used: taskUsed(s) + (last?.state === 'working' ? used(turnUsage(last)) : 0), usage: last?.state === 'working' ? addUsage(usageOf(s.id), turnUsage(last)) : usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined,
+    ranModel: ts.findLast((t) => t.model)?.model, // the model the agent reported, also when the task used the agent's default
+    finishedAt: status === 'running' || status === 'waiting' ? undefined : last?.endedAt,
+    session: chat && { id: chat.id, title: chat.title },
+    request: chat && turns(readEvents(chat.id), true).find((t) => t.tasks.includes(s.id))?.user, // the chat message that started it
+  };
 }
 
 // A task as its starting chat shows it (sessions-002): status, its and its subtasks' pending approvals, the result.
+// Open approval cards of a task and its subtasks.
+const pendingOf = (s: Session) => [s, ...childrenOf(s.id)].flatMap((t) => {
+  const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
+  return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
+});
+
 function taskCard(s: Session) {
-  const pending = [s, ...childrenOf(s.id)].flatMap((t) => {
-    const last = turns(readEvents(t.id), turnRunning(t.id)).at(-1);
-    return last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).map((a) => ({ ...a, taskId: t.id })) : [];
-  });
-  const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
-  return { ...taskView(s), pending, result: last?.state === 'working' ? '' : last?.text ?? '' };
+  const pending = pendingOf(s);
+  // The task's own conversation after its goal: the user's replies and each answer, oldest first.
+  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i && !t.resume ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
+  return { ...taskView(s), pending, thread };
 }
 
 // shortcut: folds every session's log per list request; upgrade to a summary file when logs grow large.
@@ -69,25 +83,12 @@ function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
   const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
-  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + taskCard(t).pending.length, 0) };
+  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
 }
 
-// Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
-// effort means the agent's own default.
+// Agent, model and effort, checked against what the agent offers (its catalog).
 function agentConfig(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
-  const integration = b.integration === undefined ? current.integration : b.integration;
-  if (typeof integration !== 'string' || !sessionAgents[integration]) throw new HttpError(400, `agent must be one of ${Object.keys(sessionAgents).join(', ')}`);
-  const catalog = sessionAgents[integration]!.catalog();
-  const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
-  const model = pick(b.model, integration === current.integration ? current.model : undefined);
-  const entry = catalog.models.find((m) => m.id === (model ?? ''));
-  if (model !== undefined && (typeof model !== 'string' || !entry)) throw new HttpError(400, `model must be one of ${catalog.models.map((m) => m.id || 'default').join(', ')}`);
-  let effort = pick(b.effort, current.effort);
-  if (effort !== undefined && !(entry ?? catalog.models[0])?.efforts.includes(effort as string)) {
-    if (b.effort !== undefined) throw new HttpError(400, `effort must be one of ${(entry ?? catalog.models[0])?.efforts.join(', ')}`);
-    effort = undefined; // a kept level the new agent or model does not offer falls back to its default
-  }
-  return { integration, model: model as string | undefined, effort: effort as string | undefined };
+  try { return agentChoice(b, current); } catch (e) { throw new HttpError(400, (e as Error).message); }
 }
 
 const text = (v: unknown, name: string) => {
@@ -115,6 +116,8 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
     const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
     s.effort = config.effort;
+    if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
+    if (typeof b.taskMode === 'string' && b.taskMode.length <= 40) s.taskMode = b.taskMode;
     saveSession(s);
     return sessionView(s);
   }
@@ -142,6 +145,15 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
       s.vendorSessionId = undefined;
     }
     Object.assign(s, config);
+    if (s.task) s.task.overridden = true; // the user changed the orchestrator's choice (orchestrator-004)
+    saveSession(s);
+  } else if (action === 'mode') {
+    if (b.taskMode !== null && (typeof b.taskMode !== 'string' || b.taskMode.length > 40)) throw new HttpError(400, 'taskMode must be a permission mode, an empty string or null');
+    s.taskMode = (b.taskMode as string | null) ?? undefined;
+    saveSession(s);
+  } else if (action === 'cap') {
+    if (b.taskCap !== null && (!Number.isInteger(b.taskCap) || (b.taskCap as number) <= 0)) throw new HttpError(400, 'taskCap must be a positive whole number or null');
+    s.taskCap = (b.taskCap as number | null) ?? undefined;
     saveSession(s);
   } else if (action === 'pin') {
     setPinned(id, b.pinned === true);
@@ -162,12 +174,31 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   const id = kind === 'projects' && rawId !== undefined ? decodeURIComponent(rawId) : rawId;
   if (id !== undefined && !(kind === 'projects' ? id.trim() !== '' : /^[\w-]+$/.test(id))) throw new HttpError(400, 'bad id');
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
-  if (req.method === 'GET' && kind === 'meta') return { projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'POST' && kind === 'settings') {
+    const b = await body(req);
+    if (typeof b.orchestratorInstructions !== 'string' || b.orchestratorInstructions.length > 4000) throw new HttpError(400, 'orchestratorInstructions must be text up to 4000 characters');
+    setSettings({ orchestratorInstructions: b.orchestratorInstructions });
+    return getSettings();
+  }
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
-    return { task: taskCard(s), children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
+    // Each message the task got is its own run: the first is the start, later ones are replies that reused it.
+    // A Resume continues the run it paused, so its steps, tokens and result join that run.
+    type Run = { usage: Usage; n: number; request: string; result: string; state: string; marker?: string; model?: string; permissionMode?: string; startedAt: string; endedAt?: string; used: number; costUsd?: number; paused: number; steps: { label: string; done: boolean; error?: boolean }[] };
+    const runs: Run[] = [];
+    for (const t of turns(readEvents(id), turnRunning(id))) {
+      const steps = t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error }));
+      const prev = runs.at(-1);
+      if (t.resume && prev) {
+        Object.assign(prev, { result: t.state === 'working' ? '' : t.text || prev.result, state: t.state, marker: t.marker, model: t.model ?? prev.model, endedAt: t.endedAt, used: prev.used + used(turnUsage(t)), usage: addUsage(prev.usage, turnUsage(t)), costUsd: prev.costUsd === undefined && t.usage.costUsd === undefined ? undefined : (prev.costUsd ?? 0) + (t.usage.costUsd ?? 0), paused: prev.paused + 1, steps: [...prev.steps, ...steps] });
+        continue;
+      }
+      runs.push({ usage: turnUsage(t), n: t.n, request: t.user, result: t.state === 'working' ? '' : t.text, state: t.state, marker: t.marker, model: t.model, permissionMode: t.permissionMode, startedAt: t.startedAt, endedAt: t.endedAt, used: used(turnUsage(t)), costUsd: turnUsage(t).costUsd, paused: 0, steps });
+    }
+    return { task: taskCard(s), runs, children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
@@ -207,11 +238,18 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   // Tasks start from a chat (start_task); the user answers them there (ADR 0010).
   if (req.method === 'POST' && kind === 'tasks' && action === 'reply') {
     const b = await body(req);
-    const task = resumeTask(id, undefined, text(b.text, 'text'));
+    const task = replyTask(id, text(b.text, 'text')); // queued while the task works
+    relayToChat(task, text(b.text, 'text'));
     if (!turnRunning(id)) startTurn(id); // a running host picks the message up itself
     return taskView(task);
   }
   if (req.method === 'POST' && kind === 'tasks' && action === 'cancel') return taskView(cancelTask(id));
+  if (req.method === 'POST' && kind === 'tasks' && action === 'pause') return taskView(pauseTask(id));
+  if (req.method === 'POST' && kind === 'tasks' && action === 'resume') {
+    const task = resumeTask(id);
+    if (!turnRunning(id)) startTurn(id);
+    return taskView(task);
+  }
   throw new HttpError(404, 'not found');
 }
 
@@ -222,11 +260,13 @@ export function serve(port: number): Server {
     const host = req.headers.host ?? '';
     const send = (code: number, type: string, data: string) => res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }).end(data);
     try {
+      forgetSessionList(); // each request sees other processes' changes at once
       const { port: actual } = server.address() as { port: number };
       if (host !== `127.0.0.1:${actual}` && host !== `localhost:${actual}`) throw new HttpError(403, 'bad host');
       if (req.method !== 'GET' && req.headers.origin !== `http://${host}`) throw new HttpError(403, 'bad origin');
       const url = new URL(req.url ?? '/', `http://${host}`);
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', readFileSync(page, 'utf8'));
+      if (req.method === 'GET' && url.pathname === '/vendor/marked.js') return send(200, 'text/javascript; charset=utf-8', readFileSync(markedJs, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
       const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^Subtask |^No assignment|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;

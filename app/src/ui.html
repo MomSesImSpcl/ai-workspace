@@ -96,10 +96,21 @@
   .perm { justify-self: end; max-width: 100%; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
   .perm .warn, .flag { color: var(--amber); font-weight: 600; }
   .turn-activity { align-self: stretch; font-size: 12px; color: var(--text-dim); border-left: 2px solid var(--hairline-strong); padding: 2px 0 2px 10px; }
+  /* A folded "Worked …" line is only as wide as its text, on the reply side, so it never reaches under the request. */
+  details.turn-activity:not([open]) { align-self: flex-start; max-width: 92%; }
+  details.turn-activity[open] { align-self: flex-start; width: 92%; }
+  /* Request on the right (up to 60 %), its folded Worked line on the left (up to 36 %), on one line. */
+  .turn-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 4%; }
+  .turn-head > .msg.user { margin-left: auto; max-width: 60%; }
+  .turn-head > details.turn-activity:not([open]) { max-width: 36%; align-self: flex-end; } /* level with the request's bottom edge */
+  .turn-head > details.turn-activity[open] { order: 2; flex-basis: 100%; max-width: 92%; }
+  .turn-head > details.turn-activity summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .turn-activity summary { cursor: pointer; color: var(--text-muted); }
   .turn-activity ol { margin: 4px 0 0; padding-left: 18px; }
   .turn-activity li.err { color: var(--red); }
   .turn-activity li.run::marker { color: var(--blue); }
+  .steps li.run { color: var(--blue); } /* the step being worked on */
+  .steps li.err { color: var(--red); }
   .marker { margin-top: 4px; color: var(--amber); font-weight: 600; }
   .approval { align-self: stretch; padding: 10px 12px; border: 1px solid var(--accent-edge); border-radius: 10px; background: var(--accent-dim); display: grid; gap: 6px; }
   .approval code, .turn-activity code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
@@ -123,6 +134,44 @@
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
+  .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
+  .chat-tokens { white-space: nowrap; }
+  .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
+  .task-cap .check { padding-bottom: 0; }
+  .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
+  .task-cap .perm-label { margin-left: auto; }
+  .mode-menu { min-width: 260px; }
+  .mode-menu .menu-title { padding: 6px 10px 4px; font-size: 12px; color: var(--text-muted); }
+  .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .mode-menu button span:first-child { display: grid; gap: 1px; }
+  .mode-menu small { color: var(--text-muted); font-size: 11px; }
+  /* Markdown in replies: compact spacing inside a chat bubble */
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 8px; }
+  .md ul, .md ol { padding-left: 20px; }
+  .md h1, .md h2, .md h3, .md h4 { font-size: 1em; margin: 10px 0 6px; }
+  .md pre { padding: 8px 10px; background: var(--code); }
+  .md code { font-size: .92em; }
+  .md table { border-collapse: collapse; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--hairline-strong); padding: 3px 8px; text-align: left; }
+  .md blockquote { border-left: 3px solid var(--hairline-strong); padding-left: 10px; color: var(--text-dim); }
+  .md a { color: var(--blue); }
+  .msg.agent { white-space: normal; }
+  /* One block per request with everything it caused: tight inside, clear space between requests. */
+  .messages { gap: 26px; }
+  .turn { display: flex; flex-direction: column; gap: 6px; }
+  details.run { margin-bottom: 10px; padding: 10px 14px; }
+  .steps li, .turn-activity li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style-position: inside; } /* one line per step; full text on hover */
+  details.run > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+  details.run > summary::-webkit-details-marker { display: none; }
+  details.run > summary::after { content: '▾'; margin-left: auto; font-size: 16px; line-height: 1; color: var(--text); transition: transform .15s; }
+  details.run[open] > summary::after { transform: rotate(180deg); }
+  details.run > summary { padding: 2px 0; }
+  details.run[open] > summary { margin-bottom: 8px; }
+  .detail-head { display: flex; align-items: baseline; gap: 12px; }
+  .detail-head h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-id { flex: none; width: 8ch; text-align: right; font-size: 11px; color: var(--text-muted); }
+  .task-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .chat-composer .row > .field { flex: 1 1 90px; }
   .identity { display: flex; align-items: center; gap: 11px; padding: 0 4px; min-width: 0; }
   .identity strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -161,6 +210,16 @@
   .task-row:hover { background: var(--surface-2); }
   .task-row[aria-current=true] { background: var(--accent-dim); border-color: var(--accent-edge); }
   .task-list { display: grid; gap: 8px; }
+  /* Title with its description beside it, never taller than the title. */
+  .page-head { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; }
+  .page-head h1 { margin: 0; flex: none; }
+  /* Never taller than the title: 2 lines next to the small title, 3 once it reaches its full size (wide windows). */
+  .page-head .lede { margin: 0; max-width: none; flex: 1; min-width: 0; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  @media (min-width: 1270px) { .page-head .lede { -webkit-line-clamp: 3; } }
+  .task-scope { margin-bottom: 16px; gap: 6px; }
+  .task-group { display: grid; gap: 8px; margin-bottom: 10px; }
+  .task-group > .eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .task-group { padding-bottom: 10px; border-bottom: 1px solid var(--hairline); }
   .goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 11px; color: var(--text-dim); }
   .empty { color: var(--text-muted); font-size: 12px; padding: 14px 2px; }
@@ -248,6 +307,12 @@
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
       </div>
+      <!-- Override of the orchestrator's agent, model and effort for one task (orchestrator-004). -->
+      <dialog class="confirm" id="task-config" aria-labelledby="task-config-title">
+        <form method="dialog"><h2 id="task-config-title">Change the task's agent</h2><p class="meta">Applies when the task continues. A different agent gets the conversation so far as text.</p>
+          <div class="row pickers"><select id="tc-agent" aria-label="Agent"></select><select id="tc-model" aria-label="Model"></select><select id="tc-effort" aria-label="Effort level"></select></div>
+          <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" value="ok">Apply</button></div></form>
+      </dialog>
       <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
         <form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p>
           <div class="row" style="justify-content:flex-end"><button class="btn small" value="cancel">Cancel</button><button class="btn small primary" id="confirm-ok" value="ok"></button></div></form>
@@ -257,7 +322,7 @@
     <aside class="sidebar" id="sidebar" aria-label="Chat">
       <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat" tabindex="0"></div>
       <div class="chat-head">
-        <span aria-hidden="true"></span>
+        <span class="chat-total" id="chat-total"></span>
         <div class="chat-title" id="chat-title"></div>
         <div class="perm" id="perm" tabindex="0"></div>
       </div>
@@ -266,10 +331,15 @@
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
         <div class="row pickers">
+          <select id="role" aria-label="Session role" title="Orchestrator: every change runs as a task; questions are answered here. Chat: the agent works itself."><option value="Orchestration">Orchestrator</option><option value="Chat">Chat</option></select>
           <select id="agent" aria-label="Agent" title="Agent"></select>
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
+        <!-- Settings for the tasks this chat starts (ADR 0011): layout only here and in renderCap(). -->
+        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span>
+          <span class="meta perm-label">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button></div>
+        <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
         <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -278,12 +348,12 @@
     <main class="content" id="content">
       <section class="page" id="page-projects" hidden>
         <div class="topline"><div class="eyebrow">Workspace</div></div>
-        <h1 class="display">Projects</h1>
-        <p class="lede" style="margin-bottom:24px">Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.</p>
+        <div class="page-head" style="margin-bottom:24px"><h1 class="display">Projects</h1>
+        <p class="lede" title="Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.">Every project in this workspace. Sessions and tasks belong to one project; select one to work in it.</p></div>
         <label class="check" style="margin-bottom:8px"><input id="show-archived-projects" type="checkbox"> Show archived</label>
         <div class="task-list" id="project-list"></div>
         <div id="unadded"></div>
-        <form class="card" id="project" style="display:grid;gap:8px;margin-top:20px">
+        <form class="card" id="project" style="display:grid;gap:8px;margin-top:20px;padding:10px 14px">
           <h3 style="margin:0">Add project</h3>
           <label class="field">Folder<input name="path" required placeholder="Click to choose a folder, or type its path"></label>
           <label class="field">Name (optional, defaults to the folder name)<input name="id"></label>
@@ -293,8 +363,10 @@
       </section>
       <section class="page" id="page-tasks" hidden>
         <div class="topline"><div class="eyebrow" id="tasks-eyebrow"></div></div>
-        <h1 class="display">Tasks</h1>
-        <p class="lede" style="margin-bottom:24px">Background work for this project. A chat's agent starts tasks; their approval cards, replies and results appear in that chat. Here you see what each task is doing, and can cancel it. Progress shows verified steps and tokens, never guessed percentages.</p>
+        <div class="page-head"><h1 class="display">Tasks</h1>
+        <p class="lede" title="Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.">Background work started from your chats. Their approval cards, replies and results appear in the chat that started them. Here you see what each task is doing, and can pause or cancel it.</p></div>
+        <!-- Which tasks the list shows: the open chat's, or all of its project (or of all global sessions), grouped by chat. -->
+        <div class="row task-scope" role="group" aria-label="Tasks to show"><button class="btn small" data-scope="session" type="button" title="All tasks in this Session">Session</button><button class="btn small" data-scope="all" type="button" id="scope-all"></button></div>
         <div class="split">
           <div class="task-list" id="tasks" aria-live="polite"></div>
           <div class="card detail" id="detail"><p class="empty">Select a task to see its steps, audit and result.</p></div>
@@ -316,6 +388,9 @@
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
+        <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
+        <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
+        <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
       </div>
     </aside>
 
@@ -326,7 +401,16 @@
     </nav>
   </div>
 </div>
+<script src="/vendor/marked.js"></script>
 <script>
+// Agent replies are Markdown. Raw HTML in them is shown as text, links keep only http(s) and mailto, and
+// images become links, so a reply cannot inject markup or load anything.
+marked.use({ gfm: true, breaks: true, renderer: {
+  html: ({ text }) => esc(text),
+  link({ href, tokens }) { const label = this.parser.parseInline(tokens); return /^(https?:|mailto:)/i.test(href) ? `<a href="${esc(href)}" target="_blank" rel="noreferrer">${label}</a>` : label; },
+  image: ({ href, text }) => (/^https?:/i.test(href) ? `<a href="${esc(href)}" target="_blank" rel="noreferrer">${esc(text || href)}</a>` : esc(text)),
+} });
+const md = (text) => `<div class="md">${marked.parse(text)}</div>`;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -357,11 +441,34 @@ async function api(path, body) {
 // Tokens at real cost, as the server counts them (sessions.ts `used`): cache reads at 10 %, cache writes at 125 %.
 const cost = (u) => Math.round(u.inputTokens - (u.cachedInputTokens ?? 0) - (u.cacheWriteTokens ?? 0) + u.outputTokens + 0.1 * (u.cachedInputTokens ?? 0) + 1.25 * (u.cacheWriteTokens ?? 0));
 const COST_HINT = 'Tokens at real cost: prompt-cache reads count 10 %, cache writes 125 % of an input token';
-const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${COST_HINT}">${t.used.toLocaleString()} / ${t.task.tokenBudget.toLocaleString()} tokens</span> · ${esc(t.integration)}`;
+// The whole session's tokens in its title row: the chat's own agent plus every task it started (with their
+// subtasks), split on hover. Running turns and tasks count what they streamed so far.
+function sessionTotalHtml(d) {
+  if (!d) return '';
+  const own = d.turns.reduce((n, t) => n + cost(t.state === 'working' && t.liveUsage ? t.liveUsage : t.usage), 0);
+  const tasks = Object.values(d.tasks);
+  const taskTotal = tasks.reduce((n, t) => n + t.used, 0);
+  if (!own && !taskTotal) return '';
+  const who = d.session.role === 'Orchestration' ? 'Orchestrator' : 'Chat';
+  const hover = [`${who}: ${own.toLocaleString()}`, ...(tasks.length ? [`Tasks (${tasks.length}): ${taskTotal.toLocaleString()}`] : []), '', COST_HINT].join('\n');
+  return `<small class="meta chat-tokens" title="${esc(hover)}">${(own + taskTotal).toLocaleString()} tokens</small>`;
+}
+
+// What each token kind adds to the count, for the hover on a token figure (weights as in `cost`).
+function breakdown(u, subtasks = 0) {
+  if (!u) return COST_HINT;
+  const read = u.cachedInputTokens ?? 0, write = u.cacheWriteTokens ?? 0;
+  const n = (v) => Math.round(v).toLocaleString();
+  return [`Uncached input: ${n(u.inputTokens - read - write)}`, `Cache reads (×0.1): ${n(0.1 * read)}`, `Cache writes (×1.25): ${n(1.25 * write)}`, `Output: ${n(u.outputTokens)}`, ...(subtasks ? [`Subtasks: ${n(subtasks)}`] : []), '', COST_HINT].join('\n');
+}
+const summary = (t) => `${t.steps} step${t.steps === 1 ? '' : 's'} · <span title="${esc(breakdown(t.usage, t.subtaskUsed))}">${t.used.toLocaleString()} ${t.task.tokenBudget === undefined ? 'tokens, no cap' : `/ ${t.task.tokenBudget.toLocaleString()} tokens`}</span> · ${esc(t.integration)}`;
 const LABELS = { waiting: 'waiting for you', interrupted: 'interrupted (reply to continue)' };
 const status = (t) => `<span class="status s-${esc(t.status)}"><span class="dot"></span> ${esc(LABELS[t.status] ?? t.status)}</span>`;
 const active = (t) => t.status === 'running' || t.status === 'waiting';
-const projectTasks = () => state.tasks.filter((t) => t.projectId === state.project && !t.task.parentId);
+// The open chat decides the scope: its project, or all global sessions for a global chat (they never mix).
+const globalScope = () => (state.session ? isGlobal(allSessions().find((x) => x.id === state.session) ?? {}) : state.newGlobal);
+const scopeTasks = () => state.tasks.filter((t) => t.projectId === (globalScope() ? '' : state.project) && !t.task.parentId);
+const sessionTasks = () => scopeTasks().filter((t) => state.session && t.task.sessionId === state.session);
 const current = () => state.projects.find((p) => p.id === state.project);
 
 function setPage(page) {
@@ -404,10 +511,14 @@ function renderShell() {
   $('#crumb').disabled = !p || !window.desktop;
   const chat = state.roles.Chat;
   $('#session-agent').textContent = chat ? `New sessions: ${chat.integration}${chat.model ? ` (${chat.model})` : ''} · change in Settings → Chat` : '';
-  const running = state.tasks.filter(active).length;
+  // Top right: the whole project (or all global sessions); under the chat: only the open chat's tasks.
+  const running = scopeTasks().filter(active).length;
   $('#running-pill').innerHTML = `<span class="dot s-running"></span>${running} running`;
-  const mine = projectTasks();
-  $('#foot-status').innerHTML = p ? `<span class="dot s-running"></span> ${mine.filter(active).length} running · ${mine.length} tasks` : '';
+  $('#running-pill').title = globalScope() ? 'Running in all global sessions' : 'Running in this project';
+  // Any task anywhere waiting for an approval makes the taskbar button blink (desktop app only).
+  window.desktop?.attention?.(state.tasks.some((t) => t.status === 'waiting'));
+  const mine = sessionTasks();
+  $('#foot-status').innerHTML = state.session ? `<span class="dot s-running"></span> ${mine.filter(active).length} running · ${mine.length} task${mine.length === 1 ? '' : 's'} in this session` : '';
 }
 
 function renderProjects() {
@@ -427,9 +538,19 @@ function renderProjects() {
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
-  <span class="goal">${esc(t.goal)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
+  <span class="goal" title="${esc(t.title)}">${esc(t.title)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
 
 // Chat column: the project's sessions and the open session's turns, built from its event log.
+// Polling re-renders only what changed, and never while the user selects text in it, so scroll position and a
+// selection survive. `key` names what is shown (a task id): showing something else always renders.
+function setHtml(el, html, key) {
+  if (el.__html === html) return;
+  const sel = getSelection();
+  if (sel && !sel.isCollapsed && el.contains(sel.anchorNode) && el.__key === key) return;
+  el.__key = key;
+  el.__html = html;
+  el.innerHTML = html;
+}
 const code = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
 const took = (t) => {
   const s = Math.round((new Date(t.endedAt) - new Date(t.startedAt)) / 1000);
@@ -443,19 +564,67 @@ const isGlobal = (s) => s.projectId === '';
 
 // Pinned sessions come first (the server sorts them) and can be dragged to reorder.
 const sessionRows = (list, group) => list.map((s) => `<div class="session-row" data-row="${esc(s.id)}" data-group="${group}" ${s.pinOrder !== undefined ? 'draggable="true"' : ''}><button class="session-item" data-session="${esc(s.id)}" aria-current="${s.id === state.session}">
-    ${sessionState(s)}<span>${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
+    ${sessionState(s)}<span title="${esc(s.title)}">${esc(s.title)}</span>${s.pendingApprovals ? `<b class="badge" title="Waiting for your approval">${s.pendingApprovals}</b>` : ''}<small>${s.archived ? 'archived' : s.pinOrder !== undefined ? '<span class="pin" title="Pinned; drag to reorder">📌</span>' : ''}</small></button>
     <button class="menu-btn" data-menu="${esc(s.id)}" data-kind="session" aria-label="Session actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === s.id}">⋯</button></div>`).join('');
 
 const EFFORT_LABELS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', ultra: 'Ultra' };
 const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+// A new session starts as the orchestrator unless the user picks Chat; it uses that role's agent.
 function pickerValues(s) {
-  if (s) return { integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
-  const chat = state.roles.Chat ?? { integration: 'claude-code' };
-  return state.draft ?? { integration: chat.integration, model: chat.model ?? '', effort: '' };
+  if (s) return { role: s.role, integration: s.integration, model: s.model ?? '', effort: s.effort ?? '' };
+  return state.draft ?? roleDraft('Orchestration');
+}
+function roleDraft(role) {
+  const a = state.roles[role] ?? { integration: 'claude-code' };
+  return { role, integration: state.agents[a.integration] ? a.integration : 'claude-code', model: a.model ?? '', effort: '' };
+}
+// The task cap switch next to the chat box (ADR 0011): unchecked, the chat's new tasks run uncapped.
+function renderCap(s) {
+  if (['cap', 'cap-on'].includes(document.activeElement?.id)) return;
+  const cap = s ? s.taskCap : state.draftCap;
+  $('#cap-on').checked = cap !== undefined;
+  if (cap !== undefined) $('#cap').value = cap;
+  $('#cap').disabled = cap === undefined;
+  const { mode, list } = taskModes(s);
+  $('#task-mode').textContent = `${list.find((m) => m.id === mode)?.label ?? mode} ▾`;
+}
+// The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
+function taskModes(s) {
+  const mode = (s ? s.taskMode : state.draftMode) ?? 'acceptEdits';
+  const modes = state.agents[state.roles.Implementation?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
+  return { mode, list: modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }] };
+}
+// Permission menu, styled like Claude's mode menu: a title, each mode with its hint, a check on the current one
+// and its number key. A mode that skips every check is turned on only after a confirmation.
+function openModeMenu() {
+  const s = state.sessionData?.session.id === state.session ? state.sessionData.session : null;
+  const { mode, list } = taskModes(s);
+  const menu = $('#mode-menu');
+  menu.innerHTML = '<div class="menu-title">Mode</div>' + list.map((m, i) => `<button type="button" role="menuitemradio" aria-checked="${m.id === mode}" data-mode="${esc(m.id)}">
+    <span><b>${esc(m.label)}</b>${m.hint ? `<small>${esc(m.hint)}</small>` : ''}</span><span class="meta">${m.warn ? 'Enable' : `${m.id === mode ? '✓ ' : ''}${i + 1}`}</span></button>`).join('');
+  menu.hidden = false;
+  const r = $('#task-mode').getBoundingClientRect();
+  menu.style.left = `${Math.min(r.left, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 6)}px`;
+  $('#task-mode').setAttribute('aria-expanded', 'true');
+  menu.querySelector('[aria-checked=true]')?.focus();
+}
+function closeModeMenu() {
+  $('#mode-menu').hidden = true;
+  $('#task-mode').setAttribute('aria-expanded', 'false');
+}
+async function pickMode(id) {
+  closeModeMenu();
+  const m = taskModes(null).list.find((x) => x.id === id) ?? state.agents[state.roles.Implementation?.integration]?.modes?.find((x) => x.id === id);
+  if (m?.warn && !(await ask(`Turn on ${m.label} for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) return;
+  if (!state.session) { state.draftMode = id; return renderCap(null); }
+  await sessionAction('mode', { taskMode: id });
 }
 function renderPickers(s) {
   if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
   const v = pickerValues(s);
+  $('#role').value = v.role;
+  $('#role').hidden = !!s;
   const catalog = state.agents[v.integration];
   $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option(v.integration, v.integration, true);
   const models = catalog?.models ?? [{ id: '', label: 'Default', efforts: [] }];
@@ -482,7 +651,7 @@ function renderSessions() {
 }
 
 function activityList(t) {
-  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
+  const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
   const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
   return `<ol>${items}${answered}</ol>`;
 }
@@ -492,28 +661,49 @@ const approvalCard = (a, taskId, who = '') => `<div class="approval"><b>${who}${
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Deny</button></div></div>`;
 const pendingCards = (t) => t.pending.map((a) => approvalCard(a, a.taskId, a.taskId === t.id ? '' : 'Subtask: ')).join('');
 
+// The orchestrator's choice for a task and its controls (orchestrator-004, runtime-006). Their layout lives
+// only in these two functions.
+function taskChoiceHtml(t) {
+  const what = [t.integration, t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ');
+  const why = t.task.overridden ? 'changed by you' : t.task.reason;
+  return `<div class="meta task-choice">${what}${why ? ` — ${esc(why)}` : ''}</div>`;
+}
+function taskControlsHtml(t) {
+  const open = t.status !== 'cancelled' && t.status !== 'completed';
+  return [
+    active(t) ? `<button class="btn small" data-task-act="pause" data-task="${esc(t.id)}">Pause</button>` : '',
+    open && !active(t) ? `<button class="btn small" data-task-act="resume" data-task="${esc(t.id)}">Resume</button>` : '',
+    t.status !== 'cancelled' && !active(t) ? `<button class="btn small" data-task-config="${esc(t.id)}" title="Change agent, model or effort">Change</button>` : '',
+  ].join('');
+}
+
 // A task the chat's agent started (sessions-002): its approvals, replies and result are answered here.
 function taskCardHtml(t) {
   if (!t) return '';
-  const canReply = !active(t) && t.status !== 'cancelled';
-  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} <button class="btn small" data-id="${esc(t.id)}">Details</button></div>
-    <div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
-    ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
-    ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="Reply to continue the task" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
+  const canReply = t.status !== 'cancelled'; // while the task works, the reply waits for its current step
+  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.title)}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
+    ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
+    ${t.thread.map((m) => `${m.user ? `<div class="msg user">${esc(m.user)}<time>to the task</time></div>` : ''}${noticesHtml(m.notices)}${m.text && !m.working ? `<div class="msg agent">${md(m.text)}<time>task</time></div>` : ''}`).join('')}
+    ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="${active(t) ? 'Talk directly to this task’s agent (it reads this when its current step ends)' : 'Talk directly to this task’s agent (continues this task, not via the orchestrator)'}" title="Goes straight to the agent working on this task and continues it; the orchestrator is told afterwards" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
 }
 
+const noticesHtml = (list) => list.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
+
 // Success collapses the activity into one line; anything else keeps it open with a marker (sessions-008).
-function turnHtml(t, tasks = {}) {
+// A task the chat sent more messages to shows in full only in the last turn that names it.
+function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const steps = t.activity.length;
   const activity = !steps && !t.marker && !t.approvals.length ? ''
     : t.state === 'done' ? `<details class="turn-activity"><summary>Worked ${took(t)} · ${steps} step${steps === 1 ? '' : 's'}</summary>${activityList(t)}</details>`
     : `<div class="turn-activity">${t.state === 'working' ? `<span class="dot s-running"></span> Working… ${steps} step${steps === 1 ? '' : 's'}` : ''}${activityList(t)}${t.marker ? `<div class="marker">⚠ ${esc(t.marker)}${t.error ? ` — ${esc(t.error)}` : ''}</div>` : ''}</div>`;
-  const notices = t.notices.map((n) => `<div class="turn-activity marker">⚠ ${esc(n.text)}${n.blocked ? '<br>The agent did not run this message: a plugin or hook in its own setup stopped it.' : ''}</div>`).join('');
+  const notices = noticesHtml(t.notices);
   const cards = t.approvals.filter((a) => a.allow === undefined).map((a) => approvalCard(a)).join('');
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
-  return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${t.tasks.map((id) => taskCardHtml(tasks[id])).join('')}${switched}`;
+  // A finished turn's "Worked" line sits beside the request instead of under it; open, its steps go below.
+  const request = `<div class="msg user turn-start">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>`;
+  return `${t.state === 'done' && activity ? `<div class="turn-head">${activity}${request}</div>` : request + activity}${notices}${cards}
+    ${t.text ? `<div class="msg agent">${md(t.text)}${used ? `<time title="${esc(breakdown(t.usage))}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
 let shown = '';
@@ -534,12 +724,14 @@ function renderChat() {
   const failed = setup?.mcp?.filter((m) => m.status !== 'connected') ?? [];
   const info = d && d.turns.findLast((t) => t.model);
   const warnings = [d?.permissions.warn, d?.turns.at(-1)?.permissionMode === 'bypassPermissions' ? 'running with all permission checks skipped' : '', failed.length ? `not connected: ${failed.map((m) => m.name).join(', ')}` : ''].filter(Boolean);
+  $('#chat-total').innerHTML = s ? sessionTotalHtml(d) : ''; // the session's tokens, left of the title
   $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
-  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
+  $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${s.role === 'Orchestration' ? 'Orchestrator · ' : ''}${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
   $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
   $('#stop').hidden = !working;
   renderPickers(s);
+  renderCap(s);
   $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
@@ -547,16 +739,23 @@ function renderChat() {
   shown = key;
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = d?.turns.map((t) => turnHtml(t, d.tasks)).join('')
-    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
+  const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
+  setHtml(box, d?.turns.map((t) => `<div class="turn">${turnHtml(t, d.tasks, lastTurnOf)}</div>`).join('')
+    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`, state.session);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
+// A load the user overtook (another project or chat picked while it ran) is dropped, so it cannot redraw the old one.
 async function loadSessions() {
-  state.sessions = state.project ? await api(`/api/sessions?project=${encodeURIComponent(state.project)}`) : [];
-  state.globals = await api('/api/sessions?global=1');
-  if (state.session && !allSessions().some((s) => s.id === state.session)) state.session = null;
-  state.sessionData = state.session ? await api(`/api/sessions/${state.session}`) : null;
+  const project = state.project, session = state.session;
+  const [sessions, globals, data] = await Promise.all([
+    project ? api(`/api/sessions?project=${encodeURIComponent(project)}`) : [],
+    api('/api/sessions?global=1'),
+    session ? api(`/api/sessions/${session}`).catch(() => null) : null,
+  ]);
+  if (project !== state.project || session !== state.session) return;
+  Object.assign(state, { sessions, globals, sessionData: data });
+  if (state.session && !allSessions().some((s) => s.id === state.session)) Object.assign(state, { session: null, sessionData: null });
 }
 
 function openSession(id, newGlobal = false) {
@@ -577,32 +776,76 @@ async function sessionAction(act, body = {}, id = state.session) {
   render();
 }
 
+// All tasks of the scope, under the title of the chat that started them; the open chat's group first.
+function groupedTasks() {
+  const groups = new Map();
+  for (const t of scopeTasks()) {
+    const key = t.task.sessionId ?? '';
+    if (!groups.has(key)) groups.set(key, { title: t.session?.title ?? (key ? 'Deleted session' : 'Started outside a chat (CLI)'), tasks: [] });
+    groups.get(key).tasks.push(t);
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === state.session ? -1 : b === state.session ? 1 : 0));
+  return order.map((k) => `<div class="task-group"><div class="eyebrow" title="${esc(groups.get(k).title)}">${esc(groups.get(k).title)}</div>${groups.get(k).tasks.map(row).join('')}</div>`).join('') || '<p class="empty">No tasks yet.</p>';
+}
+
 async function renderTasks() {
-  $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
-  $('#tasks').innerHTML = projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>';
-  if (!state.selected) return void ($('#detail').innerHTML = '<p class="empty">Select a task to see its steps, approvals and result.</p>');
-  const { task: t, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
-  const mode = state.agents[t.integration]?.modes?.find((m) => m.id === (t.permissionMode ?? ''));
-  $('#detail').innerHTML = `<h2>${esc(t.goal.split('\n')[0])}</h2>
+  const global = globalScope();
+  const scope = pref.get('taskScope', 'session');
+  $('#tasks-eyebrow').textContent = global ? 'Global sessions' : `Project / ${state.project ?? '—'}`;
+  $('#scope-all').textContent = global ? 'Global' : 'Project';
+  $('#scope-all').title = global ? 'All tasks in all global Sessions' : 'All tasks in this Project';
+  // Back in the Session view, a task of another chat is no longer listed, so its details close.
+  if (scope === 'session' && state.selected && !sessionTasks().some((t) => t.id === state.selected)) state.selected = null;
+  for (const b of $$('[data-scope]')) b.classList.toggle('primary', b.dataset.scope === scope);
+  setHtml($('#tasks'), scope === 'session' ? sessionTasks().map(row).join('') || `<p class="empty">${state.session ? 'No tasks in this session yet.' : 'Open a chat to see its tasks.'}</p>` : groupedTasks(), `${scope}:${state.session}`);
+  if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>', null);
+  const id = state.selected;
+  const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${id}`);
+  if (id !== state.selected) return; // the user picked another task while this one loaded
+  // One bubble per run (the start, then each reply that reused the task); one is open, the latest by default.
+  const openRun = t.id in (state.openRun ?? {}) ? state.openRun[t.id] : runs.at(-1)?.n; // null: the user closed them all
+  setHtml($('#detail'), `<div class="detail-head"><h2 title="${esc(t.title)}">${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
+    + `<p class="error" id="detail-error" role="alert"></p>${t.session ? '' : pendingCards(t)}`
+    + (children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : '')
+    + (log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''), t.id);
+}
+
+// The run's steps as a foldout; the step being worked on is blue. Without steps there is nothing to unfold.
+function stepsHtml(t, r) {
+  const head = `${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${esc(breakdown(r.usage))}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}`;
+  if (!r.steps.length) return head;
+  const key = `${t.id}:${r.n}`;
+  return `<details class="steps" data-steps="${esc(key)}" ${state.openSteps?.has(key) ? 'open' : ''}><summary>${head}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}</li>`).join('')}</ol></details>`;
+}
+
+const RUN_LABELS = { done: 'completed', error: 'failed', stopped: 'paused', interrupted: 'interrupted', working: 'running' };
+// One run of a task as a detail bubble. Its layout lives only here; a closed bubble shows one summary line.
+function runHtml(t, r, i, count, open, permissions) {
+  const last = i === count - 1;
+  const st = last ? t.status : RUN_LABELS[r.state] ?? r.state;
+  const mode = state.agents?.[t.integration]?.modes?.find((m) => m.id === (r.permissionMode ?? t.permissionMode ?? ''));
+  const when = new Date(r.startedAt).toLocaleString();
+  const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}${r.paused ? ` · paused ${r.paused}×` : ''}`;
+  return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta"><span>${line}</span></summary>
     <dl>
-      <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
-      <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button> <span class="meta">approvals and replies are there</span>` : 'outside a chat (CLI)'}</dd>
-      <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
-      <dt>Progress</dt><dd>${summary(t)}${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
-      <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
-      <dt>Task</dt><dd>${esc(t.id)} · role ${esc(t.role)}</dd>
-      <dt>Updated</dt><dd>${new Date(t.updatedAt).toLocaleString()}</dd>
+      <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
+      ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
+      <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
+      <dt>Progress</dt><dd>${stepsHtml(t, r)}</dd>
+      <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
+      <dt>Started</dt><dd>${when}</dd>
+      <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
     </dl>
-    <div class="row" style="margin-top:14px"><button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
-    <p class="error" id="detail-error" role="alert"></p>
-    ${t.session ? '' : pendingCards(t)}
-    <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
-    ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
-    <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
+    ${last ? `<div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>` : ''}
+    ${i === 0 && t.request ? `<h3>Request that started the task</h3><pre>${esc(t.request)}</pre>` : ''}
+    <h3>${i ? 'Message that reused the task' : 'Starting prompt'}</h3><pre>${esc(r.request)}</pre>
+    ${r.result ? `<h3>Result</h3><div class="result">${md(r.result)}</div>` : ''}
+  </details>`;
 }
 
 function renderDrawer() {
   if (state.tool === 'settings') {
+    if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
       return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
@@ -724,6 +967,63 @@ async function pickerChanged(which) {
   await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort });
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
+$('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null); };
+async function capChanged() {
+  const cap = $('#cap-on').checked ? Math.max(1, Math.round(Number($('#cap').value) || 0)) : undefined;
+  $('#cap').disabled = cap === undefined;
+  if (!state.session) return void (state.draftCap = cap);
+  await sessionAction('cap', { taskCap: cap ?? null });
+}
+$('#cap-on').onchange = capChanged;
+$('#orch-rules').onchange = async () => {
+  try { state.settings = await api('/api/settings', { orchestratorInstructions: $('#orch-rules').value }); $('#orch-rules-saved').textContent = 'Saved. Applies to orchestrator chats from their next agent start.'; }
+  catch (err) { $('#orch-rules-saved').textContent = err.message; }
+};
+for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
+$('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
+$('#mode-menu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-mode]'); if (b) pickMode(b.dataset.mode); };
+$('#mode-menu').onkeydown = (e) => {
+  const items = $$('#mode-menu [data-mode]');
+  if (e.key === 'Escape') { closeModeMenu(); return $('#task-mode').focus(); }
+  if (/^[1-9]$/.test(e.key) && items[Number(e.key) - 1]) return pickMode(items[Number(e.key) - 1].dataset.mode);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+};
+document.addEventListener('click', () => $('#mode-menu').hidden || closeModeMenu());
+$('#cap').onchange = capChanged;
+
+// Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.
+async function changeTask(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return;
+  let v = { integration: t.integration, model: t.model ?? '', effort: t.effort ?? '' };
+  const fill = () => {
+    const models = state.agents[v.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+    $('#tc-agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('');
+    $('#tc-model').innerHTML = models.map((m) => option(m.id, m.label, m.id === v.model)).join('');
+    const efforts = (models.find((m) => m.id === v.model) ?? models[0]).efforts;
+    $('#tc-effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
+  };
+  $('#tc-agent').onchange = () => { v = { integration: $('#tc-agent').value, model: '', effort: '' }; fill(); };
+  $('#tc-model').onchange = () => { v = { ...v, model: $('#tc-model').value, effort: '' }; fill(); };
+  $('#tc-effort').onchange = () => { v = { ...v, effort: $('#tc-effort').value }; };
+  fill();
+  const d = $('#task-config');
+  d.returnValue = '';
+  d.showModal();
+  const ok = await new Promise((resolve) => {
+    const done = (r) => { d.removeEventListener('submit', onSubmit); d.removeEventListener('cancel', onCancel); resolve(r); };
+    const onSubmit = (e) => done(e.submitter?.value === 'ok');
+    const onCancel = () => done(false);
+    d.addEventListener('submit', onSubmit);
+    d.addEventListener('cancel', onCancel);
+  });
+  if (ok) await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort }, id);
+  await poll();
+}
 
 // Styled confirmation (the native confirm() dialog does not match the workspace).
 function ask(title, text, ok, danger = false) {
@@ -835,8 +1135,14 @@ document.addEventListener('click', async (e) => {
     return openMenu(menuBtn.dataset.kind, menuBtn.dataset.menu, r.left, r.bottom + 4);
   }
   if (!e.target.closest('.menu')) closeMenu();
-  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve],[data-reply]');
+  const el = e.target.closest('[data-id],[data-action],[data-act],[data-project],[data-session],[data-approve],[data-reply],[data-task-act],[data-task-config]');
   if (!el) return;
+  if (el.dataset.taskAct) {
+    try { await api(`/api/tasks/${el.dataset.task}/${el.dataset.taskAct}`, {}); $('#new-error').textContent = ''; }
+    catch (err) { $('#new-error').textContent = err.message; }
+    return poll();
+  }
+  if (el.dataset.taskConfig) return changeTask(el.dataset.taskConfig);
   if (el.dataset.project) return selectProject(el.dataset.project);
   if (el.dataset.session) return openSession(el.dataset.session);
   if (el.dataset.approve) return sessionAction('approve', { approval: el.dataset.approve, allow: el.dataset.allow === 'true' }, el.dataset.task).then(poll);
@@ -871,6 +1177,26 @@ document.addEventListener('keydown', (e) => {
 
 
 // Enter sends; Shift+Enter adds a line break.
+// Enter in a task's reply field sends it, like the chat box.
+// Only one run bubble is open at a time; the one the user opened stays open across refreshes.
+// Every open and close is remembered, also of the steps foldouts, so a refresh shows what the user left.
+$('#detail').addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d.dataset?.steps) {
+    state.openSteps ??= new Set();
+    if (d.open) state.openSteps.add(d.dataset.steps); else state.openSteps.delete(d.dataset.steps);
+    return;
+  }
+  if (!d.matches?.('details.run')) return;
+  const task = d.dataset.task, n = Number(d.dataset.run);
+  if (d.open) {
+    state.openRun = { ...state.openRun, [task]: n };
+    for (const other of $$('#detail details.run')) if (other !== d) other.open = false;
+  } else if (state.openRun?.[task] === n || !(task in (state.openRun ?? {}))) state.openRun = { ...state.openRun, [task]: null };
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (e.target.dataset?.replyTask && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $(`[data-reply="${e.target.dataset.replyTask}"]`)?.click(); }
+});
 $('[name=text]').onkeydown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#new').requestSubmit(); }
 };
@@ -880,8 +1206,11 @@ $('#new').onsubmit = async (e) => {
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
-    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, role: 'Chat', ...config } : { projectId: state.project, role: 'Chat', ...config })).id;
+    const fresh = { role: $('#role').value, taskCap: state.draftCap, taskMode: state.draftMode, ...config };
+    const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
+    state.draftCap = undefined;
+    state.draftMode = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
     $('#new-error').textContent = '';
@@ -966,7 +1295,9 @@ $('#resizer').onkeydown = (e) => {
   setPage(state.page === 'tasks' && state.projects.length ? 'tasks' : 'projects');
   openSession(pref.get(`session.${state.project}`, '') || null);
   api('/api/agents').then((agents) => { state.agents = agents; render(); }).catch(() => {});
-  setInterval(() => poll().catch(() => {}), 2000);
+  // A refresh that is still running is not started again on top of itself.
+  let polling = false;
+  setInterval(() => { if (polling) return; polling = true; poll().catch(() => {}).finally(() => (polling = false)); }, 1000);
   // The open session refreshes faster while its agent works, so the reply streams in.
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
 })();

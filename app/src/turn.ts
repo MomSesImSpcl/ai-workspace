@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
-import { acquireRunner, clearStop, emit, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
+import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
 
 export const sessionAgents: Record<string, SessionAgent> = { 'claude-code': claudeSession, codex: codexSession };
@@ -13,6 +13,24 @@ export function sessionAgent(integration: string, agents = sessionAgents): Sessi
   const agent = agents[integration];
   if (!agent) throw new Error(`Integration "${integration}" cannot run sessions`);
   return agent;
+}
+
+// Agent, model and effort, checked against what the agent offers (its catalog). '' or null for model or
+// effort means the agent's own default.
+export function agentChoice(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
+  const integration = b.integration === undefined ? current.integration : b.integration;
+  if (typeof integration !== 'string' || !sessionAgents[integration]) throw new Error(`Unknown agent: must be one of ${Object.keys(sessionAgents).join(', ')}`);
+  const catalog = sessionAgents[integration]!.catalog();
+  const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
+  const model = pick(b.model, integration === current.integration ? current.model : undefined);
+  const entry = catalog.models.find((m) => m.id === (model ?? ''));
+  if (model !== undefined && (typeof model !== 'string' || !entry)) throw new Error(`Unknown model: must be one of ${catalog.models.map((m) => m.id || 'default').join(', ')}`);
+  let effort = pick(b.effort, current.effort);
+  if (effort !== undefined && !(entry ?? catalog.models[0])?.efforts.includes(effort as string)) {
+    if (b.effort !== undefined) throw new Error(`Unknown effort: must be one of ${(entry ?? catalog.models[0])?.efforts.join(', ')}`);
+    effort = undefined; // a kept level the new agent or model does not offer falls back to its default
+  }
+  return { integration, model: model as string | undefined, effort: effort as string | undefined };
 }
 
 // How long a session host keeps its agent process after the last turn.
@@ -30,14 +48,15 @@ function closeOrphanedTurn(id: string): void {
   }
 }
 
-const pending = (id: string) => {
+export const pending = (id: string) => {
   const events = readEvents(id);
   const last = turns(events, true).at(-1);
   return last?.state === 'working' && !started(events, last.n);
 };
 
-// Runs the pending turn with an agent process and records how it ended. A task's Stop (cancel) and its
-// token cap end the agent's process tree at once; the cap counts committed and streamed usage (runtime-005).
+// Runs the pending turn with an agent process and records how it ended. A task's cancel and its token cap
+// end the agent's process tree at once; the cap counts committed and streamed usage (runtime-005). Pausing
+// a task interrupts the turn like a chat's Stop, so the agent keeps its conversation (runtime-006).
 async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: boolean }> {
   const ts = turns(readEvents(id), true);
   const cur = ts.at(-1)!;
@@ -46,20 +65,26 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
   const task = session.task;
   const stop = new AbortController();
   let stopped: string | undefined;
-  const halt = (reason?: string) => {
+  const halt = (kill: boolean, reason?: string) => {
     if (stop.signal.aborted) return;
     stopped = reason;
-    stop.abort(task ? 'kill' : 'interrupt');
+    stop.abort(kill ? 'kill' : 'interrupt');
   };
   const committed = task ? taskUsed(session) : 0;
-  const live = task ? (u: Usage) => committed + used(u) >= task.tokenBudget && halt(`token budget ${task.tokenBudget.toLocaleString('en')} reached`) : undefined;
+  const budget = task?.tokenBudget;
+  // Streamed usage: checked against the cap at once, and recorded every 2 s so the page shows tokens while it works.
+  let shownAt = 0;
+  const live = (u: Usage) => {
+    if (Date.now() - shownAt > 2000) { shownAt = Date.now(); say({ type: 'live-usage', usage: u }); }
+    if (budget !== undefined && committed + used(u) >= budget) halt(true, `token budget ${budget.toLocaleString('en')} reached`);
+  };
   const watch = setInterval(() => {
-    if (stopRequested(id)) halt();
+    if (stopRequested(id)) halt(!!task && !!loadSession(id).task?.cancelled, task && !loadSession(id).task?.cancelled ? 'paused' : undefined);
     if (!task) startPendingTasks(id); // tasks its agent started with start_task
   }, 300);
   try {
     say({ type: 'start', integration: session.integration });
-    live?.({ inputTokens: 0, outputTokens: 0 });
+    live({ inputTokens: 0, outputTokens: 0 });
     if (stop.signal.aborted) {
       say({ type: 'stopped', reason: stopped });
       return {};
@@ -85,6 +110,15 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
   return {};
 }
 
+// Replies queued while the task worked become its next message once the turn has ended; a paused task
+// keeps them for Resume.
+function sendQueued(id: string): void {
+  const events = readEvents(id);
+  const state = turns(events, true).at(-1)?.state;
+  const s = loadSession(id);
+  if ((state === 'done' || state === 'error') && queuedReplies(events).length && s.task && !s.task.cancelled) addMessage(id, '');
+}
+
 // A process is started with its model, effort and permission mode; a change restarts it, resuming the conversation.
 const outdated = (proc: AgentProcess, s: Session) => proc.effort !== s.effort || proc.model !== s.model || proc.permissionMode !== s.permissionMode;
 
@@ -99,6 +133,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
     closeOrphanedTurn(id);
     let idleSince = Date.now();
     while (existsSync(sessionFile(id, '.json'))) {
+      sendQueued(id);
       if (pending(id)) {
         const session = loadSession(id);
         if (proc && (running !== session.integration || outdated(proc, session))) {

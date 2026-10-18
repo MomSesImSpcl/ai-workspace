@@ -119,6 +119,8 @@ test('edits outside the project folder are flagged; paths inside are shown relat
   assert.deepEqual(activityLabel('Edit', { file_path: join(root, 'src', 'a.ts') }, root), { label: 'Editing `src/a.ts`', outside: undefined });
   assert.equal(activityLabel('Write', { file_path: join(root, '..', 'x.txt') }, root).outside, true);
   assert.equal(activityLabel('mcp__ws__delegate', {}, root).label, 'Using ws delegate');
+  assert.equal(activityLabel('PowerShell', { command: 'Get-ChildItem' }, root).label, 'Running `Get-ChildItem`');
+  assert.equal(activityLabel('mcp__gh__search', { query: 'open issues', limit: 5 }, root).label, 'Using gh search: open issues');
 });
 
 test('codex app-server items map to activity rows with fingerprints; other items are not tool calls', () => {

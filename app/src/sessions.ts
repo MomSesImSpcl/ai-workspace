@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
 
@@ -22,6 +22,9 @@ export const CACHE_READ = 0.1;
 export const CACHE_WRITE = 1.25;
 export const used = (u: Usage) => Math.round(u.inputTokens - cacheTokens(u) + u.outputTokens + CACHE_READ * (u.cachedInputTokens ?? 0) + CACHE_WRITE * (u.cacheWriteTokens ?? 0));
 
+// A turn's usage as shown: what it streamed so far while it works, its recorded usage once it ended.
+export const turnUsage = (t: { state: string; usage: Usage; liveUsage?: Usage }) => (t.state === 'working' && t.liveUsage ? t.liveUsage : t.usage);
+
 export function addUsage(a: Usage, b: Usage): Usage {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
@@ -34,6 +37,22 @@ export function addUsage(a: Usage, b: Usage): Usage {
 
 // Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
 export const TASK_NOTE = 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.';
+
+// A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
+// whatever agent the role uses, so this rule is not the only guard.
+export const ORCHESTRATION = 'Orchestration';
+export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task']; // its workspace tools, run without a card
+export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Choose the agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task.`;
+
+// The user's own orchestrator instructions (Settings), added to the note for every orchestrator chat. They apply
+// when the chat's agent starts next.
+const settingsPath = () => join(home(), 'settings.json');
+export const getSettings = () => readJson<{ orchestratorInstructions?: string }>(settingsPath(), {});
+export const setSettings = (v: { orchestratorInstructions?: string }) => writeJson(settingsPath(), { ...getSettings(), ...v });
+export function orchestratorNote(): string {
+  const own = getSettings().orchestratorInstructions?.trim();
+  return own ? `${ORCHESTRATOR_NOTE} The user's own instructions for you, which take precedence over the rule above where they conflict: ${own}` : ORCHESTRATOR_NOTE;
+}
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
@@ -52,13 +71,18 @@ export interface Session {
   pinOrder?: number; // set when pinned; pinned sessions are listed first in this order
   vendorSessionId?: string; // hint for continuing the agent's own conversation, never the history
   permissionMode?: string; // the agent's own mode for this session (catalog `modes`); unset: the agent's settings
-  task?: TaskSpec; // set for a task: delegated background work with a token cap (task-runtime 4.7)
+  task?: TaskSpec; // set for a task: delegated background work, optionally with a token cap (task-runtime 4.7)
+  taskCap?: number; // a chat's cap for the tasks it starts (the switch next to the chat box); unset: uncapped
+  taskMode?: string; // the permission mode of the tasks a chat starts; unset: acceptEdits, '': the agent's settings
   createdAt: string;
   updatedAt: string;
 }
 
 export interface TaskSpec {
-  tokenBudget: number;
+  tokenBudget?: number; // unset: uncapped (ADR 0011)
+  reason?: string; // why the orchestrator chose its agent, model and effort (orchestrator-004)
+  overridden?: boolean; // the user changed that choice
+  basedOn?: string; // an earlier related task whose goal and reply this one started with
   parentId?: string; // a subtask started by the parent's `delegate` call
   sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
@@ -66,11 +90,13 @@ export interface TaskSpec {
 
 // The one event contract every adapter reports (sessions-020). `turn` numbers the user's messages.
 export type SessionEvent = { at: string; turn: number } & (
-  | { type: 'user'; text: string }
+  | { type: 'user'; text: string; resume?: boolean } // resume: Resume of a paused task, not a new message
   | { type: 'start'; integration: string }
   | { type: 'init'; model?: string; permissionMode?: string; ruleFiles?: string[]; plugins?: string[]; mcp?: { name: string; status: string }[]; skills?: number }
   | { type: 'text'; text: string }
   | { type: 'notice'; text: string; blocked?: boolean }
+  | { type: 'queued'; text: string } // a reply that arrived while the task worked; sent with its next message
+  | { type: 'relay'; taskId: string; text: string } // the user wrote to a task of this chat directly; the agent hears it with the next message
   | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
   | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string }
   | { type: 'activity-done'; id: string; error?: boolean }
@@ -78,6 +104,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'approval-answer'; id: string; allow: boolean }
   | { type: 'task'; id: string } // the agent started this task from the chat (sessions-002)
   | { type: 'usage'; usage: Usage }
+  | { type: 'live-usage'; usage: Usage } // the running turn's usage so far, replaced by its 'usage' when it ends
   | { type: 'done' }
   | { type: 'error'; message: string }
   | { type: 'stopped'; reason?: string } // reason: the workspace stopped it (budget, a repeat), not the user
@@ -109,7 +136,7 @@ export interface AgentProcess {
 // What an agent offers, recorded when it is set up (onboarding-008): its models and, per model, the effort
 // levels it accepts, and its own permission modes. The composer and later the orchestrator choose only from this.
 export interface AgentModel { id: string; label: string; efforts: string[]; defaultEffort?: string }
-export interface AgentMode { id: string; label: string; warn?: boolean } // warn: skips every check
+export interface AgentMode { id: string; label: string; hint?: string; warn?: boolean } // warn: skips every check
 export interface Catalog { models: AgentModel[]; modes?: AgentMode[] } // id '' is the agent's own default
 
 export interface SessionAgent {
@@ -156,11 +183,20 @@ export function runLines(bin: string, args: string[], opts: { cwd: string; env?:
 export function saveSession(s: Session): void {
   s.updatedAt = new Date().toISOString();
   writeJson(sessionPath(s.id), s);
+  listed = undefined;
 }
 
+// Parsed session files, reused while the file is unchanged (size and modification time).
+const sessionCache = new Map<string, { stamp: string; session: Session }>();
 export function loadSession(id: string): Session {
-  const s = readJson<Session | null>(sessionPath(id), null);
+  const path = sessionPath(id);
+  let stamp = '';
+  try { const st = statSync(path); stamp = `${st.size}:${st.mtimeMs}`; } catch { /* missing: readJson reports it */ }
+  const known = sessionCache.get(path);
+  if (stamp && known?.stamp === stamp) return structuredClone(known.session);
+  const s = readJson<Session | null>(path, null);
   if (!s) throw new Error(`Unknown session: ${id}`);
+  if (stamp) sessionCache.set(path, { stamp, session: structuredClone(s) });
   return s;
 }
 
@@ -177,7 +213,14 @@ export function sessionRoot(s: Pick<Session, 'projectId'>): string {
 const inDirs = (dirs: string[]) => dirs.filter((d) => existsSync(d)).flatMap((dir) => readdirSync(dir).filter((f) => /^[^.]+\.json$/.test(f)).map((f) => loadSession(f.slice(0, -5))));
 
 // Every session and task in storage.
-export const allSessions = () => inDirs(storageDirs('sessions'));
+// One page request asks for it many times (each chat's tasks, each task's subtasks), so it is built once per
+// request (forgetSessionList); elsewhere it is kept for half a second. A write in this process clears it at once.
+let listed: { at: number; sessions: Session[] } | undefined;
+export const forgetSessionList = () => { listed = undefined; };
+export const allSessions = (): Session[] => {
+  if (!listed || Date.now() - listed.at > 500) listed = { at: Date.now(), sessions: inDirs(storageDirs('sessions')) };
+  return listed.sessions.map((x) => structuredClone(x));
+};
 
 // The chat list: pinned first (in their pin order), then newest activity first. Tasks are listed apart.
 export function listSessions(projectId: string): Session[] {
@@ -191,6 +234,7 @@ export function listSessions(projectId: string): Session[] {
 function savePin(s: Session, pinOrder: number | undefined): void {
   s.pinOrder = pinOrder;
   writeJson(sessionPath(s.id), s);
+  listed = undefined;
 }
 
 export function setPinned(id: string, pinned: boolean): Session {
@@ -223,12 +267,33 @@ export function deleteSession(id: string): void {
   if (sessionWorking(id)) throw new Error('Session is working; stop it first');
   loadSession(id);
   for (const p of [sessionPath(id), eventsPath(id), stopPath(id), sessionFile(id, '.log')]) rmSync(p, { force: true });
+  listed = undefined;
   audit({ kind: 'session', sessionId: id, event: 'deleted' });
 }
 
+// Logs are append-only, so a log read before is extended with only its new lines; the page polls every second.
+// shortcut: a log replaced by a longer one in the same process lifetime is misread; nothing rewrites logs today.
+const eventCache = new Map<string, { size: number; events: SessionEvent[] }>();
 export function readEvents(id: string): SessionEvent[] {
-  if (!existsSync(eventsPath(id))) return [];
-  return readFileSync(eventsPath(id), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as SessionEvent);
+  const path = eventsPath(id);
+  let size: number;
+  try { size = statSync(path).size; } catch { eventCache.delete(path); return []; }
+  const known = eventCache.get(path);
+  if (known && known.size === size) return known.events.slice();
+  const from = known && known.size < size ? known.size : 0;
+  const fd = openSync(path, 'r');
+  let text: string;
+  try {
+    const buf = Buffer.alloc(size - from);
+    readSync(fd, buf, 0, buf.length, from);
+    text = buf.toString('utf8');
+  } finally { closeSync(fd); }
+  // A line still being written has no newline yet: keep it for the next read.
+  const end = text.lastIndexOf('\n') + 1;
+  const fresh = text.slice(0, end).split('\n').filter(Boolean).map((l) => JSON.parse(l) as SessionEvent);
+  const events = from ? [...known!.events, ...fresh] : fresh;
+  eventCache.set(path, { size: from + Buffer.byteLength(text.slice(0, end)), events });
+  return events.slice();
 }
 
 // Every event goes to the session log and the workspace audit log.
@@ -304,16 +369,19 @@ export type TurnState = 'working' | 'done' | 'error' | 'stopped' | 'interrupted'
 export interface Turn {
   n: number;
   user: string;
+  resume?: boolean; // continues the paused turn before it
   text: string;
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean; fp?: string }[];
   approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
   tasks: string[]; // tasks the agent started in this turn
+  relays: { taskId: string; text: string }[]; // what the user wrote to those tasks directly after this turn
   switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
   reason?: string; // why the workspace stopped the turn (budget, a possible repeat)
   usage: Usage;
+  liveUsage?: Usage; // while working: usage streamed so far
   model?: string;
   permissionMode?: string;
   ruleFiles?: string[];
@@ -333,7 +401,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
   for (const e of events) {
     if (e.type === 'user') {
-      out.push({ n: e.turn, user: e.text, text: '', activity: [], approvals: [], notices: [], tasks: [], state: 'working', usage: zero(), startedAt: e.at });
+      out.push({ n: e.turn, user: e.text, resume: e.resume, text: '', activity: [], approvals: [], notices: [], tasks: [], relays: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
@@ -347,7 +415,9 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail, repeat: e.repeat });
     else if (e.type === 'approval-answer') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { allow: e.allow });
     else if (e.type === 'task') t.tasks.push(e.id);
+    else if (e.type === 'relay') t.relays.push({ taskId: e.taskId, text: e.text });
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
+    else if (e.type === 'live-usage') t.liveUsage = e.usage;
     else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
     else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });
   }
@@ -364,12 +434,12 @@ function marker(t: Turn): string {
   return t.reason ? `${at} (${t.reason})` : at;
 }
 
-// Tool calls the previous attempt completed, when it was interrupted (the runner died): a matching call
-// in the re-run is a possible repeat (runtime-004). Keyed by fingerprint, valued by the step it was.
+// Tool calls the previous attempt completed, when it was interrupted (the runner died) or paused: a matching
+// call in the re-run is a possible repeat (runtime-004, runtime-006). Keyed by fingerprint, valued by the step it was.
 export function repeatsFor(ts: Turn[]): Map<string, string> {
   const prev = ts.at(-2);
   const out = new Map<string, string>();
-  if (prev?.state !== 'interrupted') return out;
+  if (prev?.state !== 'interrupted' && prev?.state !== 'stopped') return out;
   prev.activity.forEach((a, i) => a.done && !a.error && a.fp && out.set(a.fp, `step ${i + 1}: ${a.label}`));
   return out;
 }
@@ -381,26 +451,39 @@ export function transcript(ts: Turn[]): string {
 
 // Records the user's message as a new turn. If the last turn did not finish, its marker is recorded
 // and passed to the agent with the message, so user and agent see the same last step (sessions-009).
-export function addMessage(id: string, text: string): number {
+export function addMessage(id: string, text: string, resume = false): number {
   const s = loadSession(id);
   if (sessionWorking(id)) throw new Error('Session is already working');
   if (s.task?.cancelled) throw new Error('Task is cancelled');
   const events = readEvents(id);
+  const queued = queuedReplies(events);
+  text = [...queued, text].filter(Boolean).join('\n\n');
+  if (!text) throw new Error('Unknown message: text is required');
   const ts = turns(events, false);
   const last = ts.at(-1);
   const turn = (last?.n ?? 0) + 1;
   if (last && last.state === 'interrupted' && !events.some((e) => e.turn === last.n && e.type === 'interrupted')) {
     emit(id, last.n, { type: 'interrupted', step: last.activity.filter((a) => a.done).length, label: last.activity.filter((a) => a.done).at(-1)?.label });
   }
-  emit(id, turn, { type: 'user', text });
+  emit(id, turn, { type: 'user', text, ...(resume && !queued.length ? { resume: true } : {}) });
   if (s.title === 'New session') s.title = text.split('\n')[0].slice(0, 60);
   saveSession(s);
   clearStop(id);
   return turn;
 }
 
+// Replies queued since the last message: a task takes them with its next one (orchestrator-006).
+export const queuedReplies = (events: SessionEvent[]) => events.slice(events.findLastIndex((e) => e.type === 'user') + 1).flatMap((e) => (e.type === 'queued' ? [e.text] : []));
+
+// A reply to a working task waits in its log; the task's host sends it when the turn ends.
+export function queueReply(id: string, text: string): void {
+  emit(id, turns(readEvents(id), true).at(-1)?.n ?? 0, { type: 'queued', text });
+}
+
 // The last turn's message, prefixed with the previous turn's marker when it did not finish.
 export function turnPrompt(ts: Turn[]): string {
   const [prev, cur] = [ts.at(-2), ts.at(-1)!];
-  return prev?.marker ? `[${prev.marker}. Check the current project state before repeating anything.]\n\n${cur.user}` : cur.user;
+  const relays = prev?.relays.map((r) => `[Since your last reply the user wrote directly to task ${r.taskId}: "${r.text}"]`).join('\n') ?? '';
+  const head = [prev?.marker ? `[${prev.marker}. Check the current project state before repeating anything.]` : '', relays].filter(Boolean).join('\n');
+  return head ? `${head}\n\n${cur.user}` : cur.user;
 }
