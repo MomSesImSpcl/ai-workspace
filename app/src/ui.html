@@ -687,9 +687,11 @@ async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
   setHtml($('#tasks'), projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>');
   if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>');
-  const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
+  const id = state.selected;
+  const { task: t, runs, children, permissions, log } = await api(`/api/tasks/${id}`);
+  if (id !== state.selected) return; // the user picked another task while this one loaded
   // One bubble per run (the start, then each reply that reused the task); one is open, the latest by default.
-  const openRun = state.openRun?.[t.id] ?? runs.at(-1)?.n;
+  const openRun = t.id in (state.openRun ?? {}) ? state.openRun[t.id] : runs.at(-1)?.n; // null: the user closed them all
   setHtml($('#detail'), `<div class="detail-head"><h2>${esc(t.title)}</h2><code class="task-id" title="Task id (role ${esc(t.role)})">${esc(t.id)}</code></div>` + runs.map((r, i) => runHtml(t, r, i, runs.length, r.n === openRun, permissions)).join('')
     + `<p class="error" id="detail-error" role="alert"></p>${t.session ? '' : pendingCards(t)}`
     + (children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : '')
@@ -710,7 +712,7 @@ function runHtml(t, r, i, count, open, permissions) {
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       ${last && t.current ? `<dt>Working on</dt><dd>${code(t.current)}</dd>` : ''}
-      <dt>Progress</dt><dd><details class="steps"><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
+      <dt>Progress</dt><dd><details class="steps" data-steps="${esc(t.id)}:${r.n}" ${state.openSteps?.has(`${t.id}:${r.n}`) ? 'open' : ''}><summary>${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · <span title="${COST_HINT}">${r.used.toLocaleString()} tokens</span>${r.costUsd === undefined ? '' : ` · ≈$${r.costUsd.toFixed(4)}`}</summary><ol>${r.steps.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps</li>'}</ol></details></dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? r.permissionMode ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''}${last ? ` · <span class="meta">${esc(permissions.line)}</span>` : ''}</dd>
       <dt>Started</dt><dd>${when}</dd>
       <dt>Finished</dt><dd>${r.endedAt ? new Date(r.endedAt).toLocaleString() : '—'}</dd>
@@ -1052,11 +1054,20 @@ document.addEventListener('keydown', (e) => {
 // Enter sends; Shift+Enter adds a line break.
 // Enter in a task's reply field sends it, like the chat box.
 // Only one run bubble is open at a time; the one the user opened stays open across refreshes.
+// Every open and close is remembered, also of the steps foldouts, so a refresh shows what the user left.
 $('#detail').addEventListener('toggle', (e) => {
-  const run = e.target.closest?.('details.run');
-  if (!run || e.target !== run || !run.open) return;
-  state.openRun = { ...state.openRun, [run.dataset.task]: Number(run.dataset.run) };
-  for (const other of $$('#detail details.run')) if (other !== run) other.open = false;
+  const d = e.target;
+  if (d.dataset?.steps) {
+    state.openSteps ??= new Set();
+    if (d.open) state.openSteps.add(d.dataset.steps); else state.openSteps.delete(d.dataset.steps);
+    return;
+  }
+  if (!d.matches?.('details.run')) return;
+  const task = d.dataset.task, n = Number(d.dataset.run);
+  if (d.open) {
+    state.openRun = { ...state.openRun, [task]: n };
+    for (const other of $$('#detail details.run')) if (other !== d) other.open = false;
+  } else if (state.openRun?.[task] === n || !(task in (state.openRun ?? {}))) state.openRun = { ...state.openRun, [task]: null };
 }, true);
 document.addEventListener('keydown', (e) => {
   if (e.target.dataset?.replyTask && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $(`[data-reply="${e.target.dataset.replyTask}"]`)?.click(); }
