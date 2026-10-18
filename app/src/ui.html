@@ -448,9 +448,18 @@ function renderProjects() {
 }
 
 const row = (t) => `<button class="task-row" data-id="${esc(t.id)}" aria-current="${t.id === state.selected}">
-  <span class="goal">${esc(t.goal)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
+  <span class="goal">${esc(t.title)}</span><span class="meta">${status(t)} · ${summary(t)}</span></button>`;
 
 // Chat column: the project's sessions and the open session's turns, built from its event log.
+// Polling re-renders only what changed, and never while the user selects text in it, so scroll position and a
+// selection survive.
+function setHtml(el, html) {
+  if (el.__html === html) return;
+  const sel = getSelection();
+  if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) return;
+  el.__html = html;
+  el.innerHTML = html;
+}
 const code = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
 const took = (t) => {
   const s = Math.round((new Date(t.endedAt) - new Date(t.startedAt)) / 1000);
@@ -581,7 +590,7 @@ function taskControlsHtml(t) {
 function taskCardHtml(t) {
   if (!t) return '';
   const canReply = t.status !== 'cancelled'; // while the task works, the reply waits for its current step
-  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.goal.split('\n')[0])}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
+  return `<div class="turn-activity task-card"><div class="row"><b>Task: ${esc(t.title)}</b> ${status(t)} ${taskControlsHtml(t)}<button class="btn small" data-id="${esc(t.id)}">Details</button></div>
     ${taskChoiceHtml(t)}<div class="meta">${summary(t)}${t.current ? ` · ${code(t.current)}` : ''}${t.reason ? ` — ${esc(t.reason)}` : ''}</div></div>${pendingCards(t)}
     ${t.result ? `<div class="msg agent">${esc(t.result)}<time>task result</time></div>` : ''}
     ${canReply ? `<div class="row"><input data-reply-task="${esc(t.id)}" style="flex:1" placeholder="${active(t) ? 'Message the task (it gets it when the current step ends)' : 'Reply to continue the task'}" aria-label="Reply to the task"><button class="btn small" data-reply="${esc(t.id)}">Send</button></div>` : ''}`;
@@ -599,7 +608,7 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
   const used = cost(t.usage);
   const switched = t.switchedTo ? `<div class="turn-activity">↪ Switched from ${esc(t.switchedTo.from)} to ${esc(t.switchedTo.to)}${t.switchedTo.model ? ` (${esc(t.switchedTo.model)})` : ''}; it received the conversation so far.</div>` : '';
   return `<div class="msg user">${esc(t.user)}<time>${new Date(t.startedAt).toLocaleTimeString()}</time></div>${activity}${notices}${cards}
-    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].goal.split('\n')[0])} — continued below</div>` : '')).join('')}${switched}`;
+    ${t.text ? `<div class="msg agent">${esc(t.text)}${used ? `<time title="${COST_HINT}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
 let shown = '';
@@ -635,8 +644,8 @@ function renderChat() {
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
-  box.innerHTML = d?.turns.map((t) => turnHtml(t, d.tasks, lastTurnOf)).join('')
-    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`;
+  setHtml(box, d?.turns.map((t) => turnHtml(t, d.tasks, lastTurnOf)).join('')
+    || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
@@ -667,28 +676,30 @@ async function sessionAction(act, body = {}, id = state.session) {
 
 async function renderTasks() {
   $('#tasks-eyebrow').textContent = `Project / ${state.project ?? '—'}`;
-  $('#tasks').innerHTML = projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>';
-  if (!state.selected) return void ($('#detail').innerHTML = '<p class="empty">Select a task to see its steps, approvals and result.</p>');
-  const { task: t, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
+  setHtml($('#tasks'), projectTasks().map(row).join('') || '<p class="empty">No tasks for this project yet.</p>');
+  if (!state.selected) return setHtml($('#detail'), '<p class="empty">Select a task to see its steps, approvals and result.</p>');
+  const { task: t, stepList, children, permissions, log } = await api(`/api/tasks/${state.selected}`);
+  const open = $('#detail details.steps')?.open; // keep the steps foldout as the user left it
   const mode = state.agents[t.integration]?.modes?.find((m) => m.id === (t.permissionMode ?? ''));
-  $('#detail').innerHTML = `<h2>${esc(t.goal.split('\n')[0])}</h2>
+  setHtml($('#detail'), `<h2>${esc(t.title)}</h2>
     <dl>
       <dt>Status</dt><dd>${status(t)}${t.reason ? ` — ${esc(t.reason)}` : ''}</dd>
-      <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button> <span class="meta">approvals and replies are there</span>` : 'outside a chat (CLI)'}</dd>
-      <dt>Agent</dt><dd>${taskChoiceHtml(t)}</dd>
+      <dt>Started in</dt><dd>${t.session ? `<button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button>` : 'outside a chat (CLI)'}</dd>
+      <dt>Agent</dt><dd>${[t.integration, t.ranModel ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       <dt>Working on</dt><dd>${t.current ? code(t.current) : '—'}</dd>
-      <dt>Progress</dt><dd>${summary(t)}${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
+      <dt>Progress</dt><dd><details class="steps" ${open ? 'open' : ''}><summary>${summary(t)}</summary><ol>${stepList.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}">${code(a.label)}</li>`).join('') || '<li>No steps yet</li>'}</ol></details>${t.usage.costUsd === undefined ? '' : ` · ≈$${t.usage.costUsd.toFixed(4)} (provider-reported)`}</dd>
       <dt>Permissions</dt><dd>${esc(mode?.label ?? t.permissionMode ?? "The agent's settings")}${mode?.warn ? ' <span class="flag">⚠ skips every check</span>' : ''} · <span class="meta">${esc(permissions.line)}</span></dd>
       <dt>Task</dt><dd>${esc(t.id)} · role ${esc(t.role)}</dd>
-      <dt>Updated</dt><dd>${new Date(t.updatedAt).toLocaleString()}</dd>
+      <dt>Started</dt><dd>${new Date(t.createdAt).toLocaleString()}</dd>
+      <dt>Finished</dt><dd>${t.finishedAt ? new Date(t.finishedAt).toLocaleString() : '—'}</dd>
     </dl>
     <div class="row" style="margin-top:14px">${taskControlsHtml(t)}<button class="btn small" data-act="cancel" ${t.status === 'cancelled' || t.status === 'completed' ? 'disabled' : ''}>Cancel</button></div>
     <p class="error" id="detail-error" role="alert"></p>
     ${t.session ? '' : pendingCards(t)}
-    ${t.request ? `<h3>Your request in the chat</h3><pre>${esc(t.request)}</pre>` : ''}
+    ${t.request ? `<h3>Request that started the task</h3><pre>${esc(t.request)}</pre>` : ''}
     <h3>Starting prompt</h3><pre>${esc(t.goal)}</pre>
     ${children.length ? `<h3>Subtasks</h3><div class="task-list">${children.map((c) => `<div class="meta">${status(c)} ${esc(c.goal)} · ${summary(c)}</div>`).join('')}</div>` : ''}
-    <h3>Runner log</h3><pre>${esc(log) || 'empty (tasks started from the CLI log to its terminal)'}</pre>`;
+    ${log.trim() ? `<h3>Agent process output</h3><pre>${esc(log)}</pre>` : ''}`);
 }
 
 function renderDrawer() {

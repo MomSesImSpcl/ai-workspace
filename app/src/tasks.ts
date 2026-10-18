@@ -30,7 +30,7 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
 
 // agent, model, effort and reason: the orchestrator's choice (orchestrator-004); unset, the role's assignment.
 // defaultMode: used when no mode is given and the agent offers it; basedOn: an earlier related task.
-export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string }
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string; title?: string }
 
 // Tasks a chat starts edit files without asking unless the chat picks another mode; agents without this mode
 // keep their own settings.
@@ -48,6 +48,7 @@ export function createTask(f: NewTask): Session {
   const offers = (m?: string) => !!m && !!agent.catalog().modes?.some((x) => x.id === m);
   s.permissionMode = f.permissionMode || (offers(f.defaultMode) ? f.defaultMode : undefined);
   saveSession(s);
+  if (f.title?.trim()) saveSession({ ...s, title: f.title.trim().slice(0, 80) }); // else the goal's first line names it
   addMessage(s.id, f.goal);
   audit({ kind: 'task', taskId: s.id, event: 'created', integration, model, effort, reason: f.reason, permissionMode: s.permissionMode, parentId: f.parentId, sessionId: f.sessionId });
   return loadSession(s.id);

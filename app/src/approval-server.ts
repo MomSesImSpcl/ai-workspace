@@ -63,6 +63,7 @@ if (!task) {
     {
       description: "Starts a background task in this project and returns at once. Agent, model and effort default to the role's assignment (default role Implementation); list_agents shows the choices. The task runs uncapped unless tokenBudget is given or the chat has a cap. Its approval cards, replies and result appear in this chat; the user answers them there.",
       inputSchema: {
+        title: z.string().optional().describe('A short title of what the task does, a few words'),
         goal: z.string().describe('Self-contained instructions for the task'),
         agent: z.string().optional().describe('An agent from list_agents'),
         model: z.string().optional().describe("One of the agent's models"),
@@ -74,7 +75,7 @@ if (!task) {
         permissionMode: z.string().optional().describe("One of the agent's own permission modes; omit for the agent's settings"),
       },
     },
-    tool((a: { goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string }) => {
+    tool((a: { title?: string; goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string }) => {
       const t = startFromSession(sessionId, { ...a, role: a.role ?? 'Implementation' });
       return `task ${t.id} started (${[t.integration, t.model, t.effort].filter(Boolean).join(', ')}); it runs in the background and shows in this chat`;
     }),

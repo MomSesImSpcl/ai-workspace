@@ -51,7 +51,14 @@ function taskView(s: Session) {
   const last = ts.at(-1);
   const step = last?.activity.at(-1);
   const chat = s.task?.sessionId ? loadSession(s.task.sessionId) : undefined;
-  return { ...s, goal: ts[0]?.user ?? s.title, status: taskStatus(s, ts), reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined, session: chat && { id: chat.id, title: chat.title }, request: chat && turns(readEvents(chat.id), true).findLast((t) => t.tasks.includes(s.id))?.user };
+  const status = taskStatus(s, ts);
+  return {
+    ...s, goal: ts[0]?.user ?? s.title, status, reason: last?.marker, used: taskUsed(s), usage: usageOf(s.id), steps: ts.reduce((n, t) => n + t.activity.length, 0), current: step && !step.done ? step.label : undefined,
+    ranModel: ts.findLast((t) => t.model)?.model, // the model the agent reported, also when the task used the agent's default
+    finishedAt: status === 'running' || status === 'waiting' ? undefined : last?.endedAt,
+    session: chat && { id: chat.id, title: chat.title },
+    request: chat && turns(readEvents(chat.id), true).find((t) => t.tasks.includes(s.id))?.user, // the chat message that started it
+  };
 }
 
 // A task as its starting chat shows it (sessions-002): status, its and its subtasks' pending approvals, the result.
@@ -165,7 +172,8 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
-    return { task: taskCard(s), children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
+    const stepList = turns(readEvents(id), turnRunning(id)).flatMap((t) => t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error })));
+    return { task: taskCard(s), stepList, children: childrenOf(id).map(taskView), permissions: sessionAgent(s.integration).permissions(sessionRoot(s)), log: tail(sessionFile(id, '.log')) };
   }
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
