@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
@@ -209,7 +209,7 @@ test('the workspace MCP server offers start_task to a chat session and delegate 
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
-  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'reply_task', 'start_task', 'task_status']);
+  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'rename_task', 'reply_task', 'start_task', 'task_status']);
   assert.deepEqual(await tools(task('t').id), ['approve', 'delegate']);
 });
 
@@ -275,6 +275,8 @@ test('reply_task queues for a running task of this chat; a finished one gets a n
   await until(() => turns(readEvents(t.id), turnRunning(t.id)).length === 2 && status(t.id) === 'completed');
   assert.equal(turns(readEvents(t.id), false)[1]!.user, 'also this\n\nand that');
   assert.throws(() => replyFromSession(chat.id, t.id, 'more'), /is completed; start a new task with basedOn/);
+  assert.equal(renameTask(chat.id, t.id, '  New name ').title, 'New name');
+  assert.throws(() => renameTask(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
   const next = startFromSession(chat.id, { goal: 'same again', role: 'Implementation', basedOn: t.id });
   assert.match(turns(readEvents(next.id), false)[0]!.user, /^same again\n\nContext from an earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2/);
   saveSession({ ...loadSession(chat.id), taskMode: '' });

@@ -9,7 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
-import { delegate, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
+import { delegate, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
@@ -93,6 +93,11 @@ if (!task) {
       const last = ts.at(-1);
       return { id: t.id, goal: ts[0]?.user, status: taskStatus(t, ts), agent: t.integration, model: t.model, effort: t.effort, tokenBudget: t.task!.tokenBudget, used: taskUsed(t), stoppedAt: last?.marker, lastReply: last?.text.slice(-2000) };
     }))),
+  );
+  server.registerTool(
+    'rename_task',
+    { description: 'Changes the title of a task started in this chat, as the workspace lists it.', inputSchema: { taskId: z.string(), title: z.string() } },
+    tool((a: { taskId: string; title: string }) => `task ${renameTask(sessionId, a.taskId, a.title).id} is now titled "${a.title.trim().slice(0, 200)}"`),
   );
   server.registerTool(
     'list_agents',

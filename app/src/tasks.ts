@@ -86,6 +86,15 @@ export function replyFromSession(sessionId: string, taskId: string, text: string
   return t;
 }
 
+// The orchestrator's rename_task: only a task of this chat, and only its title.
+export function renameTask(sessionId: string, taskId: string, title: string): Session {
+  const t = startedIn(sessionId).find((x) => x.id === taskId);
+  if (!t) throw new Error(`Unknown task in this chat: ${taskId}`);
+  if (!title.trim()) throw new Error('Unknown title: a title is required');
+  saveSession({ ...loadSession(taskId), title: title.trim().slice(0, 200) });
+  return loadSession(taskId);
+}
+
 // A reply to a working task is queued and sent when its turn ends; otherwise it continues the task at once.
 export function replyTask(id: string, text: string): Session {
   if (!sessionWorking(id)) return resumeTask(id, undefined, text);
