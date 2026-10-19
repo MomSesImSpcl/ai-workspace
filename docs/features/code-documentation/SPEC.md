@@ -48,4 +48,6 @@ The rules do not prescribe Markdown, JSDoc, XML or any syntax: each project uses
 
 **Non-goals:** mandatory comments for every function; generated prose for its own sake; one universal template; treating comments as executable truth; a new search backend; automatically changing unrelated documents or bypassing review.
 
+**Later (user note, 2026-10-19, not specified):** once the workspace develops itself, the orchestrator should load only the documentation rules a task needs (by the languages and file types it touches) instead of the whole guide, which may mean splitting the guide into per-language rule sets. Decide when that work starts ([ai-orchestrator](../ai-orchestrator/SPEC.md), orchestrator-005 lean setup).
+
 **Open decisions:** whether the workspace also ships these rules as a skill for other projects; how the retroactive pass is split into tasks and reviewed.
