@@ -7,7 +7,7 @@ Read this before changing the app's interface (`app/src/ui.html`). It sets a sha
 ## Look
 
 - Flat, dark surfaces with low contrast between them; no gradients or decorative effects. A shadow only on something that floats (an overlay, a menu).
-- One accent, used sparingly for the active or selected thing. Status colours only for status: green success, amber warning, red error, blue information.
+- One accent, used sparingly for the active or selected thing. Status colours only for status: green success, amber warning, red error, blue information. Workspace notices in a chat (for example "Working in a new worktree") use the warning amber with ⚠, as the user prefers (2026-10-19).
 - Hierarchy through contrast, weight and spacing, not large text.
 - Compact navigation and controls; the content area gets room.
 
