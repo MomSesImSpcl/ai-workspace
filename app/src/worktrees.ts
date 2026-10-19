@@ -90,16 +90,39 @@ export function listWorktrees(project: Project): Worktree[] {
 
 /**
  * The worktree a new session of this project gets (`createSession` in `app/src/sessions.ts`): none outside
- * the app project; `'new'` plans a new one (made at the first turn); a path continues an existing workspace-made
- * worktree, for example after a session's cache went cold. Any other path is refused.
+ * the app project; a `name` plans a new one with that branch and folder name (made at the first turn), refused
+ * when empty, invalid or taken; a `path` continues an existing workspace-made worktree, for example after a
+ * session's cache went cold, and any other path is refused.
  */
-export function planWorktree(project: Project, sessionId: string, choice = 'new'): Worktree | undefined {
+export function planWorktree(project: Project, sessionId: string, choice: WorktreeChoice = {}): Worktree | undefined {
   if (!isAppProject(project)) return undefined;
-  if (choice === 'new') return { path: join(worktreesDir(project), sessionId), branch: `aiws/${sessionId}` };
-  const found = listWorktrees(project).find((w) => w.path.toLowerCase() === resolve(choice).toLowerCase());
-  if (!found) throw new Error(`Not a worktree of project ${project.id}: ${choice}`);
-  return found;
+  if (choice.path) {
+    const found = listWorktrees(project).find((w) => w.path.toLowerCase() === resolve(choice.path!).toLowerCase());
+    if (!found) throw new Error(`Not a worktree of project ${project.id}: ${choice.path}`);
+    return found;
+  }
+  if (choice.name === undefined) return { path: join(worktreesDir(project), sessionId), branch: `aiws/${sessionId}` };
+  const name = choice.name.trim();
+  if (!name) throw new Error('Enter a name for the new worktree.');
+  if (!WORKTREE_NAME.test(name) || name.endsWith('.lock') || name.includes('..')) throw new Error(`"${name}" is not a valid worktree name: use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).`);
+  const path = join(worktreesDir(project), name);
+  if (existsSync(path) || branchExists(project.root, name)) throw new Error(`A branch or worktree named "${name}" already exists: pick another name, or continue it from the list.`);
+  return { path, branch: name };
 }
+
+/** Allowed worktree names: also the branch and folder name, so safe for git refs and every file system. */
+const WORKTREE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+
+/** Whether a local branch of that name exists in the repository at `root`. */
+function branchExists(root: string, name: string): boolean {
+  try { git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]); return true; } catch { return false; }
+}
+
+/**
+ * How a new chat in the app project picks its worktree: `name` makes a new one with that branch and folder
+ * name, `path` continues an existing one. Neither (tasks, the command line) makes one named after the session.
+ */
+export interface WorktreeChoice { name?: string; path?: string }
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */
 export function addWorktree(root: string, wt: Worktree): string {

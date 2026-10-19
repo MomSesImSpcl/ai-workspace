@@ -4,7 +4,7 @@ import type { SetupItem } from './setup.ts';
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
-import { planWorktree, type Worktree } from './worktrees.ts';
+import { planWorktree, type Worktree, type WorktreeChoice } from './worktrees.ts';
 
 export interface Usage {
   inputTokens: number; // includes cachedInputTokens and cacheWriteTokens
@@ -264,8 +264,8 @@ export function reorderPinned(ids: string[]): void {
 }
 
 // The agent and model come from the role's assignment (Settings), like tasks.
-/** `worktree`: `'new'` (the default, also for tasks and the CLI) or the path of an existing worktree to continue (`planWorktree` in `app/src/worktrees.ts`). */
-export function createSession(projectId: string, role: string, assignment: { integration: string; model?: string }, worktree?: string): Session {
+/** `worktree`: how a new chat in the app project picks its worktree (`planWorktree` in `app/src/worktrees.ts`); none: one named after the session (tasks, the CLI). */
+export function createSession(projectId: string, role: string, assignment: { integration: string; model?: string }, worktree?: WorktreeChoice): Session {
   sessionRoot({ projectId });
   const now = new Date().toISOString();
   const s: Session = { id: randomUUID().slice(0, 8), projectId, title: 'New session', role, ...assignment, createdAt: now, updatedAt: now };

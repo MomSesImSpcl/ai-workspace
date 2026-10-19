@@ -138,6 +138,9 @@
   .chat-tokens { white-space: nowrap; }
   .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
   .send-row #foot-status { flex: 1; min-width: 0; }
+  .worktree-pick { display: flex; gap: 6px; min-width: 0; flex: 0 1 360px; }
+  .worktree-pick[hidden], .worktree-pick [hidden] { display: none; }
+  .worktree-pick select, .worktree-pick input { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .mode-menu { min-width: 260px; }
   .mode-menu .menu-title { padding: 6px 10px 4px; font-size: 12px; color: var(--text-muted); }
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -373,10 +376,9 @@
           <select id="agent" aria-label="Agent" title="Agent"></select>
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
-          <select id="worktree" aria-label="Worktree" title="Where this session works: a new worktree and branch, or an existing one to continue (for example after a cache went cold)" hidden></select>
         </div>
         <!-- The permission mode of the tasks this chat starts (ADR 0011), next to Send; layout only here and in renderCap(). -->
-        <div class="row send-row"><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
+        <div class="row send-row"><span class="worktree-pick" id="worktree-pick" hidden><select id="worktree" aria-label="Worktree" title="Where this session works: a new worktree and branch, or an existing one to continue (for example after a cache went cold)"></select><input id="worktree-name" aria-label="Name of the new worktree" placeholder="Worktree name" maxlength="60" title="Also the branch name: letters, digits, '.', '_' and '-'"></span><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
         <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -585,7 +587,7 @@ function renderProjects() {
     return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
       <span class="goal" ${p.app ? 'title="The repository this app runs from: each chat works in its own worktree and branch, never in this folder."' : ''}>${esc(p.id)}${p.app ? ' <small class="meta">this app</small>' : ''}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
       <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} tokens</span></button>
-      <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>${p.app && shown[i + 1] ? '<div class="project-sep" role="separator"></div>' : ''}`;
+      ${p.app ? '' : `<button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button>`}</div>${p.app && shown[i + 1] ? '<div class="project-sep" role="separator"></div>' : ''}`;
   }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
   const folders = archived ? [] : state.unaddedFolders ?? [];
   $('#unadded').innerHTML = folders.length ? `<div class="section-head"><h2>Folders in the workspace</h2><span>not added yet</span></div>
@@ -686,15 +688,35 @@ function renderPickers(s, force = false) {
   $('#effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
   const working = !!s?.working;
   for (const id of ['agent', 'model', 'effort']) $(`#${id}`).disabled = working || !catalog;
-  // A new chat in a project with worktrees: no preselection, the user picks a new or an existing one (selfdev-001).
+  // A new chat in the app project: a new worktree, which needs a name, or an existing one to continue (selfdev-001).
   const choices = !s && state.worktreeChoices;
-  $('#worktree').hidden = !choices;
+  $('#worktree-pick').hidden = !choices;
   if (choices) {
-    const picked = $('#worktree').value;
-    $('#worktree').innerHTML = option('', 'Choose worktree…', !picked) + option('new', 'New worktree', picked === 'new')
+    const picked = $('#worktree').value || 'new';
+    $('#worktree').innerHTML = option('new', 'New worktree', picked === 'new')
       + choices.map((w) => option(w.path, `${w.branch}${w.title ? ` · ${w.title}` : ''}`, picked === w.path)).join('');
-    $('#worktree').querySelector('option[value=""]').disabled = true;
+    $('#worktree-name').hidden = $('#worktree').value !== 'new';
   }
+}
+$('#worktree').onchange = () => { $('#worktree-name').hidden = $('#worktree').value !== 'new'; $('#new-error').textContent = ''; };
+// The same rule as `planWorktree` in app/src/worktrees.ts, so a bad name is caught before anything is sent.
+function worktreeNameError(name) {
+  if (!name) return 'Enter a name for the new worktree.';
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/.test(name) || name.endsWith('.lock') || name.includes('..')) return `"${name}" is not a valid worktree name: use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).`;
+  if (state.worktreeChoices?.some((w) => w.branch === name)) return `A worktree named "${name}" already exists: pick it from the list to continue it.`;
+  return '';
+}
+
+// The app project's sessions under one heading per worktree branch, since several chats can share one
+// (selfdev-001); groups follow the list's order, so the most recently active worktree comes first.
+function worktreeGroups(list) {
+  const groups = new Map();
+  for (const s of list) {
+    const key = s.worktree?.branch ?? '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  return [...groups].map(([branch, rows]) => `<div class="list-head"><h2 class="eyebrow worktree-head" style="margin:0" title="${esc(branch ? `Worktree and branch ${branch}` : 'Sessions from before worktrees, in the project folder')}">${esc(branch || 'Project folder')}</h2></div>${sessionRows(rows, 'project')}`).join('');
 }
 
 function renderSessions() {
@@ -705,7 +727,7 @@ function renderSessions() {
   const mine = state.sessions.filter(keep);
   const globals = state.globals.filter(keep);
   const empty = (text) => `<p class="empty" style="margin:4px 2px">${text}</p>`;
-  $('#session-list').innerHTML = (sessionRows(mine, 'project')
+  $('#session-list').innerHTML = ((current()?.app ? worktreeGroups(mine) : sessionRows(mine, 'project'))
     || empty(current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'))
     + `<div class="list-head"><h2 class="eyebrow" style="margin:0">Global</h2></div>
     <button class="btn small" id="new-global" type="button" style="margin-bottom:4px" ${state.workspaceRoot ? '' : 'disabled title="Set the workspace folder in Settings first"'}>+ New global session</button>`
@@ -1217,8 +1239,6 @@ function openMenu(kind, id, x, y) {
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
   const pin = menu.querySelector('[data-mact=pin]');
   if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
-  // The app project is added again at every start, so it has no Remove (selfdev-001).
-  if (kind === 'project') menu.querySelector('[data-mact=remove]').hidden = !!s.app;
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -1371,15 +1391,21 @@ $('#new').onsubmit = async (e) => {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
     const fresh = { role: $('#role').value, taskMode: state.draftMode, ...config };
-    if (!state.session && !$('#worktree').hidden) {
-      if (!$('#worktree').value) throw new Error('Choose a worktree first: a new one, or an existing one to continue.');
-      fresh.worktree = $('#worktree').value;
+    if (!state.session && !$('#worktree-pick').hidden) {
+      if ($('#worktree').value !== 'new') fresh.worktree = $('#worktree').value;
+      else {
+        const name = $('#worktree-name').value.trim();
+        const bad = worktreeNameError(name);
+        if (bad) { $('#worktree-name').focus(); throw new Error(bad); }
+        fresh.worktreeName = name;
+      }
     }
     const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
     state.draftMode = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
+    $('#worktree-name').value = '';
     $('#new-error').textContent = '';
     openSession(id);
   } catch (err) { $('#new-error').textContent = err.message; }

@@ -53,14 +53,14 @@ test('a new session can continue an existing worktree instead of making one', as
   await runTurn(first.id, recording([]));
   const made = loadSession(first.id).worktree!;
   assert.deepEqual(listWorktrees(getProject('P')), [made]);
-  const next = createSession('P', 'Chat', { integration: 'claude-code' }, made.path);
+  const next = createSession('P', 'Chat', { integration: 'claude-code' }, { path: made.path });
   assert.deepEqual(next.worktree, made);
   const roots: string[] = [];
   addMessage(next.id, 'go on');
   await runTurn(next.id, recording(roots));
   assert.deepEqual(roots, [made.path]);
   assert.equal(readEvents(next.id).filter((e) => e.type === 'notice').length, 0); // nothing new was made
-  assert.throws(() => createSession('P', 'Chat', { integration: 'claude-code' }, root), /Not a worktree of project P/);
+  assert.throws(() => createSession('P', 'Chat', { integration: 'claude-code' }, { path: root }), /Not a worktree of project P/);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -84,5 +84,19 @@ test('a session works in its own worktree from the first turn; its tasks share i
   await runTurn(chat.id, recording(roots));
   assert.equal(roots.length, 2); // no agent started in the live checkout
   assert.ok(readEvents(chat.id).some((e) => e.type === 'error' && /worktree is gone/.test(e.message)));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('a new worktree takes the name the user gives it; empty, invalid and taken names are refused', async () => {
+  const chat = (worktree: { name?: string; path?: string }) => createSession('P', 'Chat', { integration: 'claude-code' }, worktree);
+  assert.throws(() => chat({ name: ' ' }), /Enter a name for the new worktree/);
+  for (const bad of ['-x', 'a b', 'a/b', 'a..b', 'x.lock', 'a'.repeat(61)]) assert.throws(() => chat({ name: bad }), /not a valid worktree name/, bad);
+  assert.throws(() => chat({ name: 'main' }), /already exists/); // an existing branch
+  const s = chat({ name: 'fix-login' });
+  assert.equal(s.worktree!.branch, 'fix-login');
+  addMessage(s.id, 'start');
+  await runTurn(s.id, recording([]));
+  assert.equal(git('branch', '--list', '--format=%(refname:short)', 'fix-login'), 'fix-login');
+  assert.throws(() => chat({ name: 'fix-login' }), /already exists/);
   rmSync(root, { recursive: true, force: true });
 });

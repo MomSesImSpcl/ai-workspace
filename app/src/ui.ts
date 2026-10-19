@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
@@ -14,8 +14,6 @@ import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 import { isAppProject, listWorktrees } from './worktrees.ts';
 
-/** A session's title, or '' when it was deleted (a worktree can outlive the session that made it). */
-const titleOf = (id: string) => { try { return loadSession(id).title; } catch { return ''; } };
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
@@ -123,9 +121,11 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     sessionAgent(assignment.integration);
     const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
     const projectId = b.global === true ? GLOBAL : text(b.projectId, 'projectId');
-    // In the app project the user picks a worktree for every new chat: a new one or one to continue (selfdev-001).
-    if (projectId !== GLOBAL && isAppProject(getProject(projectId)) && typeof b.worktree !== 'string') throw new HttpError(400, 'Choose a worktree for this session first');
-    const s = createSession(projectId, role, { integration: config.integration, model: config.model }, typeof b.worktree === 'string' ? b.worktree : undefined);
+    // In the app project every new chat names a new worktree or continues one (selfdev-001).
+    const choice = { name: typeof b.worktreeName === 'string' ? b.worktreeName : undefined, path: typeof b.worktree === 'string' ? b.worktree : undefined };
+    if (projectId !== GLOBAL && isAppProject(getProject(projectId)) && choice.name === undefined && !choice.path) throw new HttpError(400, 'Enter a name for the new worktree.');
+    let s: Session;
+    try { s = createSession(projectId, role, { integration: config.integration, model: config.model }, choice); } catch (e) { throw new HttpError(400, (e as Error).message); }
     s.effort = config.effort;
     if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
     if (typeof b.taskMode === 'string' && b.taskMode.length <= 40) s.taskMode = b.taskMode;
@@ -273,8 +273,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
-  // The worktrees a new session can continue in, with the title of the session that made each.
-  if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') return listWorktrees(getProject(id)).map((w) => ({ ...w, title: titleOf(basename(w.path)) }));
+  // The worktrees a new session can continue in, each with the title of its most recently active chat.
+  if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') {
+    const chats = listSessions(id);
+    return listWorktrees(getProject(id)).map((w) => ({ ...w, title: chats.find((s) => s.worktree?.path.toLowerCase() === w.path.toLowerCase())?.title ?? '' }));
+  }
   if (req.method === 'POST' && kind === 'projects' && action === 'remove') {
     if (isAppProject(getProject(id))) throw new HttpError(400, "The workspace's own repository cannot be removed; it is added again at every start");
     removeProject(id);

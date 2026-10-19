@@ -8,11 +8,12 @@ Agents developing the workspace must never edit the checkout the running app is 
 
 ## Decision
 
-- **The app project (amended 2026-10-19, user):** started from a git checkout, the app adds that repository as a project at every start unless a project already has its folder (`addAppProject` in `app/src/worktrees.ts`). Only this project works in worktrees; it is listed first with a line below it and cannot be removed (it can be archived). A packaged release runs from no checkout, so it has no app project and no worktrees. This replaced a per-project "New worktree per session" switch, which also let other projects work in worktrees; selfdev-007 is deferred.
+- **The app project (amended 2026-10-19, user):** started from a git checkout, the app adds that repository as a project at every start unless a project already has its folder (`addAppProject` in `app/src/worktrees.ts`). Only this project works in worktrees; it is listed first with a line below it and has no menu, so it can be neither removed nor archived. A packaged release runs from no checkout, so it has no app project and no worktrees. This replaced a per-project "New worktree per session" switch, which also let other projects work in worktrees; selfdev-007 is deferred.
 - **Location:** `<workspace storage>/worktrees/<project>/<session>`, outside the repository, on a new branch `aiws/<session id>` from the project checkout's HEAD. The repository's own tools (TypeScript, test globs) never see the worktrees, and a write rule for the live checkout (selfdev-002) does not cover them.
 - **Tasks share the chat's worktree:** a task started from a chat, and its subtasks, run in the chat's worktree and branch, so one change is reviewed and merged once. A task started without a chat gets its own.
 - The worktree is planned when the session is created and made at its first turn; a worktree gone after that stops the session with an error instead of falling back to the project folder.
 - **Chosen per chat (amended 2026-10-19, user):** a new chat in such a project starts only after the user picks "New worktree" or an existing workspace-made worktree of the project (branch and the title of the session that made it), with no preselection. Continuing one lets work go on from an empty chat, for example after a session's prompt cache went cold. Tasks and command-line sessions keep getting a new one or their chat's.
+- **Named worktrees (amended 2026-10-19, user):** a new worktree is named by the user in the Send row (the name is its branch and folder), instead of `aiws/<session id>`; tasks and command-line sessions keep `aiws/<session id>`. The sessions list groups the app project's chats by worktree.
 
 ## Alternatives
 
