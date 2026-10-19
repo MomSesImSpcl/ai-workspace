@@ -669,8 +669,9 @@ async function pickMode(id) {
   if (!state.session) { state.draftMode = id; return renderCap(null); }
   await sessionAction('mode', { taskMode: id });
 }
-function renderPickers(s) {
-  if (['agent', 'model', 'effort'].includes(document.activeElement?.id)) return; // don't reset a menu being used
+function renderPickers(s, force = false) {
+  // Polling must not reset a menu being used; a change the user just made redraws on purpose (force).
+  if (!force && ['agent', 'model', 'effort'].includes(document.activeElement?.id)) return;
   const v = pickerValues(s);
   $('#role').value = v.role;
   $('#role').hidden = !!s;
@@ -1050,12 +1051,13 @@ async function pickerChanged(which) {
   const v = { ...pickerValues(s), [which]: $(`#${which}`).value };
   if (which === 'agent') v.integration = $('#agent').value, v.model = '', v.effort = '';
   if (which === 'model') v.effort = '';
-  if (!s) { state.draft = v; return renderPickers(null); }
-  if (which === 'agent' && !(await ask(`Switch this session to ${v.integration}?`, `${v.integration} gets the conversation so far as text; it cannot resume ${s.integration}'s own session. The chat marks the switch.`, 'Switch'))) return renderPickers(s);
+  if (!s) { state.draft = v; return renderPickers(null, true); }
+  if (which === 'agent' && !(await ask(`Switch this session to ${v.integration}?`, `${v.integration} gets the conversation so far as text; it cannot resume ${s.integration}'s own session. The chat marks the switch.`, 'Switch'))) return renderPickers(s, true);
   await sessionAction('config', { integration: v.integration, model: v.model, effort: v.effort });
+  renderPickers(state.sessionData?.session.id === state.session ? state.sessionData.session : s, true);
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
-$('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null); };
+$('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null, true); };
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
 const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementer' };
 // The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.
