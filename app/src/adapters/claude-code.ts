@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { commandFolder, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
@@ -110,6 +110,8 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   return { events: [] };
 }
 
+// The file inside a folder when it exists, else the folder, so the user is shown what to look for.
+export const fileOr = (dir: string, file: string) => (existsSync(join(dir, file)) ? join(dir, file) : dir);
 export const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
 const readJsonFile = <T>(file: string): T | undefined => { try { return JSON.parse(readFileSync(file, 'utf8')) as T; } catch { return undefined; } };
 type ClaudeSettings = { enabledPlugins?: Record<string, boolean>; hooks?: Record<string, unknown[]> } & Record<string, unknown>;
@@ -148,16 +150,16 @@ export function claudeInventory(root: string): SetupItem[] {
   // Lines read "<name>: <command or URL> - <status>".
   for (const line of run(['mcp', 'list']).split('\n')) {
     const m = /^(.+?): (.+) - \S+ \w/.exec(line.trim());
-    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}`, path: commandFolder(m[2]) });
+    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}`, path: commandFile(m[2]) });
   }
   let skills: string[] = [];
   try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
-  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}`, parts: skills.map((name) => ({ name, path: join(claudeHome(), 'skills', name) })) });
+  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}`, parts: skills.map((name) => ({ name, path: fileOr(join(claudeHome(), 'skills', name), 'SKILL.md') })) });
   for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
   items.push(DELEGATE);
   items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
   const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
-  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}`, path: claudeHome() });
+  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}`, path: join(claudeHome(), 'settings.json') });
   return items;
 }
 

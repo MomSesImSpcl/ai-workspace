@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
 import { ORCHESTRATION, type Session } from './sessions.ts';
 
@@ -9,16 +9,16 @@ import { ORCHESTRATION, type Session } from './sessions.ts';
 export type ItemKind = 'plugin' | 'mcp' | 'apps' | 'skills' | 'hooks' | 'tool' | 'feature' | 'prompt' | 'workspace';
 // The workspace's own `delegate` tool for tasks: a task without it cannot hand work to a subtask.
 export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: 'Delegate', description: "Hand a self-contained part to another workspace role's agent as a subtask" };
-// `path` is the item's folder and `parts` the things it switches together, each with its folder, when known.
+// `path` is the item's file or folder and `parts` the things it switches together, each with its own, when known.
 export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string; path?: string; parts?: { name: string; path: string }[] }
 export type ItemState = 'on' | 'decide' | 'off';
-// The folder of a server's program when its command line starts with an absolute path to an existing file
+// The server's program file when its command line starts with an absolute path to an existing file
 // (the path may contain spaces, so each longer prefix is tried); a bare command or a URL has none.
-export function commandFolder(command: string): string | undefined {
+export function commandFile(command: string): string | undefined {
   const words = command.trim().replace(/^"([^"]+)"/, '$1').split(' ');
   for (let n = 1; n <= words.length; n++) {
     const p = words.slice(0, n).join(' ');
-    if (isAbsolute(p) && existsSync(p) && statSync(p).isFile()) return dirname(p);
+    if (isAbsolute(p) && existsSync(p) && statSync(p).isFile()) return p;
   }
   return undefined;
 }

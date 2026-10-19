@@ -510,11 +510,10 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
   }
 });
 
-test('an MCP server command names its program folder only for an existing absolute path, spaces included', async () => {
-  const { commandFolder } = await import('../src/setup.ts');
-  const { dirname } = await import('node:path');
-  assert.equal(commandFolder(`${process.execPath} --flag`), dirname(process.execPath));
-  assert.equal(commandFolder(`"${process.execPath}" --flag`), dirname(process.execPath));
-  assert.equal(commandFolder('npx some-server'), undefined);
-  assert.equal(commandFolder('https://example.test/mcp'), undefined);
+test('an MCP server command names its program file only for an existing absolute path, spaces included', async () => {
+  const { commandFile } = await import('../src/setup.ts');
+  assert.equal(commandFile(`${process.execPath} --flag`), process.execPath);
+  assert.equal(commandFile(`"${process.execPath}" --flag`), process.execPath);
+  assert.equal(commandFile('npx some-server'), undefined);
+  assert.equal(commandFile('https://example.test/mcp'), undefined);
 });
