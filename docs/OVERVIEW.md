@@ -28,7 +28,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Generated analysis tools and task dashboards](features/mini-apps/SUMMARY.md)
 - [Authorized search and selective context assembly](features/knowledge-retrieval/SUMMARY.md)
 - [Semantic code indexing and change-aware knowledge](features/code-index/SUMMARY.md)
-- [Documentation authoring and maintenance by agents](features/code-documentation/SUMMARY.md)
+- [Documentation authoring and maintenance by agents](features/code-documentation/SUMMARY.md) — in progress
 - [Runtime UI verification in an isolated test instance](features/ui-verification/SUMMARY.md)
 - [Developing the workspace inside itself](features/self-development/SUMMARY.md)
 - [Version-matched local documentation registry](features/documentation/SUMMARY.md)

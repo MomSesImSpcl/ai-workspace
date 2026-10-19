@@ -9,7 +9,7 @@
 - Registered in the [overview](../../OVERVIEW.md) and the traceability ID index; code-index summary status line and text updated; [progress](../../PROGRESS.md) lists both as specified.
 - No ADR: no technology or architecture choice was made beyond the spec content; adapter registration, confidence rules and tooling stay open decisions.
 
-**Open:** whether agents start documenting new and changed code now, before the index exists (discussed with the user; added only on agreement).
+**Open:** whether agents start documenting new and changed code now, before the index exists (discussed with the user; added only on agreement). Agreed the same day: [history 2026-10-19-06](../2026-10-19-06-code-docs-guide/SUMMARY.md).
 
 **Checks:** both feature files exist; local links in the edited files resolve (checked with a link script); IDs code-index-030–039 and codedoc-* were unused before.
 

@@ -4,7 +4,7 @@
 
 [Dependencies and related features](SUMMARY.md). Read affected contract sections when implementing.
 
-Specified 2026-10-19, not built. Rules agents follow when they create or change code and its documentation in any project of the workspace, so documentation stays accurate, proportional and easy to retrieve through the [code index](../code-index/SPEC.md#724-documentation-indexing-and-code-linking) (code-index-030–039). It applies to every code change, not only to the [architecture → implementation → review workflow](../software-workflow/SPEC.md); that workflow's implementation and review steps apply these rules.
+Specified 2026-10-19. Since 2026-10-19 (user decision) codedoc-001–011 apply to new and changed code through the agent-facing [code documentation guide](../../CODE_DOCS.md), linked from `AGENTS.md`, as if documentation indexing already existed; until it does, agents find and check references with search and file reads. codedoc-012 waits for the index. Rules agents follow when they create or change code and its documentation in any project of the workspace, so documentation stays accurate, proportional and easy to retrieve through the [code index](../code-index/SPEC.md#724-documentation-indexing-and-code-linking) (code-index-030–039). It applies to every code change, not only to the [architecture → implementation → review workflow](../software-workflow/SPEC.md); that workflow's implementation and review steps apply these rules.
 
 The rules do not prescribe Markdown, JSDoc, XML or any syntax: each project uses the conventions and tooling of its language, framework and documentation format. The goal is accurate retrieval and maintainability, not comment volume.
 
@@ -48,4 +48,4 @@ The rules do not prescribe Markdown, JSDoc, XML or any syntax: each project uses
 
 **Non-goals:** mandatory comments for every function; generated prose for its own sake; one universal template; treating comments as executable truth; a new search backend; automatically changing unrelated documents or bypassing review.
 
-**Open decisions:** where the agent-facing short form of these rules lives (a doc linked from `AGENTS.md`, a skill, or both); how the retroactive pass is split into tasks and reviewed.
+**Open decisions:** whether the workspace also ships these rules as a skill for other projects; how the retroactive pass is split into tasks and reviewed.
