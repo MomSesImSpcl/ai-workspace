@@ -631,7 +631,9 @@ function pickerValues(s) {
 }
 function roleDraft(role) {
   const a = state.roles[role] ?? { integration: 'claude-code' };
-  return { role, integration: state.agents[a.integration] ? a.integration : 'claude-code', model: a.model ?? '', effort: '' };
+  // The role's defaults from Settings; on the fallback agent its model and effort would not fit.
+  const own = !!state.agents[a.integration];
+  return { role, integration: own ? a.integration : 'claude-code', model: own ? a.model ?? '' : '', effort: own ? a.effort ?? '' : '' };
 }
 // The task cap switch next to the chat box (ADR 0011): unchecked, the chat's new tasks run uncapped.
 function renderCap(s) {
