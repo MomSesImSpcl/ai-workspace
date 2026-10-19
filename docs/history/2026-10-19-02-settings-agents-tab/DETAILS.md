@@ -19,6 +19,7 @@
   - Two agent columns, 560 px each, side by side, each with its own vertical scroll. Long item names wrap.
   - The tabs stayed at the same x (1532) on every tab.
   - Follow-up (user): Agent setup content keeps to the right. Its top part spans x 672–1532, the same as General's 673–1532; the agent columns span 396–956 and 972–1532, packed right.
+  - Follow-up (user): at 2000 px wide, two agents give a 1186 px panel with no sideways scroll; it is capped at the sessions column. The agent name stays at the top of its column after scrolling 400 px.
 - Not checked:
   - The Electron window.
   - A real agent run with the new instructions; the notes are built in the same place as the orchestrator instructions.

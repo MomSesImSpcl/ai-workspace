@@ -254,10 +254,11 @@
   .backdrop { position: absolute; top: 0; bottom: 0; left: var(--sessions-w); right: 48px; z-index: 5; background: rgba(0,0,0,.35); }
   .drawer { position: absolute; top: 0; bottom: 0; right: 48px; z-index: 6; display: flex; flex-direction: column; width: min(var(--drawer-w), calc(100% - var(--sessions-w) - 48px)); background: var(--panel); border-left: 1px solid var(--hairline); box-shadow: 0 6px 24px rgba(0,0,0,.45); padding: 16px 20px; }
   /* The Agent setup tab spans up to the sessions column: one column per agent, scrolled sideways. */
-  .drawer[data-wide=true] { width: calc(100% - var(--sessions-w) - 48px); }
+  /* Wide enough for every agent's column (560 px + 16 px gap, plus padding), never past the sessions column. */
+  .drawer[data-wide=true] { width: min(max(var(--drawer-w), calc(var(--agents, 1) * 576px + 34px)), calc(100% - var(--sessions-w) - 48px)); }
   .app[data-sidebar=collapsed] .backdrop { left: 0; }
   .app[data-sidebar=collapsed] .drawer { width: min(var(--drawer-w), calc(100% - 48px)); }
-  .app[data-sidebar=collapsed] .drawer[data-wide=true] { width: calc(100% - 48px); }
+  .app[data-sidebar=collapsed] .drawer[data-wide=true] { width: min(max(var(--drawer-w), calc(var(--agents, 1) * 576px + 34px)), calc(100% - 48px)); }
   #drawer-settings { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   #drawer-settings [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; }
   #spanel-setup { display: flex; flex-direction: column; gap: 6px; overflow: hidden !important; }
@@ -267,6 +268,8 @@
      the columns packed against the right edge (an auto margin, unlike flex-end, keeps overflow scrollable). */
   #spanel-setup > div > :not(#setup-items) { align-self: flex-end; width: min(calc(var(--drawer-w) - 40px), 100%); }
   #setup-items > .agent-col:first-child { margin-left: auto; }
+  /* The agent's name stays above its list while the list scrolls. */
+  .agent-col > b { position: sticky; top: 0; z-index: 1; display: block; padding: 4px 0 6px; text-align: center; background: var(--panel); }
   .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
   .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
   /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
@@ -1052,6 +1055,7 @@ function renderAgentSetup() {
   $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label>`).join('')
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
+  $('#drawer').style.setProperty('--agents', String(agents.length || 1));
   $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><b>${esc(agent)}</b>
     <table class="meta" style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr>
     ${items.map((i) => `<tr><td title="${esc(i.description ?? '')}">${esc(i.title)}<br><span style="opacity:.8">${esc(i.description ?? '')}</span></td>${s.roles.map((r) => `<td><select aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([v, l]) => `<option value="${v}" ${s.states[r]?.[agent]?.[i.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}</tr>`).join('')}</table></div>`).join('')
