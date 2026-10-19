@@ -902,6 +902,14 @@ function runHtml(t, r, i, count, open, permissions) {
 }
 
 // The Implementer's default mode for new tasks; the select and each option show the mode's description on hover.
+// A confirmation shows for 2 s; an error (set directly) stays until the next change replaces it.
+function flash(el, text) {
+  if (!el) return;
+  el.textContent = text;
+  clearTimeout(el.flashTimer);
+  el.flashTimer = setTimeout(() => { el.textContent = ''; }, 2000);
+}
+const fail = (el, text) => { if (el) { clearTimeout(el.flashTimer); el.textContent = text; } };
 function permissionField(a) {
   const modes = state.agents[a.integration]?.modes ?? [];
   const current = modes.find((m) => m.id === (a.permissionMode ?? 'acceptEdits')) ?? modes[0];
@@ -924,13 +932,13 @@ function renderDrawer() {
       const models = state.agents[a.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
       const efforts = (models.find((m) => m.id === (a.model ?? '')) ?? models[0]).efforts;
       const key = ROLE_INSTRUCTIONS[role];
-      return `<form class="role" data-role="${esc(role)}"><b>${esc(ROLE_NAMES[role] ?? role)}</b>
+      return `<form class="role" data-role="${esc(role)}"><div class="row" style="align-items:baseline;gap:8px"><b>${esc(ROLE_NAMES[role] ?? role)}</b><span class="meta" data-saved role="status"></span></div>
         <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
         <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
         <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
         ${role === 'Implementation' ? permissionField(a) : ''}</div>
         ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
-        <span class="meta" data-saved role="status"></span></form>`;
+        </form>`;
     }).join('');
   }
 }
@@ -1122,15 +1130,15 @@ $('#setup-items').oninput = (e) => {
   filterSetup(agent);
 };
 async function setupChange(body) {
-  try { state.agentSetup = await api('/api/agent-setup', body); $('#setup-status').textContent = 'Saved. Applies from the next agent start.'; }
-  catch (err) { $('#setup-status').textContent = err.message; }
+  try { state.agentSetup = await api('/api/agent-setup', body); flash($('#setup-status'), 'Saved. Applies from the next agent start.'); }
+  catch (err) { fail($('#setup-status'), err.message); }
   renderAgentSetup();
 }
 $('#rule-switches').onchange = (e) => e.target.dataset.rules && setupChange({ role: e.target.dataset.rules, globalRules: e.target.checked });
 $('#setup-items').onchange = (e) => { const d = e.target.dataset; if (d.item) setupChange({ role: d.role, agent: d.agent, item: d.item, state: e.target.value }); };
 $('#list-setup').onclick = async () => {
-  $('#setup-status').textContent = 'Listing what each agent loads…';
-  try { state.agentSetup = await api('/api/agent-setup/list', {}); $('#setup-status').textContent = 'Listed.'; } catch (err) { $('#setup-status').textContent = err.message; }
+  fail($('#setup-status'), 'Listing what each agent loads…'); // stays until the listing ends
+  try { state.agentSetup = await api('/api/agent-setup/list', {}); flash($('#setup-status'), 'Listed.'); } catch (err) { fail($('#setup-status'), err.message); }
   renderAgentSetup();
 };
 for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
@@ -1416,8 +1424,8 @@ $('#roles').onchange = async (e) => {
     if (mode?.warn && !(await ask(`Make ${mode.label} the default for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) { renderDrawer(); return; }
     return form.requestSubmit();
   }
-  try { state.settings = await api('/api/settings', { [key]: e.target.value }); form.querySelector('[data-saved]').textContent = 'Saved. Applies from the next agent start.'; }
-  catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
+  try { state.settings = await api('/api/settings', { [key]: e.target.value }); flash(form.querySelector('[data-saved]'), 'Saved. Applies from the next agent start.'); }
+  catch (err) { fail(form.querySelector('[data-saved]'), err.message); }
 };
 $('#roles').onsubmit = (e) => {
   e.preventDefault();
@@ -1430,9 +1438,8 @@ async function saveRole(form, body) {
     document.activeElement?.blur(); // so the render rebuilds the model and effort lists
     await load();
     renderDrawer();
-  } catch (err) { return void (form.querySelector('[data-saved]').textContent = err.message); }
-  const saved = $(`#roles form[data-role="${CSS.escape(body.role)}"] [data-saved]`); // the render rebuilt the form
-  if (saved) saved.textContent = 'Saved';
+  } catch (err) { return fail(form.querySelector('[data-saved]'), err.message); }
+  flash($(`#roles form[data-role="${CSS.escape(body.role)}"] [data-saved]`), 'Saved'); // the render rebuilt the form
 }
 
 // Drag (or arrow keys on the handle) to resize the chat column, between 280px and 70% of the window.
