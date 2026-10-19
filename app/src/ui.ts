@@ -11,7 +11,8 @@ import { claudeHome, fileOr } from './adapters/claude-code.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
-import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setProjectWorktrees, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { worktreesOn } from './worktrees.ts';
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
@@ -204,7 +205,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects(), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, worktrees: worktreesOn(p) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -266,6 +267,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
+  if (req.method === 'POST' && kind === 'projects' && action === 'worktrees') return setProjectWorktrees(id, (await body(req)).on === true);
   if (req.method === 'POST' && kind === 'projects' && action === 'remove') {
     removeProject(id);
     return { removed: id };

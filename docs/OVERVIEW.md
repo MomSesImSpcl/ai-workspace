@@ -30,7 +30,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Semantic code indexing and change-aware knowledge](features/code-index/SUMMARY.md)
 - [Documentation authoring and maintenance by agents](features/code-documentation/SUMMARY.md) — in progress
 - [Runtime UI verification in an isolated test instance](features/ui-verification/SUMMARY.md)
-- [Developing the workspace inside itself](features/self-development/SUMMARY.md)
+- [Developing the workspace inside itself](features/self-development/SUMMARY.md) — in progress
 - [Version-matched local documentation registry](features/documentation/SUMMARY.md)
 - [Project planning, wiki and public roadmap](features/project-planning/SUMMARY.md)
 - [Project history and selective progress retrieval](features/project-history/SUMMARY.md)

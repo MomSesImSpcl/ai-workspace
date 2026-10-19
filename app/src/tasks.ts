@@ -47,6 +47,9 @@ export function createTask(f: NewTask): Session {
   if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(`No built-in tool picked for this ${integration} task: pass in setup the tools the goal needs (tool:… ids from list_agents)`);
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
+  // A chat's tasks and their subtasks work on the chat's branch, so one change is reviewed and merged once (selfdev-001).
+  const owner = f.parentId ?? f.sessionId;
+  if (owner) s.worktree = loadSession(owner).worktree;
   s.task = { tokenBudget: f.tokenBudget, parentId: f.parentId, sessionId: f.sessionId, reason: f.reason, basedOn: f.basedOn, setup: f.setup };
   const offers = (m?: string) => !!m && !!agent.catalog().modes?.some((x) => x.id === m);
   s.permissionMode = f.permissionMode || (offers(f.defaultMode) ? f.defaultMode : undefined);

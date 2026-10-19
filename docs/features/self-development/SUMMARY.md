@@ -1,6 +1,6 @@
 # Developing the workspace inside itself
 
-**Status:** not-started
+**Status:** in-progress: worktree per session built (selfdev-001, ADR 0014); running instance untouched, verify, restart and fallback not built
 
 Let the user develop AI Workspace from within AI Workspace without risking the running instance: agents change code in an isolated worktree, a separate test instance verifies it, and the running app takes the change only after review, through a restart that keeps sessions and tasks and can fall back to the last working version.
 

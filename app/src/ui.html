@@ -335,6 +335,7 @@
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
       <div class="menu" id="project-menu" role="menu" hidden>
+        <button role="menuitemcheckbox" data-mact="worktrees" aria-checked="false" title="Each new session works in its own git worktree and branch, so its agent never edits this folder. Its tasks share it. On by default for the repository this app runs from.">New worktree per session</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
@@ -1200,6 +1201,8 @@ function openMenu(kind, id, x, y) {
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
   const pin = menu.querySelector('[data-mact=pin]');
   if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
+  const wt = menu.querySelector('[data-mact=worktrees]');
+  if (wt) { wt.setAttribute('aria-checked', String(!!s.worktrees)); wt.textContent = `${s.worktrees ? '✓ ' : ''}New worktree per session`; }
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -1223,6 +1226,10 @@ async function projectMenuAction(act, id) {
     try { await api(`/api/projects/${encodeURIComponent(id)}/remove`, {}); } catch (err) { return void ($('#project-error').textContent = err.message); }
     await load();
     return state.project !== pref.get('project', null) ? selectProject(state.project) : render();
+  }
+  if (act === 'worktrees') {
+    try { await api(`/api/projects/${encodeURIComponent(id)}/worktrees`, { on: !p.worktrees }); } catch (err) { return void ($('#project-error').textContent = err.message); }
+    return load().then(render);
   }
   if (act !== 'archive') return;
   if (!p.archived && !(await ask(`Archive project "${p.id}"?`, `It is hidden from the workspace. Its folder (${p.root}), sessions and tasks stay untouched, and running work continues. Tick "Show archived" on this page to restore it.`, 'Archive'))) return;

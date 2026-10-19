@@ -4,6 +4,7 @@ import type { SetupItem } from './setup.ts';
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
+import { planWorktree, type Worktree } from './worktrees.ts';
 
 export interface Usage {
   inputTokens: number; // includes cachedInputTokens and cacheWriteTokens
@@ -78,6 +79,7 @@ export interface Session {
   task?: TaskSpec; // set for a task: delegated background work, optionally with a token cap (task-runtime 4.7)
   taskCap?: number; // a chat's cap for the tasks it starts (the switch next to the chat box); unset: uncapped
   taskMode?: string; // the permission mode of the tasks a chat starts; unset: acceptEdits, '': the agent's settings
+  worktree?: Worktree; // the session's own git worktree (selfdev-001); a task shares its chat's; unset: the project folder
   createdAt: string;
   updatedAt: string;
 }
@@ -211,7 +213,8 @@ export function loadSession(id: string): Session {
 // Global sessions belong to no project; they run in the workspace folder (sessions-014).
 export const GLOBAL = '';
 
-export function sessionRoot(s: Pick<Session, 'projectId'>): string {
+export function sessionRoot(s: Pick<Session, 'projectId' | 'worktree'>): string {
+  if (s.worktree) return s.worktree.path;
   if (s.projectId !== GLOBAL) return getProject(s.projectId).root;
   const root = getWorkspaceRoot();
   if (!root) throw new Error('Session is global: set the workspace folder in Settings first');
@@ -265,6 +268,7 @@ export function createSession(projectId: string, role: string, assignment: { int
   sessionRoot({ projectId });
   const now = new Date().toISOString();
   const s: Session = { id: randomUUID().slice(0, 8), projectId, title: 'New session', role, ...assignment, createdAt: now, updatedAt: now };
+  if (projectId !== GLOBAL) s.worktree = planWorktree(getProject(projectId), s.id);
   placeIn('sessions', s.id, projectId);
   saveSession(s);
   audit({ kind: 'session', sessionId: s.id, event: 'created', projectId, role, integration: s.integration });
