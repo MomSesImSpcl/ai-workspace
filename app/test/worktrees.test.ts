@@ -11,7 +11,7 @@ import { addMessage, createSession, loadSession, readEvents, type SessionAgent }
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, registerProject, setProjectWorktrees } from '../src/store.ts';
-import { planWorktree, worktreesOn } from '../src/worktrees.ts';
+import { isGitRepo, listWorktrees, planWorktree, worktreesOn } from '../src/worktrees.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -39,6 +39,27 @@ test('the switch is off for other repositories and on for the one this app runs 
   const appRepo = dirname(dirname(fileURLToPath(import.meta.url)));
   assert.equal(worktreesOn({ id: 'app', root: appRepo }), true);
   assert.equal(worktreesOn({ id: 'app', root: appRepo, worktrees: false }), false);
+  const plain = mkdtempSync(join(tmpdir(), 'ws-plain-'));
+  assert.equal(isGitRepo(plain), false);
+  assert.equal(worktreesOn({ id: 'plain', root: plain, worktrees: true }), false); // a folder without git never gets worktrees
+});
+
+test('a new session can continue an existing worktree instead of making one', async () => {
+  setProjectWorktrees('P', true);
+  const first = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(first.id, 'start');
+  await runTurn(first.id, recording([]));
+  const made = loadSession(first.id).worktree!;
+  assert.deepEqual(listWorktrees(getProject('P')), [made]);
+  const next = createSession('P', 'Chat', { integration: 'claude-code' }, made.path);
+  assert.deepEqual(next.worktree, made);
+  const roots: string[] = [];
+  addMessage(next.id, 'go on');
+  await runTurn(next.id, recording(roots));
+  assert.deepEqual(roots, [made.path]);
+  assert.equal(readEvents(next.id).filter((e) => e.type === 'notice').length, 0); // nothing new was made
+  assert.throws(() => createSession('P', 'Chat', { integration: 'claude-code' }, root), /Not a worktree of project P/);
+  rmSync(root, { recursive: true, force: true });
 });
 
 test('a session works in its own worktree from the first turn; its tasks share it; a removed one stops it', async () => {

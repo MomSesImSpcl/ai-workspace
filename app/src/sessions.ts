@@ -264,11 +264,12 @@ export function reorderPinned(ids: string[]): void {
 }
 
 // The agent and model come from the role's assignment (Settings), like tasks.
-export function createSession(projectId: string, role: string, assignment: { integration: string; model?: string }): Session {
+/** `worktree`: `'new'` (the default, also for tasks and the CLI) or the path of an existing worktree to continue (`planWorktree` in `app/src/worktrees.ts`). */
+export function createSession(projectId: string, role: string, assignment: { integration: string; model?: string }, worktree?: string): Session {
   sessionRoot({ projectId });
   const now = new Date().toISOString();
   const s: Session = { id: randomUUID().slice(0, 8), projectId, title: 'New session', role, ...assignment, createdAt: now, updatedAt: now };
-  if (projectId !== GLOBAL) s.worktree = planWorktree(getProject(projectId), s.id);
+  if (projectId !== GLOBAL) s.worktree = planWorktree(getProject(projectId), s.id, worktree);
   placeIn('sessions', s.id, projectId);
   saveSession(s);
   audit({ kind: 'session', sessionId: s.id, event: 'created', projectId, role, integration: s.integration });

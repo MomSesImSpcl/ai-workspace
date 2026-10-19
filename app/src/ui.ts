@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
@@ -12,7 +12,10 @@ import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setProjectWorktrees, setWorkspaceRoot, unaddedFolders } from './store.ts';
-import { worktreesOn } from './worktrees.ts';
+import { isGitRepo, listWorktrees, worktreesOn } from './worktrees.ts';
+
+/** A session's title, or '' when it was deleted (a worktree can outlive the session that made it). */
+const titleOf = (id: string) => { try { return loadSession(id).title; } catch { return ''; } };
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
@@ -119,7 +122,10 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const assignment = assignmentFor(role);
     sessionAgent(assignment.integration);
     const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
-    const s = createSession(b.global === true ? GLOBAL : text(b.projectId, 'projectId'), role, { integration: config.integration, model: config.model });
+    const projectId = b.global === true ? GLOBAL : text(b.projectId, 'projectId');
+    // In a project with worktrees the user picks one for every new chat: a new one or one to continue (selfdev-001).
+    if (projectId !== GLOBAL && worktreesOn(getProject(projectId)) && typeof b.worktree !== 'string') throw new HttpError(400, 'Choose a worktree for this session first');
+    const s = createSession(projectId, role, { integration: config.integration, model: config.model }, typeof b.worktree === 'string' ? b.worktree : undefined);
     s.effort = config.effort;
     if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
     if (typeof b.taskMode === 'string' && b.taskMode.length <= 40) s.taskMode = b.taskMode;
@@ -205,7 +211,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, worktrees: worktreesOn(p) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, worktrees: worktreesOn(p), git: isGitRepo(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -267,7 +273,13 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
-  if (req.method === 'POST' && kind === 'projects' && action === 'worktrees') return setProjectWorktrees(id, (await body(req)).on === true);
+  if (req.method === 'POST' && kind === 'projects' && action === 'worktrees') {
+    const on = (await body(req)).on === true;
+    if (on && !isGitRepo(getProject(id).root)) throw new HttpError(400, `Not a git repository: ${getProject(id).root}`);
+    return setProjectWorktrees(id, on);
+  }
+  // The worktrees a new session can continue in, with the title of the session that made each.
+  if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') return listWorktrees(getProject(id)).map((w) => ({ ...w, title: titleOf(basename(w.path)) }));
   if (req.method === 'POST' && kind === 'projects' && action === 'remove') {
     removeProject(id);
     return { removed: id };

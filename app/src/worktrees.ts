@@ -1,6 +1,6 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home, type Project } from './store.ts';
@@ -38,15 +38,46 @@ function gitRoot(dir: string): string | undefined {
  * repository this running app is started from, since its agents would otherwise edit the live app.
  */
 export function worktreesOn(project: Project): boolean {
+  if (!isGitRepo(project.root)) return false; // nothing to branch from
   if (project.worktrees !== undefined) return project.worktrees;
   const app = gitRoot(dirname(fileURLToPath(import.meta.url)));
   return !!app && gitRoot(project.root) === app;
 }
 
-/** The worktree a new session of this project gets (`createSession` in `app/src/sessions.ts`), or none when its switch is off. Nothing is made yet. */
-export function planWorktree(project: Project, sessionId: string): Worktree | undefined {
+/** Whether a folder is inside a git repository, so the "New worktree per session" switch can apply to it. */
+export const isGitRepo = (dir: string): boolean => !!gitRoot(dir);
+
+/** Where the workspace keeps a project's worktrees. */
+const worktreesDir = (project: Project) => join(home(), 'worktrees', project.id);
+
+/**
+ * The workspace-made worktrees of a project that still exist, newest git order first, read from
+ * `git worktree list`: the choices besides "New worktree" when a session starts (selfdev-001). A worktree the
+ * agent removed after merging drops out here.
+ */
+export function listWorktrees(project: Project): Worktree[] {
+  if (!worktreesOn(project)) return [];
+  const own = resolve(worktreesDir(project)).toLowerCase();
+  const out: Worktree[] = [];
+  let path: string | undefined;
+  for (const line of git(project.root, ['worktree', 'list', '--porcelain']).split('\n')) {
+    if (line.startsWith('worktree ')) path = resolve(line.slice('worktree '.length).trim());
+    else if (line.startsWith('branch refs/heads/') && path && path.toLowerCase().startsWith(own) && existsSync(path)) out.push({ path, branch: line.slice('branch refs/heads/'.length).trim(), ready: true });
+  }
+  return out;
+}
+
+/**
+ * The worktree a new session of this project gets (`createSession` in `app/src/sessions.ts`): none when the
+ * switch is off; `'new'` plans a new one (made at the first turn); a path continues an existing workspace-made
+ * worktree, for example after a session's cache went cold. Any other path is refused.
+ */
+export function planWorktree(project: Project, sessionId: string, choice = 'new'): Worktree | undefined {
   if (!worktreesOn(project)) return undefined;
-  return { path: join(home(), 'worktrees', project.id, sessionId), branch: `aiws/${sessionId}` };
+  if (choice === 'new') return { path: join(worktreesDir(project), sessionId), branch: `aiws/${sessionId}` };
+  const found = listWorktrees(project).find((w) => w.path.toLowerCase() === resolve(choice).toLowerCase());
+  if (!found) throw new Error(`Not a worktree of project ${project.id}: ${choice}`);
+  return found;
 }
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */

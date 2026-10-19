@@ -335,7 +335,7 @@
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
       <div class="menu" id="project-menu" role="menu" hidden>
-        <button role="menuitemcheckbox" data-mact="worktrees" aria-checked="false" title="Each new session works in its own git worktree and branch, so its agent never edits this folder. Its tasks share it. On by default for the repository this app runs from.">New worktree per session</button>
+        <button role="menuitemcheckbox" data-mact="worktrees" aria-checked="false">New worktree per session</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
@@ -373,6 +373,7 @@
           <select id="agent" aria-label="Agent" title="Agent"></select>
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
+          <select id="worktree" aria-label="Worktree" title="Where this session works: a new worktree and branch, or an existing one to continue (for example after a cache went cold)" hidden></select>
         </div>
         <!-- The permission mode of the tasks this chat starts (ADR 0011), next to Send; layout only here and in renderCap(). -->
         <div class="row send-row"><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
@@ -671,7 +672,7 @@ async function pickMode(id) {
 }
 function renderPickers(s, force = false) {
   // Polling must not reset a menu being used; a change the user just made redraws on purpose (force).
-  if (!force && ['agent', 'model', 'effort'].includes(document.activeElement?.id)) return;
+  if (!force && ['agent', 'model', 'effort', 'worktree'].includes(document.activeElement?.id)) return;
   const v = pickerValues(s);
   $('#role').value = v.role;
   $('#role').hidden = !!s;
@@ -683,6 +684,15 @@ function renderPickers(s, force = false) {
   $('#effort').innerHTML = option('', 'Default effort', !v.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === v.effort)).join('');
   const working = !!s?.working;
   for (const id of ['agent', 'model', 'effort']) $(`#${id}`).disabled = working || !catalog;
+  // A new chat in a project with worktrees: no preselection, the user picks a new or an existing one (selfdev-001).
+  const choices = !s && state.worktreeChoices;
+  $('#worktree').hidden = !choices;
+  if (choices) {
+    const picked = $('#worktree').value;
+    $('#worktree').innerHTML = option('', 'Choose worktree…', !picked) + option('new', 'New worktree', picked === 'new')
+      + choices.map((w) => option(w.path, `${w.branch}${w.title ? ` · ${w.title}` : ''}`, picked === w.path)).join('');
+    $('#worktree').querySelector('option[value=""]').disabled = true;
+  }
 }
 
 function renderSessions() {
@@ -798,13 +808,15 @@ function renderChat() {
 // A load the user overtook (another project or chat picked while it ran) is dropped, so it cannot redraw the old one.
 async function loadSessions() {
   const project = state.project, session = state.session;
-  const [sessions, globals, data] = await Promise.all([
+  const choose = !session && !state.newGlobal && !!current()?.worktrees; // a new chat in a project with worktrees
+  const [sessions, globals, data, worktrees] = await Promise.all([
     project ? api(`/api/sessions?project=${encodeURIComponent(project)}`) : [],
     api('/api/sessions?global=1'),
     session ? api(`/api/sessions/${session}`).catch(() => null) : null,
+    choose ? api(`/api/projects/${encodeURIComponent(project)}/worktrees`).catch(() => []) : null,
   ]);
   if (project !== state.project || session !== state.session) return;
-  Object.assign(state, { sessions, globals, sessionData: data });
+  Object.assign(state, { sessions, globals, sessionData: data, worktreeChoices: worktrees });
   if (state.session && !allSessions().some((s) => s.id === state.session)) Object.assign(state, { session: null, sessionData: null });
 }
 
@@ -1193,6 +1205,7 @@ function ask(title, text, ok, danger = false) {
   });
 }
 
+const WORKTREE_HINT = 'Each new session works in a git worktree and branch outside this folder, a new one or one you continue, so its agent never edits this folder. Its tasks share it. On by default for the repository this app runs from.';
 const menuItem = (kind, id) => (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id);
 function openMenu(kind, id, x, y) {
   const s = menuItem(kind, id);
@@ -1204,7 +1217,12 @@ function openMenu(kind, id, x, y) {
   const pin = menu.querySelector('[data-mact=pin]');
   if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
   const wt = menu.querySelector('[data-mact=worktrees]');
-  if (wt) { wt.setAttribute('aria-checked', String(!!s.worktrees)); wt.textContent = `${s.worktrees ? '✓ ' : ''}New worktree per session`; }
+  if (wt) {
+    wt.setAttribute('aria-checked', String(!!s.worktrees));
+    wt.textContent = `${s.worktrees ? '✓ ' : ''}New worktree per session`;
+    wt.disabled = !s.git;
+    wt.title = s.git ? WORKTREE_HINT : 'Not available: this folder is not a git repository.';
+  }
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -1361,6 +1379,10 @@ $('#new').onsubmit = async (e) => {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
     const fresh = { role: $('#role').value, taskMode: state.draftMode, ...config };
+    if (!state.session && !$('#worktree').hidden) {
+      if (!$('#worktree').value) throw new Error('Choose a worktree first: a new one, or an existing one to continue.');
+      fresh.worktree = $('#worktree').value;
+    }
     const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
     state.draftMode = undefined;
