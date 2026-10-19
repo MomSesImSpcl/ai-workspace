@@ -24,4 +24,5 @@ Agents developing the workspace must never edit the checkout the running app is 
 
 - Tasks of one chat that run at the same time can edit the same files; the orchestrator sends follow-ups to the running task instead (orchestrator-006).
 - Syncing with `main`, merging and removing merged worktrees stay the agent's work ([vcs-011](../../features/version-control/SPEC.md)).
+- **Cleanup safety net (amended 2026-10-19, user):** the workspace removes merged branches (commits of their own, all in `main`; a fresh branch never counts) without uncommitted changes or a running agent, at start and once a day. Chats of a removed branch are archived and read only. Unmerged branches are only removed by the user in Settings → General, which lists every branch with its state and size.
 - Two chats continuing the same worktree at the same time can overwrite each other's edits; that is the user's choice, as with two terminals.

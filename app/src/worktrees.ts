@@ -124,6 +124,32 @@ function branchExists(root: string, name: string): boolean {
  */
 export interface WorktreeChoice { name?: string; path?: string }
 
+/**
+ * A worktree's state against the project checkout's HEAD (normally `main`), read from git: `merged` when the
+ * branch has commits of its own and all of them are in HEAD (a fresh branch without commits is not merged, so
+ * the cleanup never takes it); `ahead` counts commits not in HEAD; `dirty` when the folder has uncommitted
+ * changes. The branch's start comes from its reflog; without one it never counts as merged. A squash-merged
+ * branch stays "ahead" and is left to the user.
+ */
+export function worktreeState(root: string, wt: Worktree): { merged: boolean; ahead: number; dirty: boolean } {
+  const ref = `refs/heads/${wt.branch}`;
+  let ahead = 0, merged = false, dirty = false;
+  try { ahead = Number(git(root, ['rev-list', '--count', `HEAD..${ref}`])); } catch { /* branch gone */ }
+  try {
+    const created = git(root, ['reflog', 'show', '--format=%H', ref]).split('\n').at(-1);
+    const tip = git(root, ['rev-parse', ref]);
+    merged = !!created && tip !== created && ahead === 0;
+  } catch { /* no reflog: never merged */ }
+  try { dirty = git(wt.path, ['status', '--porcelain']) !== ''; } catch { /* folder gone */ }
+  return { merged, ahead, dirty };
+}
+
+/** Removes a worktree folder and its branch. Without `force`, git refuses uncommitted changes or unmerged commits. */
+export function deleteWorktree(root: string, wt: Worktree, force = false): void {
+  git(root, ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path]);
+  git(root, ['branch', force ? '-D' : '-d', wt.branch]);
+}
+
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */
 export function addWorktree(root: string, wt: Worktree): string {
   mkdirSync(dirname(wt.path), { recursive: true });

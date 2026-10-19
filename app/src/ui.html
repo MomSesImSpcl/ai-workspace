@@ -138,6 +138,11 @@
   .chat-tokens { white-space: nowrap; }
   .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
   .send-row #foot-status { flex: 1; min-width: 0; }
+  .branch-list { display: grid; gap: 4px; }
+  .branch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); }
+  .branch-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .branch-row .meta { grid-column: 1; }
+  .branch-row .row { grid-column: 2; grid-row: 1 / span 2; }
   .worktree-head { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--t); }
   .worktree-head:hover, .worktree-head:focus-visible { color: var(--text); }
   .worktree-pick { display: flex; gap: 6px; min-width: 0; flex: 0 1 360px; }
@@ -435,6 +440,10 @@
           <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div>
           <div class="row"><button class="btn small" id="export-storage" type="button">Export…</button><button class="btn small" id="import-storage" type="button">Import…</button></div>
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
+        <div id="branches-section" style="display:grid;gap:6px;margin-bottom:18px" hidden><b>Branches of this app</b>
+          <p class="meta" style="margin:0">Each chat in this app's project works in a branch with its own folder. Merged branches without uncommitted changes are removed automatically at start and once a day, and their chats archived. Unmerged work is only removed here.</p>
+          <div id="branch-list" class="branch-list"></div>
+          <p class="meta" id="branch-status" role="status" style="margin:0"></p></div>
         </div>
         <div role="tabpanel" id="spanel-agents" aria-labelledby="stab-agents">
         <p class="meta" style="margin:0 0 6px">Which agent runs each role, with its default model and effort. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent. Instructions are optional and apply from the next agent start.</p>
@@ -542,6 +551,7 @@ function setPage(page) {
 
 function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
+  if (state.tool === 'settings') state.branches = undefined; // read again each time Settings opens
   $('#drawer').hidden = $('#backdrop').hidden = !state.tool;
   $('#drawer-settings').hidden = state.tool !== 'settings';
   if (!state.tool) delete $('#drawer').dataset.wide;
@@ -721,7 +731,12 @@ function worktreeGroups(list) {
     groups.get(key).rows.push(s);
   }
   // Each heading opens its worktree folder (the project folder for sessions from before worktrees).
-  return [...groups].map(([path, g]) => `<div class="list-head"><button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}" title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button></div>${sessionRows(g.rows, 'project')}`).join('');
+  return [...groups].map(([path, g]) => {
+    const gone = g.rows.some((s) => s.worktreeGone); // removed after merging: its chats are archived and read only
+    const head = gone ? `<span class="eyebrow worktree-head" title="This branch and its folder were removed">${esc(g.branch)} · removed</span>`
+      : `<button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}" title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button>`;
+    return `<div class="list-head">${head}</div>${sessionRows(g.rows, 'project')}`;
+  }).join('');
 }
 
 function renderSessions() {
@@ -817,11 +832,14 @@ function renderChat() {
   $('#perm').title = d ? [d.permissions.line, setup ? `Loaded from the agent's own setup (${s.integration}): ${setup.plugins?.length ? `plugins ${setup.plugins.join(', ')}` : 'no plugins'} · ${setup.mcp?.length ?? 0} MCP servers${setup.skills ? ` · ${setup.skills} skills` : ''}` : '', ...warnings.map((w) => `⚠ ${w}`)].filter(Boolean).join('\n') : '';
   $('#perm').innerHTML = d ? `${warnings.length ? '<span class="warn">⚠</span> ' : ''}${s.role === 'Orchestration' ? 'Orchestrator' : 'Chat'} · ${esc(s.integration)}${info?.model ? ` · ${esc(info.model)}` : ''}` : '';
   const global = s ? isGlobal(s) : state.newGlobal;
-  $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working;
+  // A chat whose branch was removed is read only: its work is merged or gone (ADR 0014).
+  const gone = !!s?.worktreeGone;
+  $('#send').disabled = (global ? !state.workspaceRoot : !current()) || working || gone;
+  $('[name=text]').disabled = gone;
   $('#stop').hidden = !working;
   renderPickers(s);
   renderCap(s);
-  $('[name=text]').placeholder = s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
+  $('[name=text]').placeholder = gone ? `Branch ${s.worktree.branch} was removed, so this chat is read only. Start a new chat to continue.` : s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
   if (key === shown || document.activeElement?.dataset.replyTask) return; // keep the reader's scroll position and a reply being typed
@@ -949,6 +967,52 @@ function permissionField(a) {
   const current = modes.find((m) => m.id === (a.permissionMode ?? 'acceptEdits')) ?? modes[0];
   return `<label class="field">Default permission<select name="permissionMode" title="${esc(`${current?.hint ? `${current.hint}. ` : ''}The mode of new tasks; a chat can change it for its own tasks.`)}">${modes.map((m) => `<option value="${esc(m.id)}" title="${esc(m.hint ?? '')}" ${m === current ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
 }
+// Settings → General: every branch of this app with its state, size and folder, loaded each time Settings opens.
+const sizeText = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`);
+const daysSince = (iso) => (iso ? Math.floor((Date.now() - Date.parse(iso)) / 864e5) : undefined);
+function branchState(b) {
+  const parts = [b.merged ? 'merged' : b.ahead ? `${b.ahead} unmerged commit${b.ahead === 1 ? '' : 's'}` : 'no commits yet'];
+  if (b.dirty) parts.push('uncommitted changes');
+  if (b.busy) parts.push('agent running');
+  const days = daysSince(b.lastUsed);
+  parts.push(days === undefined ? 'no chat' : days === 0 ? 'used today' : `unused for ${days} day${days === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
+function renderBranches(tab) {
+  const show = tab === 'general' && !!current()?.app;
+  $('#branches-section').hidden = !show;
+  if (!show) return;
+  if (state.branches === undefined) {
+    if (!state.branchesLoading) {
+      state.branchesLoading = true;
+      $('#branch-status').textContent = 'Reading branches and their sizes…';
+      api('/api/branches').then((v) => { state.branches = v; $('#branch-status').textContent = ''; }, (e) => { state.branches = []; fail($('#branch-status'), e.message); })
+        .finally(() => { state.branchesLoading = false; renderBranches(pref.get('settingsTab', 'general')); });
+    }
+    return;
+  }
+  const total = state.branches.reduce((n, b) => n + b.size, 0);
+  const html = state.branches.length ? state.branches.map((b) => `<div class="branch-row"><code title="${esc(b.path)}">${esc(b.branch)}</code>
+      <span class="meta">${esc(branchState(b))} · ${sizeText(b.size)}</span>
+      <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" type="button" data-open-folder="${esc(b.path)}" ${window.desktop ? '' : 'disabled'} title="Open the folder">Open</button><button class="btn small" type="button" data-remove-branch="${esc(b.path)}" ${b.busy ? 'disabled title="Stop its agent first"' : ''}>Remove…</button></span></div>`).join('')
+      + `<p class="meta" style="margin:4px 0 0">${state.branches.length} branch${state.branches.length === 1 ? '' : 'es'}, ${sizeText(total)} in total.</p>`
+    : '<p class="meta" style="margin:0">No branches yet.</p>';
+  if ($('#branch-list').__html !== html) $('#branch-list').innerHTML = $('#branch-list').__html = html;
+}
+async function removeBranch(path) {
+  const b = state.branches?.find((x) => x.path === path);
+  if (!b) return;
+  const safe = b.merged && !b.dirty;
+  const lost = [b.ahead && `${b.ahead} commit${b.ahead === 1 ? '' : 's'} not in main`, b.dirty && 'uncommitted changes'].filter(Boolean).join(' and ');
+  if (!(await ask(`Remove branch ${b.branch}?`, `Its folder (${sizeText(b.size)}) and the branch are deleted and its chats archived.${safe ? ' Its work is merged into main.' : ` ${lost ? `Its ${lost} will be lost.` : 'It has no commits yet.'}`}`, 'Remove', !safe))) return;
+  try { await api('/api/branches/remove', { path, force: !safe }); flash($('#branch-status'), `Removed ${b.branch}.`); }
+  catch (err) { fail($('#branch-status'), err.message); }
+  state.branches = undefined;
+  await loadSessions();
+  render();
+  renderBranches(pref.get('settingsTab', 'general')); // reads the list again
+}
+
 function renderDrawer() {
   if (state.tool === 'settings') {
     const tab = pref.get('settingsTab', 'general');
@@ -959,6 +1023,7 @@ function renderDrawer() {
       $(`#spanel-${b.dataset.stab}`).hidden = b.dataset.stab !== tab;
     }
     renderAgentSetup();
+    renderBranches(tab);
     // Not rebuilt while a field in it is in use, so typing and an open list are kept.
     if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
@@ -1318,6 +1383,8 @@ document.addEventListener('click', async (e) => {
   }
   const folder = e.target.closest('[data-open-folder]');
   if (folder) return void (folder.dataset.openFolder && window.desktop?.openFolder(folder.dataset.openFolder));
+  const branch = e.target.closest('[data-remove-branch]');
+  if (branch) return removeBranch(branch.dataset.removeBranch);
   const item = e.target.closest('[data-mact]');
   if (item && state.menu?.kind === 'project') return projectMenuAction(item.dataset.mact, state.menu.id);
   if (item) return menuAction(item.dataset.mact, state.menu?.id);

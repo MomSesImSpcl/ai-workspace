@@ -13,6 +13,7 @@ import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, r
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 import { isAppProject, listWorktrees } from './worktrees.ts';
+import { appProject, branchInfo, folderSize, removeBranch } from './branches.ts';
 
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -89,7 +90,7 @@ function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
   const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
-  return { ...s, working, state: last?.state, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
+  return { ...s, working, state: last?.state, worktreeGone: !!s.worktree?.ready && !existsSync(s.worktree.path), pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
 }
 
 // Agent, model and effort, checked against what the agent offers (its catalog).
@@ -273,6 +274,16 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
+  // The app project's branches for Settings, with their size, and removing one (selfdev-001).
+  if (req.method === 'GET' && kind === 'branches') {
+    const project = appProject();
+    return project ? Promise.all(branchInfo(project).map(async (b) => ({ ...b, size: await folderSize(b.path) }))) : [];
+  }
+  if (req.method === 'POST' && kind === 'branches' && rawId === 'remove') {
+    const b = await body(req);
+    try { removeBranch(text(b.path, 'path'), b.force === true); } catch (e) { throw new HttpError(400, (e as Error).message); }
+    return { removed: b.path };
+  }
   // The worktrees a new session can continue in, each with the title of its most recently active chat.
   if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') {
     const chats = listSessions(id);
