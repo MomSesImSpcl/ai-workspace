@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { getRoles, setRole } from './roles.ts';
 import { cacheTokens, loadSession, used, readEvents, turnRunning, turns, type Session } from './sessions.ts';
 import { cancelTask, createTask, listTasks, migrateTasks, resumeTask, taskStatus, taskUsed, usageOf } from './tasks.ts';
-import { getProject, listProjects, migrateStorage, registerProject } from './store.ts';
+import { getProject, getWorkspaceRoot, listProjects, migrateStorage, registerProject, setWorkspaceRoot } from './store.ts';
 
 function budget(value: string | undefined, fallback: number): number {
   const n = Number(value ?? fallback);
@@ -79,6 +81,10 @@ try {
     await hostSession(rest[0]);
   } else if (cmd === 'ui') {
     const { serve } = await import('./ui.ts');
+    // First start from a source checkout: the repository is the workspace folder until the user picks another.
+    // A packaged app has no checkout and starts without one.
+    const repo = fileURLToPath(new URL('../..', import.meta.url));
+    if (!getWorkspaceRoot() && existsSync(join(repo, '.git'))) setWorkspaceRoot(resolve(repo));
     const server = serve(Number(values.port));
     server.on('listening', () => console.log(`Workspace UI: http://127.0.0.1:${(server.address() as { port: number }).port}/ (Ctrl+C stops the UI; tasks keep running)`));
   } else if (cmd === 'roles') {

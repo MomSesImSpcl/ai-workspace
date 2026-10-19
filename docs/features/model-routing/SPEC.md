@@ -6,7 +6,7 @@
 
 ## 5.1 Capability-based model selection
 
-- Model assignments **MUST** be configuration, not embedded into skill code. Define semantic roles such as `ArchitectureReasoning`, `Implementation`, `VisualReasoning`, `BulkSummarization`, `Research`, `CreativeWriting`, `ImageGeneration`, `3DGeneration`, `MotionGeneration`, `SpeechToText`, `TextToSpeech`.
+- Model assignments **MUST** be configuration, not embedded into skill code. Define semantic roles such as `Chat`, `Orchestration`, `Implementation`, `VisualReasoning`, `BulkSummarization`, `Research`, `CreativeWriting`, `ImageGeneration`, `3DGeneration`, `MotionGeneration`, `SpeechToText`, `TextToSpeech`.
 - A role/profile specifies requirements such as modalities, context capacity, tool/structured-output support, cost/latency limits, privacy destination, needed reasoning quality and fallback behavior.
 - A Model Registry tracks available models/providers, capabilities and limits, supported tools, input/output modalities, costs and availability; distinguish official/provider metadata from internally estimated benchmark scores.
 - Users can select Automatic or manually override a specific model per session/task. Admins can change default role mappings globally; project owners can optionally choose permitted project overrides subject to policy.
@@ -25,14 +25,14 @@
 
 Product-specific qualification of Hermes belongs to [Hermes Agent and Hindsight evaluation and integration](../hermes-hindsight/SPEC.md). This feature continues to own assignment/configuration and capability contracts; an agent runtime is not interchangeable with a single model call.
 
-- **routing-001:** Configuration MUST distinguish the planning/design role (for example `ArchitectureReasoning`), orchestration role and implementation role. Each assignment identifies the compatible model or agent product and its integration, not only a model name. Supported agent adapters MAY use APIs, local inference or native agent CLIs; browser-only planning follows the [browser handoff contract](../integrated-browser/SPEC.md#planning-role-handoff) and MUST NOT be presented as an API adapter. Independent role selection and handoff behavior belong to [orchestrator-001–003](../ai-orchestrator/SPEC.md#independently-selectable-roles).
+- **routing-001:** Configuration MUST distinguish the chat role, orchestration role and implementation role ([ADR 0013](../../architecture/decisions/0013-three-roles.md); there is no separate planning role, planning happens in the chat or the orchestrator chat). Each assignment identifies the compatible model or agent product and its integration, not only a model name. Supported agent adapters MAY use APIs, local inference or native agent CLIs; browser-only planning follows the [browser handoff contract](../integrated-browser/SPEC.md#planning-role-handoff) and MUST NOT be presented as an API adapter. Independent role selection and handoff behavior belong to [orchestrator-001–003](../ai-orchestrator/SPEC.md#independently-selectable-roles).
 
 ## Illustrative contract (not a production schema)
 
 ```yaml
 # Example role mapping; current models can be changed without changing skills
 profiles:
-  ArchitectureReasoning:
+  Orchestration:
     selection: configured-primary-with-fallback
     required: [text, tools]
   Implementation:

@@ -69,7 +69,7 @@ project:
     required: [git.read, code.search, unity.scene.edit]
     optional: [blender.mesh.edit, animation.author]
   ai:
-    architecture_role: ArchitectureReasoning
+    orchestration_role: Orchestration
     implementation_role: Implementation
     visual_role: VisualReasoning
 ```

@@ -252,10 +252,21 @@
   /* Drawer and utility rail */
   /* Drawer floats over everything right of the sessions column (desktop-001); the backdrop fills what it leaves uncovered. */
   .backdrop { position: absolute; top: 0; bottom: 0; left: var(--sessions-w); right: 48px; z-index: 5; background: rgba(0,0,0,.35); }
-  .drawer { position: absolute; top: 0; bottom: 0; right: 48px; z-index: 6; width: min(var(--drawer-w), calc(100% - var(--sessions-w) - 48px)); overflow: auto; background: var(--panel); border-left: 1px solid var(--hairline); box-shadow: 0 6px 24px rgba(0,0,0,.45); padding: 16px 20px; }
+  .drawer { position: absolute; top: 0; bottom: 0; right: 48px; z-index: 6; display: flex; flex-direction: column; width: min(var(--drawer-w), calc(100% - var(--sessions-w) - 48px)); background: var(--panel); border-left: 1px solid var(--hairline); box-shadow: 0 6px 24px rgba(0,0,0,.45); padding: 16px 20px; }
+  /* The Agent setup tab spans up to the sessions column: one column per agent, scrolled sideways. */
+  .drawer[data-wide=true] { width: calc(100% - var(--sessions-w) - 48px); }
   .app[data-sidebar=collapsed] .backdrop { left: 0; }
   .app[data-sidebar=collapsed] .drawer { width: min(var(--drawer-w), calc(100% - 48px)); }
-  .tabs { display: flex; gap: 4px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
+  .app[data-sidebar=collapsed] .drawer[data-wide=true] { width: calc(100% - 48px); }
+  #drawer-settings { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #drawer-settings [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; }
+  #spanel-setup { display: flex; flex-direction: column; gap: 6px; overflow: hidden !important; }
+  #setup-items { flex: 1; min-height: 0; display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
+  #setup-items > .agent-col { flex: 0 0 560px; max-width: 90%; min-width: 0; overflow-y: auto; padding-right: 6px; }
+  .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
+  .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+  /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
+  .tabs { display: flex; justify-content: flex-end; gap: 4px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
   .tabs button { padding: 8px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-dim); cursor: pointer; }
   .tabs button:hover { color: var(--text); }
   .tabs button[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
@@ -401,19 +412,16 @@
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
         </div>
         <div role="tabpanel" id="spanel-agents" aria-labelledby="stab-agents">
-        <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
+        <p class="meta" style="margin:0 0 6px">Which agent runs each role, with its default model and effort. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent. Instructions are optional and apply from the next agent start.</p>
         <div id="roles"></div>
-        <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
-        <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
-        <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
         </div>
         <div role="tabpanel" id="spanel-setup" aria-labelledby="stab-setup">
         <!-- What orchestrator chats and tasks load (orchestrator-005, onboarding-010), switched for each run only. -->
-        <div style="display:grid;gap:6px"><b>Agent setup</b>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0"><b>Agent setup</b>
           <p class="meta" style="margin:0">What orchestrator chats and tasks load. It is switched for each run only; your agents' own settings stay unchanged. <i>Always on</i>: every run of that role. <i>Orchestrator decides</i>: a task gets it when its goal needs it. <i>Off</i>: never. Applies from the next agent start.</p>
           <div id="rule-switches" style="display:grid;gap:4px"></div>
           <div class="row" style="align-items:center"><button class="btn small" id="list-setup" type="button">List again</button><span class="meta" id="setup-status" role="status"></span></div>
-          <div id="setup-items" style="display:grid;gap:10px"></div></div>
+          <div id="setup-items"></div></div>
         </div>
       </div>
     </aside>
@@ -511,6 +519,7 @@ function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
   $('#drawer').hidden = $('#backdrop').hidden = !state.tool;
   $('#drawer-settings').hidden = state.tool !== 'settings';
+  if (!state.tool) delete $('#drawer').dataset.wide;
   $('#drawer-title').textContent = { settings: 'Settings' }[state.tool] ?? '';
   for (const b of $$('.rail button')) b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool));
   renderDrawer();
@@ -871,18 +880,25 @@ function runHtml(t, r, i, count, open, permissions) {
 function renderDrawer() {
   if (state.tool === 'settings') {
     const tab = pref.get('settingsTab', 'general');
+    $('#drawer').dataset.wide = String(tab === 'setup');
     for (const b of $$('[data-stab]')) {
       b.setAttribute('aria-selected', String(b.dataset.stab === tab));
       b.tabIndex = b.dataset.stab === tab ? 0 : -1;
       $(`#spanel-${b.dataset.stab}`).hidden = b.dataset.stab !== tab;
     }
     renderAgentSetup();
-    if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
-    $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
+    // Not rebuilt while a field in it is in use, so typing and an open list are kept.
+    if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
-      return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
-        <div class="row"><label class="field">Agent<select name="integration">${options.map((i) => `<option ${i === a.integration ? 'selected' : ''}>${esc(i)}</option>`).join('')}</select></label>
-        <label class="field">Model (optional)<input name="model" value="${esc(a.model)}" placeholder="default"></label></div>
+      // Model and effort come from the agent's catalog (onboarding-008); the effort list follows the model.
+      const models = state.agents[a.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+      const efforts = (models.find((m) => m.id === (a.model ?? '')) ?? models[0]).efforts;
+      const key = ROLE_INSTRUCTIONS[role];
+      return `<form class="role" data-role="${esc(role)}"><b>${esc(ROLE_NAMES[role] ?? role)}</b>
+        <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
+        <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
+        <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label></div>
+        ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
         <span class="meta" data-saved role="status"></span></form>`;
     }).join('');
   }
@@ -1017,7 +1033,14 @@ async function capChanged() {
 }
 $('#cap-on').onchange = capChanged;
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
-const ROLE_NAMES = { ArchitectureReasoning: 'Design', Orchestration: 'Orchestrator', Implementation: 'Implementation' };
+const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementation' };
+// The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.
+const ROLE_INSTRUCTIONS = { Chat: 'chatInstructions', Orchestration: 'orchestratorInstructions', Implementation: 'implementationInstructions' };
+const INSTRUCTION_HINTS = {
+  chatInstructions: 'For example: answer in German.',
+  orchestratorInstructions: 'For example: keep task goals under 50 words. Use Haiku for simple file operations.',
+  implementationInstructions: 'For example: run the tests before you finish.',
+};
 const STATE_NAMES = { on: 'Always on', decide: 'Orchestrator decides', off: 'Off' };
 function renderAgentSetup() {
   const s = state.agentSetup;
@@ -1025,7 +1048,7 @@ function renderAgentSetup() {
   $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label>`).join('')
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
-  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div><b>${esc(agent)}</b>
+  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><b>${esc(agent)}</b>
     <table class="meta" style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr>
     ${items.map((i) => `<tr><td title="${esc(i.description ?? '')}">${esc(i.title)}<br><span style="opacity:.8">${esc(i.description ?? '')}</span></td>${s.roles.map((r) => `<td><select aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([v, l]) => `<option value="${v}" ${s.states[r]?.[agent]?.[i.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}</tr>`).join('')}</table></div>`).join('')
     : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
@@ -1041,10 +1064,6 @@ $('#list-setup').onclick = async () => {
   $('#setup-status').textContent = 'Listing what each agent loads…';
   try { state.agentSetup = await api('/api/agent-setup/list', {}); $('#setup-status').textContent = 'Listed.'; } catch (err) { $('#setup-status').textContent = err.message; }
   renderAgentSetup();
-};
-$('#orch-rules').onchange = async () => {
-  try { state.settings = await api('/api/settings', { orchestratorInstructions: $('#orch-rules').value }); $('#orch-rules-saved').textContent = 'Saved. Applies to orchestrator chats from their next agent start.'; }
-  catch (err) { $('#orch-rules-saved').textContent = err.message; }
 };
 for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
 $('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
@@ -1319,13 +1338,24 @@ $('#project').onsubmit = async (e) => {
 };
 // Settings save on change (a picked option, or a text field when it loses focus or on Enter); there is no Save button.
 $('#workspace-form').onchange = (e) => e.currentTarget.requestSubmit();
-$('#roles').onchange = (e) => e.target.form?.requestSubmit();
+$('#roles').onchange = async (e) => {
+  const form = e.target.form, key = e.target.dataset.instr;
+  if (!key) {
+    // Another agent offers other models, another model other efforts: start again from the defaults.
+    if (e.target.name === 'integration') form.model.value = form.effort.value = '';
+    if (e.target.name === 'model') form.effort.value = '';
+    return form.requestSubmit();
+  }
+  try { state.settings = await api('/api/settings', { [key]: e.target.value }); form.querySelector('[data-saved]').textContent = 'Saved. Applies from the next agent start.'; }
+  catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
+};
 $('#roles').onsubmit = async (e) => {
   e.preventDefault();
   const form = e.target;
   const f = new FormData(form);
   try {
-    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model') || undefined });
+    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort') });
+    document.activeElement?.blur(); // so the render rebuilds the model and effort lists
     await load();
     form.querySelector('[data-saved]').textContent = 'Saved';
   } catch (err) { form.querySelector('[data-saved]').textContent = err.message; }

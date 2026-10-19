@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
@@ -15,8 +15,8 @@ import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
 const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
-// Integrations a role may name; only those with a session agent can run.
-const integrations = [...Object.keys(sessionAgents), 'manual-browser'];
+// Integrations a role may name: those with a session agent.
+const integrations = Object.keys(sessionAgents);
 
 function tail(path: string, bytes = 8192): string {
   if (!existsSync(path)) return '';
@@ -187,8 +187,9 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (kind === 'sessions') return sessionRoute(req, url, id, action);
   if (req.method === 'POST' && kind === 'settings') {
     const b = await body(req);
-    if (typeof b.orchestratorInstructions !== 'string' || b.orchestratorInstructions.length > 4000) throw new HttpError(400, 'orchestratorInstructions must be text up to 4000 characters');
-    setSettings({ orchestratorInstructions: b.orchestratorInstructions });
+    const v = Object.fromEntries(INSTRUCTIONS.filter((k) => k in b).map((k) => [k, b[k]]));
+    if (!Object.keys(v).length || Object.values(v).some((t) => typeof t !== 'string' || t.length > 4000)) throw new HttpError(400, `${INSTRUCTIONS.join(', ')}: text up to 4000 characters`);
+    setSettings(v as Record<string, string>);
     return getSettings();
   }
   if (kind === 'agent-setup') {
@@ -225,8 +226,15 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
     if (typeof b.role !== 'string' || !b.role || typeof b.integration !== 'string' || !b.integration) throw new HttpError(400, 'role and integration are required');
-    if (b.model !== undefined && typeof b.model !== 'string') throw new HttpError(400, 'model must be a string');
-    setRole(b.role, { integration: b.integration, model: (b.model as string | undefined)?.trim() || undefined });
+    if (!sessionAgents[b.integration]) throw new HttpError(400, `integration must be one of ${integrations.join(', ')}`);
+    if (!getRoles()[b.role]) throw new HttpError(400, `role must be one of ${Object.keys(getRoles()).join(', ')}`);
+    // Model and effort come from the agent's catalog (onboarding-008); '' or unset is the agent's own default.
+    const models = sessionAgents[b.integration]!.catalog().models;
+    const model = typeof b.model === 'string' && b.model ? b.model : undefined, effort = typeof b.effort === 'string' && b.effort ? b.effort : undefined;
+    const entry = models.find((m) => m.id === (model ?? ''));
+    if (model && !entry) throw new HttpError(400, `model must be one of ${models.map((m) => m.id || 'default').join(', ')}`);
+    if (effort && !entry?.efforts?.includes(effort)) throw new HttpError(400, `effort must be one of ${entry?.efforts?.join(', ') || 'none for this model'}`);
+    setRole(b.role, { integration: b.integration, model, effort });
     return getRoles();
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));

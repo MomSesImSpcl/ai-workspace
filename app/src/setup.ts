@@ -12,7 +12,7 @@ export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: '
 export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string }
 export type ItemState = 'on' | 'decide' | 'off';
 export const SETUP_ROLES = [ORCHESTRATION, 'Implementation']; // roles whose agent runs with a chosen setup
-export const RULE_ROLES = ['ArchitectureReasoning', ORCHESTRATION, 'Implementation']; // the global-rules switch per role
+export const RULE_ROLES = [ORCHESTRATION, 'Implementation']; // the global-rules switch per role
 
 interface AgentSetup {
   inventory?: Record<string, SetupItem[]>; // per agent, as last listed

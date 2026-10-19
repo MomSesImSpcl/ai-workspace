@@ -458,7 +458,8 @@ test('roles keep independent assignments; integrations without a session agent f
   setRole('Orchestration', { integration: 'not-built' });
   const roles = getRoles();
   assert.equal(roles.Orchestration!.integration, 'not-built');
-  assert.equal(roles.ArchitectureReasoning!.integration, 'manual-browser');
+  assert.deepEqual(Object.keys(roles), ['Chat', 'Orchestration', 'Implementation']); // the order Settings shows
+  assert.throws(() => setRole('ArchitectureReasoning', { integration: 'claude-code' }), /Unknown role/);
   assert.throws(() => sessionAgent('not-built'), /cannot run sessions/);
 });
 
@@ -499,7 +500,7 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     const add = (body: unknown) => post('/api/projects', json, JSON.stringify(body));
     assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
     assert.equal((await add({ path: 'relative/dir' })).status, 400);
-    const roles = await (await post('/api/roles', json, JSON.stringify({ role: 'Implementation', integration: 'codex', model: ' ' }))).json();
+    const roles = await (await post('/api/roles', json, JSON.stringify({ role: 'Implementation', integration: 'codex', model: '', effort: '' }))).json();
     assert.deepEqual(roles.Implementation, { integration: 'codex' });
     const s = loadSession(t.id);
     s.title = 'renamed';

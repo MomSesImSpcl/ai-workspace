@@ -45,15 +45,18 @@ export const ORCHESTRATION = 'Orchestration';
 export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task']; // its workspace tools, run without a card
 export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files or run commands. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Choose the agent, model and effort from list_agents for the task (default: the Implementation role's agent) and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files and task_status. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task. A task starts with nothing but what the user set to always on: no built-in tools, plugins, MCP servers, skills, or the agent's own system prompt. Pass in setup the ids from list_agents that the goal needs and nothing more, at least one built-in tool (for example tool:Read, tool:Edit and tool:Write to change a file; tool:Bash to run commands, tests or git; prompt only for work that needs the agent's own guidance, such as git commits). A task that finds an item missing asks for it itself with request_setup and continues; a task based on an earlier one keeps that one's items.`;
 
-// The user's own orchestrator instructions (Settings), added to the note for every orchestrator chat. They apply
-// when the chat's agent starts next.
+// The user's own instructions per role (Settings, optional): chat for plain chats, orchestrator for orchestrator
+// chats, implementation for tasks. They apply when the agent starts next.
+export const INSTRUCTIONS = ['chatInstructions', 'orchestratorInstructions', 'implementationInstructions'] as const;
+type Settings = Partial<Record<(typeof INSTRUCTIONS)[number], string>>;
 const settingsPath = () => join(home(), 'settings.json');
-export const getSettings = () => readJson<{ orchestratorInstructions?: string }>(settingsPath(), {});
-export const setSettings = (v: { orchestratorInstructions?: string }) => writeJson(settingsPath(), { ...getSettings(), ...v });
-export function orchestratorNote(): string {
-  const own = getSettings().orchestratorInstructions?.trim();
-  return own ? `${ORCHESTRATOR_NOTE} The user's own instructions for you, which take precedence over the rule above where they conflict: ${own}` : ORCHESTRATOR_NOTE;
+export const getSettings = () => readJson<Settings>(settingsPath(), {});
+export const setSettings = (v: Settings) => writeJson(settingsPath(), { ...getSettings(), ...v });
+export function ownInstructions(key: (typeof INSTRUCTIONS)[number]): string {
+  const own = getSettings()[key]?.trim();
+  return own ? ` The user's own instructions for you, which take precedence over the notes above where they conflict: ${own}` : '';
 }
+export const orchestratorNote = () => ORCHESTRATOR_NOTE + ownInstructions('orchestratorInstructions');
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
