@@ -1418,6 +1418,7 @@ $('#roles').onsubmit = async (e) => {
     state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort') });
     document.activeElement?.blur(); // so the render rebuilds the model and effort lists
     await load();
+    renderDrawer();
     form.querySelector('[data-saved]').textContent = 'Saved';
   } catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
 };
