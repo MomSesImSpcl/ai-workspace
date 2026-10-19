@@ -1,6 +1,7 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home, listProjects, registerProject, type Project } from './store.ts';
@@ -148,6 +149,95 @@ export function worktreeState(root: string, wt: Worktree): { merged: boolean; ah
 export function deleteWorktree(root: string, wt: Worktree, force = false): void {
   git(root, ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path]);
   git(root, ['branch', force ? '-D' : '-d', wt.branch]);
+}
+
+/**
+ * The folders an agent must not write to (selfdev-002, ADR 0015): the checkout the running app starts from and
+ * the workspace's storage. The session's own folder (`allow`) stays writable, also inside them, as a worktree in
+ * storage is. Checked by `app/src/guard-hook.ts` for Claude Code and by the approval relay for Codex.
+ */
+export interface Guard { allow: string; deny: string[] }
+
+/** The guard for an agent working in `root`. */
+export function guardFor(root: string): Guard {
+  return { allow: resolve(root), deny: [appRepo(), home()].filter((d): d is string => !!d).map((d) => resolve(d)) };
+}
+
+/** Whether `p` is the folder `dir` or inside it, case-insensitively since Windows paths are. */
+const inside = (dir: string, p: string) => {
+  const d = dir.toLowerCase(), q = p.toLowerCase();
+  return q === d || q.startsWith(d.endsWith(sep) ? d : d + sep);
+};
+
+/** Git Bash spells `C:\x` as `/c/x`. */
+const fromMsys = (p: string) => (sep === '\\' ? p.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : p);
+
+/**
+ * The guarded folder a write to `path` (relative to `cwd`) would land in, or `undefined`. The deepest folder
+ * containing it decides: the session's own folder wins inside storage, the checkout wins inside a project
+ * folder that contains it, and a tie is guarded.
+ */
+export function guardedPath(g: Guard, path: string, cwd = g.allow): string | undefined {
+  const p = resolve(cwd, fromMsys(path));
+  const hit = g.deny.filter((d) => inside(d, p)).sort((a, b) => b.length - a.length)[0];
+  return hit && !(inside(g.allow, p) && g.allow.length > hit.length) ? hit : undefined;
+}
+
+/** Like `guardedPath`, for write access to a whole folder: also guarded when a guarded folder lies inside it. */
+export function guardedTree(g: Guard, dir: string, cwd = g.allow): string | undefined {
+  const d = resolve(cwd, fromMsys(dir));
+  return guardedPath(g, d) ?? g.deny.find((x) => inside(d, x));
+}
+
+/** A shell command's words, with quotes removed and operators (`;&|<>()`) as separators; `\ ` is an escaped space. */
+function words(command: string): string[] {
+  const out: string[] = [];
+  let word = '', quote = '', any = false;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) { if (c === quote) quote = ''; else word += c; continue; }
+    if (c === '"' || c === "'") { quote = c; any = true; continue; }
+    if (c === '\\' && command[i + 1] === ' ') { word += ' '; i++; continue; }
+    if (/[\s;&|<>()]/.test(c)) { if (word || any) out.push(word); word = ''; any = false; continue; }
+    word += c;
+  }
+  if (word || any) out.push(word);
+  return out;
+}
+
+/** A path as it may be written in a command: lower case, forward slashes, no doubled ones. */
+const spelled = (s: string) => s.toLowerCase().replaceAll('\\ ', ' ').replaceAll('\\', '/').replace(/\/{2,}/g, '/');
+
+/** The ways a folder is written in a command: as is and, for Git Bash, `/c/...`. */
+const spellings = (dir: string) => {
+  const d = spelled(dir).replace(/\/$/, '');
+  return /^[a-z]:/.test(d) ? [d, `/${d[0]}${d.slice(2)}`] : [d];
+};
+
+/** Matches a folder's spelling where a path to it or into it can stand (not a longer folder name). */
+const spellingRe = (s: string) => new RegExp(`${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g');
+
+/**
+ * The guarded folder a shell command names or runs in, or `undefined` (selfdev-002). Path-like words are resolved
+ * against `cwd`, with `~` and `$HOME` expanded, so `../..` out of the session's folder counts; paths inside quoted
+ * code (`node -e "..."`) are found by their spelling. Best effort: a path computed at run time (variables,
+ * scripts) is not seen; Codex's sandbox is the hard limit there, Claude Code has none on Windows.
+ */
+export function guardedCommand(g: Guard, command: string, cwd = g.allow): string | undefined {
+  const atCwd = guardedPath(g, cwd);
+  if (atCwd) return atCwd;
+  const user = homedir();
+  for (const word of words(command)) {
+    for (const part of word.split('=')) {
+      const w = part.replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[\\/]|$)/i, user);
+      if (!/[\\/]/.test(w) && w !== '..') continue;
+      const hit = guardedPath(g, w, cwd);
+      if (hit) return hit;
+    }
+  }
+  let text = spelled(command);
+  for (const s of spellings(g.allow)) text = text.replace(spellingRe(s), '\0');
+  return g.deny.find((d) => spellings(d).some((s) => spellingRe(s).test(text)));
 }
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */

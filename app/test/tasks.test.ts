@@ -232,6 +232,9 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   await runTurn(t.id);
   const targs = JSON.parse(last(t.id).text) as string[];
   assert.doesNotMatch(targs[targs.indexOf('--disallowedTools') + 1] ?? '', /Bash/);
+  // Every run gets the write guard for the running app's checkout and storage (selfdev-002).
+  const pre = JSON.parse(targs[targs.indexOf('--settings') + 1]!).hooks.PreToolUse as { matcher: string; hooks: { command: string }[] }[];
+  assert.match(pre.find((h) => h.matcher.includes('Bash'))!.hooks[0]!.command, /guard-hook\.ts/);
   const codex = createSession('P', 'Orchestration', { integration: 'codex' });
   addMessage(codex.id, 'hi');
   await runTurn(codex.id);

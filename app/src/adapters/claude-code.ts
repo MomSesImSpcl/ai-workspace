@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { guardFor } from '../worktrees.ts';
 import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -37,6 +38,7 @@ export function parseResult(line: string): { text?: string; error?: string; usag
 
 const workspaceServer = fileURLToPath(new URL('../approval-server.ts', import.meta.url));
 const repeatHook = fileURLToPath(new URL('../repeat-hook.ts', import.meta.url));
+const guardHook = fileURLToPath(new URL('../guard-hook.ts', import.meta.url));
 
 const outsideRoot = (root: string, p: string) => {
   const r = relative(root, resolve(root, p));
@@ -265,6 +267,10 @@ export class ClaudeProcess implements AgentProcess {
         else if (i.kind === 'hooks') delete settings.hooks; // shortcut: with global rules on, the user's hooks cannot be switched off for one run and stay on
       }
     }
+    // The running app's checkout and storage stay untouched (selfdev-002): a hook, so no permission mode lifts it.
+    const g = guardFor(this.root);
+    const guard = { type: 'command', command: [process.execPath, guardHook, g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
+    settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
       args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : 'mcp__aiws__delegate,mcp__aiws__request_setup');

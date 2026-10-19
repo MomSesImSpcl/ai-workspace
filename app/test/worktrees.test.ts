@@ -11,7 +11,8 @@ import { addMessage, createSession, loadSession, readEvents, type SessionAgent }
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, appRepo, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { addAppProject, appRepo, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { guardedRequest } from '../src/adapters/codex.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -136,4 +137,57 @@ test('the cleanup removes merged branches only, archives their chats, and leaves
   assert.equal(loadSession(open.id).archived, true);
   assert.deepEqual(branchInfo(getProject('P')).map((b) => b.branch).sort(), ['fresh', 'unsaved']);
   rmSync(root, { recursive: true, force: true });
+});
+
+test('the write guard keeps agents out of the live checkout and storage, except their own worktree (selfdev-002)', () => {
+  const store = process.env.AI_WORKSPACE_HOME!;
+  const wt = join(store, 'worktrees', 'P', 'fix');
+  const g = guardFor(wt);
+  assert.deepEqual(g.deny, [root, store]);
+  // Files: the deepest folder decides, so the own worktree is free and everything around it is not.
+  assert.equal(guardedPath(g, join(wt, 'src', 'a.ts')), undefined);
+  assert.equal(guardedPath(g, join(root, 'a.txt')), root);
+  assert.equal(guardedPath(g, join(store, 'sessions', 'x.json')), store);
+  assert.equal(guardedPath(g, '../other/a.txt'), store);
+  assert.equal(guardedPath(g, join(tmpdir(), 'elsewhere.txt')), undefined);
+  // A project folder holding the checkout does not free it.
+  assert.equal(guardedPath({ ...g, allow: dirname(root) }, join(root, 'a.txt')), root);
+  // Commands: path words, relative climbs, home spellings and paths inside quoted code.
+  const live = root.replaceAll('\\', '/');
+  assert.equal(guardedCommand(g, 'npm ci && npm test'), undefined);
+  assert.equal(guardedCommand(g, `cd "${wt}" && git commit -m "x"`), undefined);
+  assert.equal(guardedCommand(g, 'git log main..HEAD -- src/a.ts'), undefined);
+  assert.equal(guardedCommand(g, `cp a.txt "${live}/a.txt"`), root);
+  assert.equal(guardedCommand(g, `echo x > ${root}\\a.txt`), root);
+  assert.equal(guardedCommand(g, 'rm -rf ../../..'), store);
+  assert.equal(guardedCommand(g, `node -e "require('fs').writeFileSync('${live}/b', '')"`), root);
+  assert.equal(guardedCommand(g, 'npm test', root), root, 'a command run in the checkout');
+  if (process.platform === 'win32') assert.equal(guardedCommand(g, `touch /${live[0]}${live.slice(2)}/a.txt`), root, 'Git Bash spelling');
+  // Write access to a folder that holds a guarded one.
+  assert.equal(guardedTree(g, dirname(root)), root);
+  assert.equal(guardedTree(g, wt), undefined);
+});
+
+test('Codex approval requests that would write into guarded folders are declined (selfdev-002)', () => {
+  const store = process.env.AI_WORKSPACE_HOME!;
+  const g = guardFor(join(store, 'worktrees', 'P', 'fix'));
+  const edits = new Map([['e1', [join(root, 'a.txt')]], ['e2', [join(g.allow, 'a.txt')]]]);
+  assert.equal(guardedRequest(g, 'item/commandExecution/requestApproval', { command: 'git commit -m x', cwd: g.allow }, edits), undefined);
+  assert.equal(guardedRequest(g, 'item/commandExecution/requestApproval', { command: 'npm install', cwd: root }, edits), root);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'e1' }, edits), root);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'e2' }, edits), undefined);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'x', grantRoot: dirname(root) }, edits), root);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { fileSystem: { entries: [{ access: 'write', path: { type: 'special', kind: 'root' } }] } } }, edits), root);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { fileSystem: { write: [store] } } }, edits), store);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { network: { enabled: true } } }, edits), undefined);
+});
+
+test('the Claude Code hook denies a guarded write and lets the own worktree through', () => {
+  const hook = fileURLToPath(new URL('../src/guard-hook.ts', import.meta.url));
+  const g = guardFor(join(process.env.AI_WORKSPACE_HOME!, 'worktrees', 'P', 'fix'));
+  const run = (tool_name: string, tool_input: object) => spawnSync(process.execPath, [hook, g.allow, ...g.deny], { input: JSON.stringify({ tool_name, tool_input, cwd: g.allow }), encoding: 'utf8' }).stdout;
+  const out = JSON.parse(run('Write', { file_path: join(root, 'a.txt'), content: 'x' }));
+  assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(run('Edit', { file_path: join(g.allow, 'a.txt') }), '');
+  assert.equal(JSON.parse(run('Bash', { command: `rm "${root}/a.txt"` })).hookSpecificOutput.permissionDecision, 'deny');
 });
