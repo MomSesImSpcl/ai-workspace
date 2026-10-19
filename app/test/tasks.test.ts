@@ -501,7 +501,13 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
     assert.equal((await add({ path: 'relative/dir' })).status, 400);
     const roles = await (await post('/api/roles', json, JSON.stringify({ role: 'Implementation', integration: 'codex', model: '', effort: '' }))).json();
-    assert.deepEqual(roles.Implementation, { integration: 'codex' });
+    assert.equal(roles.Implementation.integration, 'codex');
+    assert.equal(roles.Implementation.model, undefined);
+    const set = (body: unknown) => post('/api/roles', json, JSON.stringify(body)).then((r) => r.json());
+    await set({ role: 'Chat', integration: 'claude-code', model: 'opus', effort: 'high' });
+    await set({ role: 'Chat', integration: 'codex', restore: true });
+    const back = (await set({ role: 'Chat', integration: 'claude-code', restore: true })).Chat;
+    assert.deepEqual([back.integration, back.model, back.effort], ['claude-code', 'opus', 'high']); // the role's last choices for that agent
     const s = loadSession(t.id);
     s.title = 'renamed';
     saveSession(s);

@@ -1403,8 +1403,8 @@ $('#workspace-form').onchange = (e) => e.currentTarget.requestSubmit();
 $('#roles').onchange = async (e) => {
   const form = e.target.form, key = e.target.dataset.instr;
   if (!key) {
-    // Another agent offers other models, another model other efforts: start again from the defaults.
-    if (e.target.name === 'integration') { form.model.value = form.effort.value = ''; if (form.permissionMode) form.permissionMode.disabled = true; } // the old agent's mode does not apply
+    // Another agent: its last choices for this role come back (the server checks them); another model: other efforts.
+    if (e.target.name === 'integration') return saveRole(form, { role: form.dataset.role, integration: form.integration.value, restore: true });
     if (e.target.name === 'model') form.effort.value = '';
     const mode = e.target.name === 'permissionMode' && state.agents[form.integration.value]?.modes?.find((m) => m.id === e.target.value);
     if (mode?.warn && !(await ask(`Make ${mode.label} the default for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) { renderDrawer(); return; }
@@ -1413,18 +1413,21 @@ $('#roles').onchange = async (e) => {
   try { state.settings = await api('/api/settings', { [key]: e.target.value }); form.querySelector('[data-saved]').textContent = 'Saved. Applies from the next agent start.'; }
   catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
 };
-$('#roles').onsubmit = async (e) => {
+$('#roles').onsubmit = (e) => {
   e.preventDefault();
-  const form = e.target;
-  const f = new FormData(form);
+  const f = new FormData(e.target);
+  saveRole(e.target, { role: e.target.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort'), ...(f.has('permissionMode') ? { permissionMode: f.get('permissionMode') } : {}) });
+};
+async function saveRole(form, body) {
   try {
-    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort'), ...(f.has('permissionMode') ? { permissionMode: f.get('permissionMode') } : {}) });
+    state.roles = await api('/api/roles', body);
     document.activeElement?.blur(); // so the render rebuilds the model and effort lists
     await load();
     renderDrawer();
-    form.querySelector('[data-saved]').textContent = 'Saved';
-  } catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
-};
+  } catch (err) { return void (form.querySelector('[data-saved]').textContent = err.message); }
+  const saved = $(`#roles form[data-role="${CSS.escape(body.role)}"] [data-saved]`); // the render rebuilt the form
+  if (saved) saved.textContent = 'Saved';
+}
 
 // Drag (or arrow keys on the handle) to resize the chat column, between 280px and 70% of the window.
 const setChatWidth = (px) => {

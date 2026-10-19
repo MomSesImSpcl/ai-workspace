@@ -231,11 +231,17 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (!getRoles()[b.role]) throw new HttpError(400, `role must be one of ${Object.keys(getRoles()).join(', ')}`);
     // Model and effort come from the agent's catalog (onboarding-008); '' or unset is the agent's own default.
     const models = sessionAgents[b.integration]!.catalog().models;
+    const modes = sessionAgents[b.integration]!.catalog().modes ?? [];
+    // Switching back to an agent restores the role's last choices for it, minus any the agent no longer offers.
+    if (b.restore === true) {
+      const last = getRoles()[b.role]!.byAgent?.[b.integration] ?? {};
+      const known = models.find((m) => m.id === (last.model ?? ''));
+      Object.assign(b, { model: known ? last.model : undefined, effort: known?.efforts?.includes(last.effort ?? '') ? last.effort : undefined, permissionMode: modes.some((m) => m.id === last.permissionMode) ? last.permissionMode : undefined });
+    }
     const model = typeof b.model === 'string' && b.model ? b.model : undefined, effort = typeof b.effort === 'string' && b.effort ? b.effort : undefined;
     const entry = models.find((m) => m.id === (model ?? ''));
     if (model && !entry) throw new HttpError(400, `model must be one of ${models.map((m) => m.id || 'default').join(', ')}`);
     if (effort && !entry?.efforts?.includes(effort)) throw new HttpError(400, `effort must be one of ${entry?.efforts?.join(', ') || 'none for this model'}`);
-    const modes = sessionAgents[b.integration]!.catalog().modes ?? [];
     const permissionMode = typeof b.permissionMode === 'string' ? b.permissionMode : undefined;
     if (permissionMode !== undefined && !modes.some((m) => m.id === permissionMode)) throw new HttpError(400, `permissionMode must be one of ${modes.map((m) => m.id || "'' (the agent's settings)").join(', ')}`);
     setRole(b.role, { integration: b.integration, model, effort, ...(permissionMode !== undefined ? { permissionMode } : {}) });

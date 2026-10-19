@@ -7,6 +7,7 @@ export interface Assignment {
   integration: string;
   model?: string;
   effort?: string; // unset: the agent's own default
+  byAgent?: Record<string, Pick<Assignment, 'model' | 'effort' | 'permissionMode'>>; // last choices per agent, restored when the role switches back
   permissionMode?: string; // tasks' default mode, an id of the agent's catalog `modes`; unset: the workspace default, '': the agent's settings
 }
 
@@ -26,7 +27,10 @@ export function getRoles(): Record<string, Assignment> {
 
 export function setRole(role: string, assignment: Assignment): void {
   if (!defaults[role]) throw new Error(`Unknown role: ${role}`);
-  writeJson(rolesPath(), { ...readJson<Record<string, Assignment>>(rolesPath(), {}), [role]: assignment });
+  const all = readJson<Record<string, Assignment>>(rolesPath(), {});
+  const { integration, model, effort, permissionMode } = assignment;
+  const byAgent = { ...all[role]?.byAgent, [integration]: { model, effort, permissionMode } };
+  writeJson(rolesPath(), { ...all, [role]: { ...assignment, byAgent } });
 }
 
 export function assignmentFor(role: string): Assignment {
