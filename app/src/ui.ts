@@ -11,8 +11,8 @@ import { claudeHome, fileOr } from './adapters/claude-code.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
-import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setProjectWorktrees, setWorkspaceRoot, unaddedFolders } from './store.ts';
-import { isGitRepo, listWorktrees, worktreesOn } from './worktrees.ts';
+import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
+import { isAppProject, listWorktrees } from './worktrees.ts';
 
 /** A session's title, or '' when it was deleted (a worktree can outlive the session that made it). */
 const titleOf = (id: string) => { try { return loadSession(id).title; } catch { return ''; } };
@@ -123,8 +123,8 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     sessionAgent(assignment.integration);
     const config = agentConfig(b, assignment); // the role's agent unless the composer chose another
     const projectId = b.global === true ? GLOBAL : text(b.projectId, 'projectId');
-    // In a project with worktrees the user picks one for every new chat: a new one or one to continue (selfdev-001).
-    if (projectId !== GLOBAL && worktreesOn(getProject(projectId)) && typeof b.worktree !== 'string') throw new HttpError(400, 'Choose a worktree for this session first');
+    // In the app project the user picks a worktree for every new chat: a new one or one to continue (selfdev-001).
+    if (projectId !== GLOBAL && isAppProject(getProject(projectId)) && typeof b.worktree !== 'string') throw new HttpError(400, 'Choose a worktree for this session first');
     const s = createSession(projectId, role, { integration: config.integration, model: config.model }, typeof b.worktree === 'string' ? b.worktree : undefined);
     s.effort = config.effort;
     if (Number.isInteger(b.taskCap) && (b.taskCap as number) > 0) s.taskCap = b.taskCap as number;
@@ -211,7 +211,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, worktrees: worktreesOn(p), git: isGitRepo(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -273,14 +273,10 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     return { workspaceRoot: setWorkspaceRoot(b.root.trim()) };
   }
   if (req.method === 'POST' && kind === 'projects' && action === 'archive') return setProjectArchived(id, (await body(req)).archived === true);
-  if (req.method === 'POST' && kind === 'projects' && action === 'worktrees') {
-    const on = (await body(req)).on === true;
-    if (on && !isGitRepo(getProject(id).root)) throw new HttpError(400, `Not a git repository: ${getProject(id).root}`);
-    return setProjectWorktrees(id, on);
-  }
   // The worktrees a new session can continue in, with the title of the session that made each.
   if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') return listWorktrees(getProject(id)).map((w) => ({ ...w, title: titleOf(basename(w.path)) }));
   if (req.method === 'POST' && kind === 'projects' && action === 'remove') {
+    if (isAppProject(getProject(id))) throw new HttpError(400, "The workspace's own repository cannot be removed; it is added again at every start");
     removeProject(id);
     return { removed: id };
   }

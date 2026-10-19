@@ -111,7 +111,6 @@ export interface Project {
   id: string;
   root: string;
   archived?: boolean; // hidden from the workspace; its folder and workspace data are untouched
-  worktrees?: boolean; // new sessions work in their own worktree (selfdev-001); unset: on only for the running app's own repository (`worktreesOn` in `app/src/worktrees.ts`)
 }
 
 const projectsPath = () => join(home(), 'projects.json');
@@ -150,13 +149,6 @@ export function setWorkspaceRoot(root: string): string {
 // Archive is the only removal: the workspace never deletes a project folder or its history.
 export function setProjectArchived(id: string, archived: boolean): Project {
   const project = { ...getProject(id), archived: archived || undefined };
-  addProject(project);
-  return project;
-}
-
-/** The project's "New worktree per session" switch (selfdev-001, selfdev-007); it applies to sessions created after the change. */
-export function setProjectWorktrees(id: string, on: boolean): Project {
-  const project = { ...getProject(id), worktrees: on };
   addProject(project);
   return project;
 }

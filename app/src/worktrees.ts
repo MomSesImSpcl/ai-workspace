@@ -1,9 +1,9 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { home, type Project } from './store.ts';
+import { home, listProjects, registerProject, type Project } from './store.ts';
 
 /**
  * A session's own worktree and branch, planned when the session is created and made at its first turn.
@@ -22,30 +22,44 @@ function git(cwd: string, args: string[]): string {
   return r.stdout.trim();
 }
 
-/** Git root folders by folder, compared case-insensitively since Windows paths are; `undefined` outside a repository. */
-const roots = new Map<string, string | undefined>();
-function gitRoot(dir: string): string | undefined {
-  if (!roots.has(dir)) {
-    let root: string | undefined;
-    try { root = resolve(git(dir, ['rev-parse', '--show-toplevel'])).toLowerCase(); } catch { /* not a repository */ }
-    roots.set(dir, root);
+/** Same folder, compared case-insensitively since Windows paths are. */
+const same = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
+
+let appRoot: { dir?: string } | undefined;
+/**
+ * The repository the workspace develops itself in: the root of the git checkout this app runs from
+ * (`AI_WORKSPACE_REPO` overrides it, for tests). `undefined` for a packaged app, which runs from no checkout,
+ * so a release never gets the app project or worktrees.
+ */
+export function appRepo(): string | undefined {
+  if (process.env.AI_WORKSPACE_REPO) return resolve(process.env.AI_WORKSPACE_REPO);
+  if (!appRoot) {
+    appRoot = {};
+    try { appRoot.dir = resolve(git(dirname(fileURLToPath(import.meta.url)), ['rev-parse', '--show-toplevel'])); } catch { /* not a checkout */ }
   }
-  return roots.get(dir);
+  return appRoot.dir;
 }
 
 /**
- * Whether new sessions of a project work in their own worktree: the project's own switch, else on for the
- * repository this running app is started from, since its agents would otherwise edit the live app.
+ * The app project: the one whose folder is the app's own repository (`appRepo`). Only its sessions work in
+ * worktrees, so agents never edit the checkout the running app starts from; it cannot be removed and is listed
+ * first (selfdev-001, ADR 0014).
  */
-export function worktreesOn(project: Project): boolean {
-  if (!isGitRepo(project.root)) return false; // nothing to branch from
-  if (project.worktrees !== undefined) return project.worktrees;
-  const app = gitRoot(dirname(fileURLToPath(import.meta.url)));
-  return !!app && gitRoot(project.root) === app;
+export function isAppProject(project: Project): boolean {
+  const app = appRepo();
+  return !!app && same(project.root, app);
 }
 
-/** Whether a folder is inside a git repository, so the "New worktree per session" switch can apply to it. */
-export const isGitRepo = (dir: string): boolean => !!gitRoot(dir);
+/** Adds the app's repository as a project on start (`ui` in `app/src/cli.ts`), unless a project already has that folder. */
+export function addAppProject(): Project | undefined {
+  const app = appRepo();
+  if (!app) return undefined;
+  const projects = listProjects();
+  const known = projects.find((p) => same(p.root, app));
+  if (known) return known;
+  const id = projects.some((p) => p.id === basename(app)) ? `${basename(app)} (workspace)` : basename(app);
+  return registerProject(app, id);
+}
 
 /** Where the workspace keeps a project's worktrees. */
 const worktreesDir = (project: Project) => join(home(), 'worktrees', project.id);
@@ -56,7 +70,7 @@ const worktreesDir = (project: Project) => join(home(), 'worktrees', project.id)
  * agent removed after merging drops out here.
  */
 export function listWorktrees(project: Project): Worktree[] {
-  if (!worktreesOn(project)) return [];
+  if (!isAppProject(project)) return [];
   const own = resolve(worktreesDir(project)).toLowerCase();
   const out: Worktree[] = [];
   let path: string | undefined;
@@ -68,12 +82,12 @@ export function listWorktrees(project: Project): Worktree[] {
 }
 
 /**
- * The worktree a new session of this project gets (`createSession` in `app/src/sessions.ts`): none when the
- * switch is off; `'new'` plans a new one (made at the first turn); a path continues an existing workspace-made
+ * The worktree a new session of this project gets (`createSession` in `app/src/sessions.ts`): none outside
+ * the app project; `'new'` plans a new one (made at the first turn); a path continues an existing workspace-made
  * worktree, for example after a session's cache went cold. Any other path is refused.
  */
 export function planWorktree(project: Project, sessionId: string, choice = 'new'): Worktree | undefined {
-  if (!worktreesOn(project)) return undefined;
+  if (!isAppProject(project)) return undefined;
   if (choice === 'new') return { path: join(worktreesDir(project), sessionId), branch: `aiws/${sessionId}` };
   const found = listWorktrees(project).find((w) => w.path.toLowerCase() === resolve(choice).toLowerCase());
   if (!found) throw new Error(`Not a worktree of project ${project.id}: ${choice}`);

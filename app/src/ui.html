@@ -132,6 +132,7 @@
   .chat-composer { display: grid; gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); }
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
+  .project-sep { border-top: 1px solid var(--hairline); margin: 4px 0; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
   .chat-tokens { white-space: nowrap; }
@@ -335,7 +336,6 @@
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
       <div class="menu" id="project-menu" role="menu" hidden>
-        <button role="menuitemcheckbox" data-mact="worktrees" aria-checked="false">New worktree per session</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
@@ -576,14 +576,16 @@ function renderShell() {
 
 function renderProjects() {
   const archived = $('#show-archived-projects').checked;
-  $('#project-list').innerHTML = state.projects.filter((p) => !!p.archived === archived).map((p) => {
+  // The app project (this app's own repository, worked on in worktrees) comes first, set apart by a line.
+  const shown = state.projects.filter((p) => !!p.archived === archived).sort((a, b) => (b.app ? 1 : 0) - (a.app ? 1 : 0));
+  $('#project-list').innerHTML = shown.map((p, i) => {
     const mine = state.tasks.filter((t) => t.projectId === p.id && !t.task.parentId);
     const running = mine.filter(active).length;
     const work = mine.reduce((n, t) => n + t.used, 0);
     return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
-      <span class="goal">${esc(p.id)}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
+      <span class="goal" ${p.app ? 'title="The repository this app runs from: each chat works in its own worktree and branch, never in this folder."' : ''}>${esc(p.id)}${p.app ? ' <small class="meta">this app</small>' : ''}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
       <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} tokens</span></button>
-      <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>`;
+      <button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button></div>${p.app && shown[i + 1] ? '<div class="project-sep" role="separator"></div>' : ''}`;
   }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
   const folders = archived ? [] : state.unaddedFolders ?? [];
   $('#unadded').innerHTML = folders.length ? `<div class="section-head"><h2>Folders in the workspace</h2><span>not added yet</span></div>
@@ -808,7 +810,7 @@ function renderChat() {
 // A load the user overtook (another project or chat picked while it ran) is dropped, so it cannot redraw the old one.
 async function loadSessions() {
   const project = state.project, session = state.session;
-  const choose = !session && !state.newGlobal && !!current()?.worktrees; // a new chat in a project with worktrees
+  const choose = !session && !state.newGlobal && !!current()?.app; // a new chat in the app project
   const [sessions, globals, data, worktrees] = await Promise.all([
     project ? api(`/api/sessions?project=${encodeURIComponent(project)}`) : [],
     api('/api/sessions?global=1'),
@@ -1205,7 +1207,6 @@ function ask(title, text, ok, danger = false) {
   });
 }
 
-const WORKTREE_HINT = 'Each new session works in a git worktree and branch outside this folder, a new one or one you continue, so its agent never edits this folder. Its tasks share it. On by default for the repository this app runs from.';
 const menuItem = (kind, id) => (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id);
 function openMenu(kind, id, x, y) {
   const s = menuItem(kind, id);
@@ -1216,13 +1217,8 @@ function openMenu(kind, id, x, y) {
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
   const pin = menu.querySelector('[data-mact=pin]');
   if (pin) pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin';
-  const wt = menu.querySelector('[data-mact=worktrees]');
-  if (wt) {
-    wt.setAttribute('aria-checked', String(!!s.worktrees));
-    wt.textContent = `${s.worktrees ? '✓ ' : ''}New worktree per session`;
-    wt.disabled = !s.git;
-    wt.title = s.git ? WORKTREE_HINT : 'Not available: this folder is not a git repository.';
-  }
+  // The app project is added again at every start, so it has no Remove (selfdev-001).
+  if (kind === 'project') menu.querySelector('[data-mact=remove]').hidden = !!s.app;
   menu.hidden = false;
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 8)}px`;
@@ -1246,10 +1242,6 @@ async function projectMenuAction(act, id) {
     try { await api(`/api/projects/${encodeURIComponent(id)}/remove`, {}); } catch (err) { return void ($('#project-error').textContent = err.message); }
     await load();
     return state.project !== pref.get('project', null) ? selectProject(state.project) : render();
-  }
-  if (act === 'worktrees') {
-    try { await api(`/api/projects/${encodeURIComponent(id)}/worktrees`, { on: !p.worktrees }); } catch (err) { return void ($('#project-error').textContent = err.message); }
-    return load().then(render);
   }
   if (act !== 'archive') return;
   if (!p.archived && !(await ask(`Archive project "${p.id}"?`, `It is hidden from the workspace. Its folder (${p.root}), sessions and tasks stay untouched, and running work continues. Tick "Show archived" on this page to restore it.`, 'Archive'))) return;

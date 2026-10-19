@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { addMessage, createSession, loadSession, readEvents, type SessionAgent } from '../src/sessions.ts';
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
-import { getProject, registerProject, setProjectWorktrees } from '../src/store.ts';
-import { isGitRepo, listWorktrees, planWorktree, worktreesOn } from '../src/worktrees.ts';
+import { getProject, listProjects, registerProject } from '../src/store.ts';
+import { addAppProject, appRepo, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -26,6 +26,7 @@ beforeEach(() => {
   git('add', '.');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'first');
   registerProject(root, 'P');
+  process.env.AI_WORKSPACE_REPO = root; // this test repository plays the app's own
 });
 
 /** A fake agent that records the folder each run starts in. */
@@ -33,19 +34,20 @@ function recording(roots: string[]): Record<string, SessionAgent> {
   return { 'claude-code': { open: (_s, r) => { roots.push(r); return { turn: async () => ({}), close() {} }; }, permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } };
 }
 
-test('the switch is off for other repositories and on for the one this app runs from', () => {
-  assert.equal(worktreesOn(getProject('P')), false);
-  assert.equal(planWorktree(getProject('P'), 'x'), undefined);
-  const appRepo = dirname(dirname(fileURLToPath(import.meta.url)));
-  assert.equal(worktreesOn({ id: 'app', root: appRepo }), true);
-  assert.equal(worktreesOn({ id: 'app', root: appRepo, worktrees: false }), false);
-  const plain = mkdtempSync(join(tmpdir(), 'ws-plain-'));
-  assert.equal(isGitRepo(plain), false);
-  assert.equal(worktreesOn({ id: 'plain', root: plain, worktrees: true }), false); // a folder without git never gets worktrees
+test('only the app project gets worktrees; it is added on start once, by folder', () => {
+  assert.equal(isAppProject(getProject('P')), true);
+  const other = mkdtempSync(join(tmpdir(), 'ws-other-'));
+  assert.equal(isAppProject({ id: 'other', root: other }), false);
+  assert.equal(planWorktree({ id: 'other', root: other }, 'x'), undefined);
+  assert.equal(addAppProject()!.id, 'P'); // already a project with that folder: nothing added
+  assert.equal(listProjects().length, 1);
+  process.env.AI_WORKSPACE_HOME = mkdtempSync(join(tmpdir(), 'ws-fresh-'));
+  assert.deepEqual(addAppProject(), { id: 'project', root: appRepo() }); // fresh storage: added under its folder name
+  delete process.env.AI_WORKSPACE_REPO;
+  assert.ok(appRepo()); // tests run from a checkout
 });
 
 test('a new session can continue an existing worktree instead of making one', async () => {
-  setProjectWorktrees('P', true);
   const first = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(first.id, 'start');
   await runTurn(first.id, recording([]));
@@ -63,7 +65,6 @@ test('a new session can continue an existing worktree instead of making one', as
 });
 
 test('a session works in its own worktree from the first turn; its tasks share it; a removed one stops it', async () => {
-  setProjectWorktrees('P', true);
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   const wt = loadSession(chat.id).worktree!;
   assert.equal(existsSync(wt.path), false); // planned, not made until it is used

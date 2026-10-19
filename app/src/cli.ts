@@ -85,6 +85,8 @@ try {
     // A packaged app has no checkout and starts without one.
     const repo = fileURLToPath(new URL('../..', import.meta.url));
     if (!getWorkspaceRoot() && existsSync(join(repo, '.git'))) setWorkspaceRoot(resolve(repo));
+    // Run from a checkout, the workspace develops itself: its repository is a project, worked on in worktrees (selfdev-001).
+    (await import('./worktrees.ts')).addAppProject();
     const server = serve(Number(values.port));
     server.on('listening', () => console.log(`Workspace UI: http://127.0.0.1:${(server.address() as { port: number }).port}/ (Ctrl+C stops the UI; tasks keep running)`));
   } else if (cmd === 'roles') {
