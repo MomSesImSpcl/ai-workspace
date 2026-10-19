@@ -135,10 +135,8 @@
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
   .chat-tokens { white-space: nowrap; }
-  .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
-  .task-cap .check { padding-bottom: 0; }
-  .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
-  .task-cap .perm-label { margin-left: auto; }
+  .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
+  .send-row #foot-status { flex: 1; min-width: 0; }
   .mode-menu { min-width: 260px; }
   .mode-menu .menu-title { padding: 6px 10px 4px; font-size: 12px; color: var(--text-muted); }
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -375,11 +373,9 @@
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
-        <!-- Settings for the tasks this chat starts (ADR 0011): layout only here and in renderCap(). -->
-        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span>
-          <span class="meta perm-label">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button></div>
+        <!-- The permission mode of the tasks this chat starts (ADR 0011), next to Send; layout only here and in renderCap(). -->
+        <div class="row send-row"><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
         <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
@@ -635,13 +631,8 @@ function roleDraft(role) {
   const own = !!state.agents[a.integration];
   return { role, integration: own ? a.integration : 'claude-code', model: own ? a.model ?? '' : '', effort: own ? a.effort ?? '' : '' };
 }
-// The task cap switch next to the chat box (ADR 0011): unchecked, the chat's new tasks run uncapped.
+// The permission mode next to Send. Tasks run uncapped; a cap is asked of the orchestrator in words (ADR 0011).
 function renderCap(s) {
-  if (['cap', 'cap-on'].includes(document.activeElement?.id)) return;
-  const cap = s ? s.taskCap : state.draftCap;
-  $('#cap-on').checked = cap !== undefined;
-  if (cap !== undefined) $('#cap').value = cap;
-  $('#cap').disabled = cap === undefined;
   const { mode, list } = taskModes(s);
   $('#task-mode').textContent = `${list.find((m) => m.id === mode)?.label ?? mode} ▾`;
 }
@@ -1064,13 +1055,6 @@ async function pickerChanged(which) {
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
 $('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null); };
-async function capChanged() {
-  const cap = $('#cap-on').checked ? Math.max(1, Math.round(Number($('#cap').value) || 0)) : undefined;
-  $('#cap').disabled = cap === undefined;
-  if (!state.session) return void (state.draftCap = cap);
-  await sessionAction('cap', { taskCap: cap ?? null });
-}
-$('#cap-on').onchange = capChanged;
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
 const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementer' };
 // The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.
@@ -1155,7 +1139,6 @@ $('#mode-menu').onkeydown = (e) => {
   }
 };
 document.addEventListener('click', () => $('#mode-menu').hidden || closeModeMenu());
-$('#cap').onchange = capChanged;
 
 // Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.
 async function changeTask(id) {
@@ -1368,10 +1351,9 @@ $('#new').onsubmit = async (e) => {
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
-    const fresh = { role: $('#role').value, taskCap: state.draftCap, taskMode: state.draftMode, ...config };
+    const fresh = { role: $('#role').value, taskMode: state.draftMode, ...config };
     const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
-    state.draftCap = undefined;
     state.draftMode = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';

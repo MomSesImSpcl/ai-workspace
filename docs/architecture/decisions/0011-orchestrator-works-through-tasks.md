@@ -16,7 +16,7 @@ Status: accepted (2026-10-18, chosen by the user); implemented 2026-10-18 ([hist
 - The orchestrator is a chat session of the Orchestration role, run by that role's agent; no own model loop. A new session starts as the orchestrator; Chat stays selectable.
 - Its own edit and command tools are blocked by the workspace, keyed on the role, not the agent: switching which agent orchestrates and which implements keeps the implementation agent unblocked.
 - Routing rule: a correction to a task of the chat goes to it with `reply_task`; anything to be done becomes a task with `start_task`; a question is answered directly, with `task_status` and read-only tools. Pause, Resume and Change are buttons, not orchestrator tools.
-- The cap switch next to the chat box sets the chat's cap for the tasks it starts; unchecked, tasks run uncapped. Card and switch layout live in small functions of `ui.html`, so they can be reworked.
+- (Removed 2026-10-19 as unused, user: the cap is asked of the orchestrator in words; a chat that already has a cap keeps it.) The cap switch next to the chat box sets the chat's cap for the tasks it starts; unchecked, tasks run uncapped. Card and switch layout live in small functions of `ui.html`, so they can be reworked.
 - Token cost weights (onboarding-009), the planner handoff (orchestrator-002) and the lean setup (orchestrator-005) stay for later.
 
 ## Change (2026-10-18, chosen by the user after testing)
