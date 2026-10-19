@@ -217,13 +217,77 @@ const spellings = (dir: string) => {
 /** Matches a folder's spelling where a path to it or into it can stand (not a longer folder name). */
 const spellingRe = (s: string) => new RegExp(`${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g');
 
+/** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */
+const READERS = new Set(['cd', 'pushd', 'popd', 'pwd', 'ls', 'dir', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'find', 'stat', 'du', 'diff', 'cmp', 'echo', 'realpath', 'readlink', 'basename', 'dirname', 'md5sum', 'sha1sum', 'sha256sum', 'which', 'where', 'true', 'test', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'select-string', 'sls', 'test-path', 'resolve-path', 'get-location', 'set-location', 'measure-object', 'select-object', 'git']);
+/** Git subcommands that only read; `branch` and `remote` only when they list. */
+const GIT_READERS = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'ls-tree', 'blame', 'grep', 'cat-file', 'describe', 'shortlog', 'merge-base', 'rev-list', 'branch', 'remote']);
+/** Options that make a reader write or run something: find's actions, ripgrep's preprocessor, git's output file or pager. */
+const WRITING_OPTION = /^(-delete|-exec|-execdir|-ok|-okdir|-fprint|-fprint0|-fprintf|-fls|--pre|--output|-O|--open-files-in-pager)(=|$)/;
+
 /**
- * The guarded folder a shell command names or runs in, or `undefined` (selfdev-002). Path-like words are resolved
+ * A command's parts split at `;`, `&`, `|`, newlines and parentheses, or `undefined` when it substitutes a command
+ * (`$(...)`, backticks) or redirects output to a file (a redirect to null or to another stream is fine).
+ */
+function parts(command: string): string[][] | undefined {
+  const out: string[][] = [];
+  let part: string[] = [], word = '', quote = '', any = false;
+  const end = () => { if (word || any) part.push(word); word = ''; any = false; };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]!;
+    if (quote) {
+      if (c === quote) quote = '';
+      else if (quote === '"' && (c === '`' || (c === '$' && command[i + 1] === '('))) return undefined;
+      else word += c;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; any = true; continue; }
+    if (c === '`' || (c === '$' && command[i + 1] === '(')) return undefined;
+    if (c === '>') {
+      const sink = /^>?\s*(&\d|\/dev\/null(?![\w./-])|nul(?![\w./-])|\$null(?![\w./-]))/i.exec(command.slice(i + 1));
+      if (!sink) return undefined;
+      if (/^\d$/.test(word)) word = ''; // the `2` of `2>`
+      end();
+      i += sink[0].length;
+      continue;
+    }
+    if (/[;&|()\n]/.test(c)) { end(); if (part.length) out.push(part); part = []; continue; }
+    if (/\s/.test(c) || c === '<') { end(); continue; }
+    word += c;
+  }
+  end();
+  if (part.length) out.push(part);
+  return out;
+}
+
+/** Whether every part of a shell command only reads (Bash, Git Bash, PowerShell or cmd spelling). */
+export function readOnlyCommand(command: string): boolean {
+  const all = parts(command);
+  return !!all?.every((p) => {
+    const w = p.filter((x, i) => !p.slice(0, i + 1).every((y) => /^\w+=/.test(y))); // without leading `VAR=value`
+    if (!w.length) return true;
+    const prog = basename(w[0]!.replaceAll('\\', '/')).toLowerCase().replace(/\.exe$/, '');
+    if (!READERS.has(prog) || w.some((x) => WRITING_OPTION.test(x))) return false;
+    if (prog !== 'git') return true;
+    // Git's own options before the subcommand; `-c` can set a command to run, so it does not count as reading.
+    let i = 1;
+    while (w[i] === '-C' || w[i] === '--no-pager' || w[i]?.startsWith('--git-dir=') || w[i]?.startsWith('--work-tree=')) i += w[i] === '-C' ? 2 : 1;
+    const sub = w[i], rest = w.slice(i + 1);
+    if (!sub || !GIT_READERS.has(sub)) return false;
+    if (sub === 'branch') return rest.every((x) => /^(-a|-r|-v|-vv|--all|--remotes|--list|--show-current|--merged|--no-merged|--contains)$/.test(x));
+    if (sub === 'remote') return rest.every((x) => x === '-v');
+    return true;
+  });
+}
+
+/**
+ * The guarded folder a shell command names or runs in, or `undefined` (selfdev-002). A command that only reads
+ * (`readOnlyCommand`) passes. Path-like words are resolved
  * against `cwd`, with `~` and `$HOME` expanded, so `../..` out of the session's folder counts; paths inside quoted
  * code (`node -e "..."`) are found by their spelling. Best effort: a path computed at run time (variables,
  * scripts) is not seen; Codex's sandbox is the hard limit there, Claude Code has none on Windows.
  */
 export function guardedCommand(g: Guard, command: string, cwd = g.allow): string | undefined {
+  if (readOnlyCommand(command)) return undefined;
   const atCwd = guardedPath(g, cwd);
   if (atCwd) return atCwd;
   const user = homedir();

@@ -20,6 +20,6 @@ Scope: [selfdev-002](../../features/self-development/SPEC.md#requirements), [ADR
 ## Limits
 
 - [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18): paths computed at run time are not seen by the shell check; Claude Code has no OS sandbox on Windows.
-- Any shell command naming a guarded folder is denied, read-only ones too.
-- About 100–150 ms per guarded Claude Code tool call for the hook's Node process (estimate, not measured).
+- Commands that only read may name or run in a guarded folder (user, 2026-10-19; `readOnlyCommand`, tests for allowed and denied spellings).
+- About 105 ms per guarded Claude Code tool call for the hook's Node process (measured on Linux, Node 22; Windows not measured).
 - If the workspace folder is the app checkout itself, global chats cannot write anywhere in it (tie guarded).

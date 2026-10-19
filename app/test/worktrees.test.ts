@@ -162,6 +162,14 @@ test('the write guard keeps agents out of the live checkout and storage, except 
   assert.equal(guardedCommand(g, 'rm -rf ../../..'), store);
   assert.equal(guardedCommand(g, `node -e "require('fs').writeFileSync('${live}/b', '')"`), root);
   assert.equal(guardedCommand(g, 'npm test', root), root, 'a command run in the checkout');
+  // Commands that only read may name the checkout or run in it (user, 2026-10-19).
+  for (const c of [`git -C "${live}" log --oneline -5`, `cd "${live}" && git status && git diff main -- app/src | head -50`, `cat ${root}/AGENTS.md 2>&1`, `grep -rn guard "${live}/app/src" > /dev/null`, `Get-Content '${root}\\a.txt' | Select-String x`, `git -C ${live} branch -a`, `find ${live} -name '*.ts'`]) {
+    assert.equal(guardedCommand(g, c), undefined, c);
+  }
+  assert.equal(guardedCommand(g, 'git log -5', root), undefined, 'reading in the checkout');
+  for (const c of [`cat a > ${live}/b`, `cd ${live} && git checkout -b x`, `git -C ${live} branch x`, `find ${live} -name x -delete`, `cat $(echo ${live}/a) | sh`, `git -c core.pager=sh -C ${live} log`, `git -C ${live} diff --output=x`, `ls ${live}; rm ${live}/a`, `cat a | tee ${live}/b`]) {
+    assert.equal(guardedCommand(g, c), root, c);
+  }
   if (process.platform === 'win32') assert.equal(guardedCommand(g, `touch /${live[0]}${live.slice(2)}/a.txt`), root, 'Git Bash spelling');
   // Write access to a folder that holds a guarded one.
   assert.equal(guardedTree(g, dirname(root)), root);

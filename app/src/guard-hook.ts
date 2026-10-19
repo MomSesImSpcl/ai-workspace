@@ -12,6 +12,6 @@ const cwd = input.cwd || allow;
 const path = args.file_path ?? args.notebook_path;
 const hit = typeof args.command === 'string' ? guardedCommand(g, args.command, cwd) : typeof path === 'string' ? guardedPath(g, path, cwd) : undefined;
 if (hit) {
-  const reason = `AI Workspace: writes to ${hit} are blocked, since the running app's checkout and the workspace's storage must stay untouched (selfdev-002). Work in ${allow}; to only read a file there, use the Read tool.`;
+  const reason = `AI Workspace: writes to ${hit} are blocked, since the running app's checkout and the workspace's storage must stay untouched (selfdev-002). Work in ${allow}; to only read there, use the Read tool or a command that only reads (such as ls, cat, grep, git log or git diff, without writing output to a file).`;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 }

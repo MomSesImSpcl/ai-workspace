@@ -11,7 +11,7 @@ Status: accepted (2026-10-19), implemented 2026-10-19 for selfdev-002. Amends [A
 - **One fixed rule, not a permission layer:** for every session and task, the running app's checkout (`appRepo()`) and the workspace's storage (`home()`) are guarded; the session's own folder stays writable, also inside them, as a worktree in storage is. The deepest matching folder decides, and a tie is guarded. It has no settings and cannot be turned off per session. Code: `guardFor`, `guardedPath`, `guardedTree`, `guardedCommand` in `app/src/worktrees.ts`.
 - **Claude Code:** a `PreToolUse` hook (`app/src/guard-hook.ts`) on `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell`, added to every run's `--settings`, denies a matching call with a reason that points to the session folder and the Read tool. Hook decisions apply in every permission mode, `bypassPermissions` included (checked with a real run). Claude Code adds hooks from every settings source, so the user's own hooks stay.
 - **Codex:** approval requests (command, file change, extra file access) that would write into a guarded folder are declined without a card, with a notice in the chat. Worktree sessions set to full access run in Codex's `workspace-write` sandbox with network on and approval `on-request` instead, so the OS sandbox is the hard limit and anything beyond it asks.
-- **Shell commands are checked by the paths they name** (quotes, `~`, `$HOME`, `%USERPROFILE%`, `..` and Git Bash's `/c/...` spelling resolved, also inside quoted code). Any command naming a guarded folder is denied, read-only ones too.
+- **Shell commands are checked by the paths they name** (quotes, `~`, `$HOME`, `%USERPROFILE%`, `..` and Git Bash's `/c/...` spelling resolved, also inside quoted code). A command naming a guarded folder or run in one is denied unless every part of it only reads (amended 2026-10-19, user): a short list of reading programs (`ls`, `cat`, `grep`, `find` without actions, PowerShell's `Get-Content` and similar) and git's reading subcommands (`log`, `show`, `diff`, `status`, listing `branch`), with no output written to a file and no command substitution (`readOnlyCommand`).
 
 ## Rejected alternatives
 
@@ -23,4 +23,5 @@ Status: accepted (2026-10-19), implemented 2026-10-19 for selfdev-002. Amends [A
 
 - A path computed at run time (variables, scripts, a program that writes elsewhere) is not seen by the shell check; for Codex the OS sandbox still catches it, for Claude Code on Windows nothing does. Tracked in [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18).
 - In Codex's Windows sandbox a commit in a worktree writes into the checkout's `.git` folder, outside the sandbox, so each commit asks for approval.
-- Each guarded Claude Code tool call starts a Node process for the hook (roughly 100–150 ms).
+- Each guarded Claude Code tool call starts a Node process for the hook: about 105 ms measured on Linux (Node 22; bare Node start 33 ms), not measured on Windows, where Node starts slower.
+- `git status` in the checkout may refresh its index file; that write is accepted as harmless.
