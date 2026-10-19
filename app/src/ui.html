@@ -269,7 +269,12 @@
   #spanel-setup > div > :not(#setup-items) { align-self: flex-end; width: min(calc(var(--drawer-w) - 40px), 100%); }
   #setup-items > .agent-col:first-child { margin-left: auto; }
   /* The agent's name stays above its list while the list scrolls. */
-  .agent-col > b { position: sticky; top: 0; z-index: 1; display: block; padding: 4px 0 6px; text-align: center; background: var(--panel); }
+  .agent-head { position: sticky; top: 0; z-index: 1; display: grid; gap: 6px; padding: 4px 0 8px; background: var(--panel); }
+  .agent-head b { text-align: center; }
+  .agent-col tr.group th { padding: 14px 0 4px; border-top: 1px solid var(--hairline); text-align: left; color: var(--text); font-weight: 600; }
+  .agent-col tbody:first-of-type tr.group th { border-top: 0; padding-top: 6px; }
+  .agent-col td { padding: 3px 4px 3px 0; vertical-align: middle; }
+  .agent-col .parts { opacity: .8; }
   .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
   .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
   /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
@@ -1048,6 +1053,7 @@ const INSTRUCTION_HINTS = {
   orchestratorInstructions: 'For example: keep task goals under 50 words. Use Haiku for simple file operations.',
   implementationInstructions: 'For example: run the tests before you finish.',
 };
+const SETUP_GROUPS = [['Built-in', ['tool', 'feature', 'prompt', 'workspace']], ['Plugins', ['plugin']], ['MCP servers and connectors', ['mcp', 'apps']], ['Skills', ['skills']], ['Hooks', ['hooks']]];
 const STATE_NAMES = { on: 'Always on', decide: 'Orchestrator decides', off: 'Off' };
 function renderAgentSetup() {
   const s = state.agentSetup;
@@ -1056,11 +1062,39 @@ function renderAgentSetup() {
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
   $('#drawer').style.setProperty('--agents', String(agents.length || 1));
-  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><b>${esc(agent)}</b>
-    <table class="meta" style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr>
-    ${items.map((i) => `<tr><td title="${esc(i.description ?? '')}">${esc(i.title)}<br><span style="opacity:.8">${esc(i.description ?? '')}</span></td>${s.roles.map((r) => `<td><select aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([v, l]) => `<option value="${v}" ${s.states[r]?.[agent]?.[i.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}</tr>`).join('')}</table></div>`).join('')
+  const select = (agent, i, r) => {
+    const v = s.states[r]?.[agent]?.[i.id];
+    return `<td><select title="${esc(STATE_NAMES[v] ?? '')}" aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([k, l]) => option(k, l, v === k)).join('')}</select></td>`;
+  };
+  // One switch for several things (skills, hooks): their names stay visible under the item, the rest is a tooltip.
+  const parts = (i) => (i.kind === 'skills' || i.kind === 'hooks') && i.description ? (i.description.split(': ')[1] ?? i.description) : '';
+  const row = (agent, i) => `<tr data-text="${esc(`${i.title} ${i.description ?? ''}`.toLowerCase())}"><td title="${esc(i.description ?? '')}">${esc(i.title)}${parts(i) ? `<br><span class="parts">${esc(parts(i))}</span>` : ''}</td>${s.roles.map((r) => select(agent, i, r)).join('')}</tr>`;
+  const groups = (agent, items) => SETUP_GROUPS.map(([title, kinds]) => {
+    const list = items.filter((i) => kinds.includes(i.kind)).sort((a, b) => a.title.localeCompare(b.title));
+    return list.length ? `<tbody data-group><tr class="group"><th colspan="${s.roles.length + 1}">${esc(title)}</th></tr>${list.map((i) => row(agent, i)).join('')}</tbody>` : '';
+  }).join('');
+  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><div class="agent-head"><b>${esc(agent)}</b>
+    <input type="search" data-search="${esc(agent)}" value="${esc(state.setupSearch?.[agent] ?? '')}" placeholder="Search ${esc(agent)}" aria-label="Search ${esc(agent)} items"></div>
+    <table class="meta" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr></thead>
+    ${groups(agent, items)}</table><p class="meta" data-none hidden>No item matches.</p></div>`).join('')
     : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
+  for (const [agent] of agents) filterSetup(agent);
 }
+// Search keeps the groups: rows that do not match are hidden, and so is a group left empty.
+function filterSetup(agent) {
+  const col = $(`[data-search="${CSS.escape(agent)}"]`)?.closest('.agent-col');
+  if (!col) return;
+  const q = (state.setupSearch?.[agent] ?? '').trim().toLowerCase();
+  for (const tr of col.querySelectorAll('tr[data-text]')) tr.hidden = !!q && !tr.dataset.text.includes(q);
+  for (const g of col.querySelectorAll('[data-group]')) g.hidden = !g.querySelector('tr[data-text]:not([hidden])');
+  col.querySelector('[data-none]').hidden = !!col.querySelector('tr[data-text]:not([hidden])');
+}
+$('#setup-items').oninput = (e) => {
+  const agent = e.target.dataset.search;
+  if (agent === undefined) return;
+  state.setupSearch = { ...state.setupSearch, [agent]: e.target.value };
+  filterSetup(agent);
+};
 async function setupChange(body) {
   try { state.agentSetup = await api('/api/agent-setup', body); $('#setup-status').textContent = 'Saved. Applies from the next agent start.'; }
   catch (err) { $('#setup-status').textContent = err.message; }
