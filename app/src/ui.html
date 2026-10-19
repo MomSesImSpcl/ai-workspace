@@ -263,6 +263,10 @@
   #spanel-setup { display: flex; flex-direction: column; gap: 6px; overflow: hidden !important; }
   #setup-items { flex: 1; min-height: 0; display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
   #setup-items > .agent-col { flex: 0 0 560px; max-width: 90%; min-width: 0; overflow-y: auto; padding-right: 6px; }
+  /* Agent setup content keeps to the right, where the other tabs show theirs: the top part at the normal panel width,
+     the columns packed against the right edge (an auto margin, unlike flex-end, keeps overflow scrollable). */
+  #spanel-setup > div > :not(#setup-items) { align-self: flex-end; width: min(calc(var(--drawer-w) - 40px), 100%); }
+  #setup-items > .agent-col:first-child { margin-left: auto; }
   .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
   .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
   /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
