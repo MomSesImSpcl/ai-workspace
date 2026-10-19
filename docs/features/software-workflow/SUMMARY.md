@@ -6,4 +6,4 @@ Use configurable roles to retrieve project evidence, specify a complex feature, 
 
 [Full requirements](SPEC.md).
 
-**Dependencies / related features:** [skills](../skills/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [knowledge-retrieval](../knowledge-retrieval/SUMMARY.md), [technology-catalog](../technology-catalog/SUMMARY.md).
+**Dependencies / related features:** [skills](../skills/SUMMARY.md), [model-routing](../model-routing/SUMMARY.md), [knowledge-retrieval](../knowledge-retrieval/SUMMARY.md), [technology-catalog](../technology-catalog/SUMMARY.md), [code-documentation](../code-documentation/SUMMARY.md) (documentation rules the implementation and review steps apply).
