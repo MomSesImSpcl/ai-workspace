@@ -1345,8 +1345,8 @@ async function menuAction(act, id) {
   const s = menuItem('session', id);
   if (!s) return;
   if (act === 'pin') return sessionAction('pin', { pinned: s.pinOrder === undefined }, id);
-  // Where the session's agent works: its worktree, else its project folder or, for a global session, the workspace folder.
-  if (act === 'folder') return void window.desktop?.openFolder(s.worktree?.path ?? (s.projectId ? state.projects.find((p) => p.id === s.projectId)?.root : state.workspaceRoot));
+  // The session's conversation file in workspace storage, shown selected in its folder.
+  if (act === 'folder') return void window.desktop?.showPath(s.file);
   if (act === 'rename') {
     if (state.session !== id) { state.session = id; await loadSessions(); }
     state.renaming = true;

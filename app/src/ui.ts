@@ -90,7 +90,7 @@ function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
   const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
-  return { ...s, working, state: last?.state, worktreeGone: !!s.worktree?.ready && !existsSync(s.worktree.path), pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
+  return { ...s, file: sessionFile(s.id, '.jsonl'), working, state: last?.state, worktreeGone: !!s.worktree?.ready && !existsSync(s.worktree.path), pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
 }
 
 // Agent, model and effort, checked against what the agent offers (its catalog).
