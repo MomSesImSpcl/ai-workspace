@@ -68,6 +68,10 @@ Requirements:
   - `list_agents` MUST give each decidable item's rule with its id, title and description. The orchestrator's instructions MUST say that a user rule outranks the item's own description when it picks `setup`.
   - An item without a rule behaves as today. A rule is guidance for the orchestrator, not enforced by the workspace; the task details already show which items were loaded, so the user can see whether a rule was followed.
   - Motivation: the user's measurement (2026-10-19) showed plugins such as caveman and ponytail add about 1–2k prompt tokens per call but can save more on real work, so whether they pay off depends on the kind of task, which the user knows best.
+- **orchestrator-009 — Lean setup for Chat sessions (specified 2026-10-19 at the user's request, not built):** Plain Chat sessions load the user's whole setup today (orchestrator-005), about 74k prompt tokens per call for Claude Code with the user's setup (a two-command check cost 107,849 tokens on a cold cache, 2026-10-19).
+  - Agent setup in Settings gets a Chat column per agent, next to the orchestrator and implementation roles. Each item there is **on** or **off**; there is no "orchestrator decides", since no orchestrator picks a chat's setup. Every item defaults to on, so Chat sessions keep their current behavior until the user switches items off.
+  - The role's global-rules switch applies to Chat too, default on (unlike the other roles), for the same reason.
+  - A Chat session loads its on items, switched per run with the same mechanisms as orchestrator chats and tasks (orchestrator-005), and is restarted with the new setup when the user changes an item, like an effort change.
 
 ### Illustrative configuration and open integration decisions
 
