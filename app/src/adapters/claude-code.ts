@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { commandFolder, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
@@ -110,7 +110,7 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   return { events: [] };
 }
 
-const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+export const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
 const readJsonFile = <T>(file: string): T | undefined => { try { return JSON.parse(readFileSync(file, 'utf8')) as T; } catch { return undefined; } };
 type ClaudeSettings = { enabledPlugins?: Record<string, boolean>; hooks?: Record<string, unknown[]> } & Record<string, unknown>;
 
@@ -148,7 +148,7 @@ export function claudeInventory(root: string): SetupItem[] {
   // Lines read "<name>: <command or URL> - <status>".
   for (const line of run(['mcp', 'list']).split('\n')) {
     const m = /^(.+?): (.+) - \S+ \w/.exec(line.trim());
-    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}` });
+    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}`, path: commandFolder(m[2]) });
   }
   let skills: string[] = [];
   try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }

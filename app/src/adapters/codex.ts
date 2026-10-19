@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { commandFolder, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
@@ -154,7 +154,7 @@ export class CodexProcess implements AgentProcess {
     const { marketplaces = [] } = await this.request('plugin/list', {}) as { marketplaces?: { plugins: Plugin[] }[] };
     for (const p of marketplaces.flatMap((m) => m.plugins).filter((p) => p.installed && p.enabled)) items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.interface?.displayName ?? p.name, description: p.interface?.shortDescription });
     const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { mcp_servers?: Record<string, { command?: string; url?: string }> } };
-    for (const [name, c] of Object.entries(config?.mcp_servers ?? {})) items.push({ id: `mcp:${name}`, kind: 'mcp', title: name, description: `MCP server: ${c.command ?? c.url ?? ''}` });
+    for (const [name, c] of Object.entries(config?.mcp_servers ?? {})) items.push({ id: `mcp:${name}`, kind: 'mcp', title: name, description: `MCP server: ${c.command ?? c.url ?? ''}`, path: c.command ? commandFolder(c.command) : undefined });
     items.push({ id: 'apps', kind: 'apps', title: 'Apps and connectors', description: 'Codex apps (codex_apps), for example GitHub, Gmail and Google Drive' });
     type Skill = { name: string; path: string; enabled?: boolean; pluginId?: string | null };
     const { data = [] } = await this.request('skills/list', { cwds: [this.root] }) as { data?: { skills: Skill[] }[] };

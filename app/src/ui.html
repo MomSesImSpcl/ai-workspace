@@ -276,6 +276,8 @@
   .agent-col td { padding: 3px 4px 3px 0; vertical-align: middle; }
   .agent-col .parts { opacity: .8; }
   .agent-col div.parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 11px; }
+  .loc.icon { padding: 3px 5px; border: 1px solid var(--hairline); border-radius: 6px; background: none; color: var(--text-dim); cursor: pointer; display: inline-flex; }
+  .loc.icon:hover { background: var(--surface-2); }
   .agent-col .loc { display: inline-flex; align-items: center; gap: 5px; padding: 1px 6px; margin-left: -6px; border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; }
   .agent-col div.parts .loc { margin-left: 0; border-color: var(--hairline); }
   .agent-col .loc:hover { background: var(--surface-2); }
@@ -1067,7 +1069,9 @@ const STATE_NAMES = { on: 'Always on', decide: 'Orchestrator decides', off: 'Off
 function renderAgentSetup() {
   const s = state.agentSetup;
   if (!s) { if (!state.agentSetupLoading) { state.agentSetupLoading = true; api('/api/agent-setup').then((v) => { state.agentSetup = v; renderAgentSetup(); }, (e) => { $('#setup-status').textContent = e.message; }); } return; }
-  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label>`).join('')
+  // The folder button sits left of each switch, so both switches stay aligned.
+  const rulesBtn = s.rulesFolder && window.desktop ? `<button class="loc icon" type="button" data-open="${esc(s.rulesFolder)}" title="Open ${esc(s.rulesFolder)}" aria-label="Open the global rules folder">${FOLDER_ICON}</button>` : '';
+  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<div class="row" style="align-items:center;gap:6px">${rulesBtn}<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label></div>`).join('')
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
   $('#drawer').style.setProperty('--agents', String(agents.length || 1));
@@ -1101,7 +1105,7 @@ function filterSetup(agent) {
   for (const g of col.querySelectorAll('[data-group]')) g.hidden = !g.querySelector('tr[data-text]:not([hidden])');
   col.querySelector('[data-none]').hidden = !!col.querySelector('tr[data-text]:not([hidden])');
 }
-$('#setup-items').onclick = (e) => { const b = e.target.closest('[data-open]'); if (b) window.desktop?.openFolder(b.dataset.open); };
+$('#rule-switches').onclick = $('#setup-items').onclick = (e) => { const b = e.target.closest('[data-open]'); if (b) window.desktop?.openFolder(b.dataset.open); };
 $('#setup-items').oninput = (e) => {
   const agent = e.target.dataset.search;
   if (agent === undefined) return;

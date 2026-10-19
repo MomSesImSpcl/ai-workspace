@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
+import { claudeHome } from './adapters/claude-code.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
@@ -175,7 +176,7 @@ function agentSetupView() {
   const setup = getAgentSetup();
   const inventory = setup.inventory ?? {};
   const states = Object.fromEntries(SETUP_ROLES.map((role) => [role, Object.fromEntries(Object.entries(inventory).map(([agent, items]) => [agent, Object.fromEntries(items.map((i) => [i.id, stateOf(setup, role, agent, i.id)]))]))]));
-  return { inventory, states, roles: SETUP_ROLES, ruleRoles: RULE_ROLES, globalRules: Object.fromEntries(RULE_ROLES.map((r) => [r, setup.globalRules?.[r] ?? false])) };
+  return { inventory, states, roles: SETUP_ROLES, ruleRoles: RULE_ROLES, rulesFolder: claudeHome(), globalRules: Object.fromEntries(RULE_ROLES.map((r) => [r, setup.globalRules?.[r] ?? false])) };
 }
 
 async function route(req: IncomingMessage, url: URL): Promise<unknown> {

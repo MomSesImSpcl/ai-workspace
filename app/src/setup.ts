@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
 import { ORCHESTRATION, type Session } from './sessions.ts';
 
@@ -12,6 +12,16 @@ export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: '
 // `path` is the item's folder and `parts` the things it switches together, each with its folder, when known.
 export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string; path?: string; parts?: { name: string; path: string }[] }
 export type ItemState = 'on' | 'decide' | 'off';
+// The folder of a server's program when its command line starts with an absolute path to an existing file
+// (the path may contain spaces, so each longer prefix is tried); a bare command or a URL has none.
+export function commandFolder(command: string): string | undefined {
+  const words = command.trim().replace(/^"([^"]+)"/, '$1').split(' ');
+  for (let n = 1; n <= words.length; n++) {
+    const p = words.slice(0, n).join(' ');
+    if (isAbsolute(p) && existsSync(p) && statSync(p).isFile()) return dirname(p);
+  }
+  return undefined;
+}
 export const SETUP_ROLES = [ORCHESTRATION, 'Implementation']; // roles whose agent runs with a chosen setup
 export const RULE_ROLES = [ORCHESTRATION, 'Implementation']; // the global-rules switch per role
 
