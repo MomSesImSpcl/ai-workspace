@@ -1,7 +1,7 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home, listProjects, registerProject, type Project } from './store.ts';
 
@@ -21,6 +21,9 @@ function git(cwd: string, args: string[]): string {
   if (r.status !== 0) throw new Error(`git ${args[0]} failed in ${cwd}: ${(r.stderr || r.error?.message || '').trim()}`);
   return r.stdout.trim();
 }
+
+/** A folder's real path, lower-cased since Windows paths compare case-insensitively. */
+const real = (dir: string) => realpathSync.native(dir).toLowerCase();
 
 /** Same folder, compared case-insensitively since Windows paths are. */
 const same = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
@@ -71,12 +74,16 @@ const worktreesDir = (project: Project) => join(home(), 'worktrees', project.id)
  */
 export function listWorktrees(project: Project): Worktree[] {
   if (!isAppProject(project)) return [];
-  const own = resolve(worktreesDir(project)).toLowerCase();
+  // Git reports real paths; the storage path can be spelled otherwise (Windows short names, macOS /var ->
+  // /private/var), so both sides are compared as real paths and the result keeps the storage spelling.
+  const dir = worktreesDir(project);
+  if (!existsSync(dir)) return [];
+  const own = real(dir) + sep;
   const out: Worktree[] = [];
   let path: string | undefined;
   for (const line of git(project.root, ['worktree', 'list', '--porcelain']).split('\n')) {
-    if (line.startsWith('worktree ')) path = resolve(line.slice('worktree '.length).trim());
-    else if (line.startsWith('branch refs/heads/') && path && path.toLowerCase().startsWith(own) && existsSync(path)) out.push({ path, branch: line.slice('branch refs/heads/'.length).trim(), ready: true });
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length).trim();
+    else if (line.startsWith('branch refs/heads/') && path && existsSync(path) && real(path).startsWith(own)) out.push({ path: join(dir, basename(path)), branch: line.slice('branch refs/heads/'.length).trim(), ready: true });
   }
   return out;
 }
