@@ -275,6 +275,9 @@
   .agent-col tbody:first-of-type tr.group th { border-top: 0; padding-top: 6px; }
   .agent-col td { padding: 3px 4px 3px 0; vertical-align: middle; }
   .agent-col .parts { opacity: .8; }
+  /* The column titles stay under the agent's name; a shadow draws their line, since borders on sticky cells scroll away. */
+  .agent-col thead th { position: sticky; top: var(--head-h, 0); z-index: 1; padding: 4px 0 6px; background: var(--panel); box-shadow: inset 0 -1px var(--hairline); }
+  .agent-col td:first-child { font-size: 13px; color: var(--text); }
   .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
   .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
   /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
@@ -1079,6 +1082,7 @@ function renderAgentSetup() {
     ${groups(agent, items)}</table><p class="meta" data-none hidden>No item matches.</p></div>`).join('')
     : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
   for (const [agent] of agents) filterSetup(agent);
+  for (const col of $$('.agent-col')) col.style.setProperty('--head-h', `${col.querySelector('.agent-head').offsetHeight}px`);
 }
 // Search keeps the groups: rows that do not match are hidden, and so is a group left empty.
 function filterSetup(agent) {
