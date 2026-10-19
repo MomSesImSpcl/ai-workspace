@@ -11,3 +11,5 @@
 **Known merge point:** branch `claude/settings-page-cleanup-0cfca2` also edits `AGENTS.md` step 5 (UI style guide link); expect a small conflict, keep both sentences.
 
 **Branch:** `claude/trusting-mclaren-7a0c41`; commit: this entry's commit.
+
+**Update (same day, user decision):** coverage changed from proportional to every named declaration at file, class or type level (functions, methods, classes, types, members, module-level constants and variables, private ones too) plus a one-line file header; locals skipped; each comment must add searchable words beyond the name; depth by weight; larger files accepted. codedoc-005 rewritten, codedoc-011 and 012 and the non-goals adjusted, `docs/CODE_DOCS.md` updated. Language-specific rules are expected with documentation indexing.

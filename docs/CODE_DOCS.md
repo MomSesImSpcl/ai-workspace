@@ -2,7 +2,7 @@
 
 Read this before you create or change code or its documentation. It is the agent-facing form of [code-documentation](features/code-documentation/SPEC.md) (codedoc-001–011); the spec governs where they differ. Apply it to new and changed code now, as if [documentation indexing](features/code-index/SPEC.md#724-documentation-indexing-and-code-linking) (code-index-030–039) already existed, so the index can use it once it is built. Existing code you do not touch waits for the retroactive pass (codedoc-012).
 
-Goal: accurate retrieval and maintainability, not comment volume. Use the project's own conventions; in this repository that is `/** … */` above TypeScript/JavaScript symbols, `//` for a one-line why, and Markdown in `docs/`.
+Goal: accurate retrieval (finding code by what it does) and maintainability. Use the project's own conventions; in this repository that is `/** … */` above TypeScript/JavaScript symbols, `//` for a one-line why, and Markdown in `docs/`.
 
 ## What to write
 
@@ -10,7 +10,9 @@ Goal: accurate retrieval and maintainability, not comment volume. Use the projec
 - **Searchable words:** concrete domain terms and useful synonyms, so "how does the workspace choose an agent?" finds `agentChoice` in `app/src/turn.ts`.
 - **Resolvable links:** repository-relative paths, exact symbol names and stable anchors (for example `See: docs/features/sessions/SPEC.md`, `` `runSetup` in `app/src/setup.ts` ``). Not "handled elsewhere". Never invent a symbol or link.
 - **Status where it matters:** mark proposed, deprecated, unverified or planned. Specs say what is intended, comments what the code does, ADRs why, tests prove it; keep them apart.
-- **Proportional:** detail for complex, reused, public, risky or non-obvious code; trivial private helpers usually get nothing. A short accurate paragraph beats a template.
+- **Coverage:** document every named declaration at file, class or type level: functions and methods, classes, interfaces and types, members and fields, exported or module-level constants and variables, private ones too. Start each file with a one-line header saying what the module is for. Skip local variables inside function bodies; add a `//` why only where code is non-obvious.
+- **Every comment adds search words:** domain terms, synonyms, owning feature or related symbols the name does not already give. `/** The session id. */` on `sessionId` adds nothing; "Chat session this approval belongs to; key in the sessions store" does.
+- **Depth by weight:** a simple symbol gets one line; a complex, reused, public or risky one gets the full contract below. A short accurate paragraph beats a template.
 - **Truthful:** no invented rationale, guarantees, test claims or performance claims. If you do not know why, say so or leave it out. When observed and intended behavior differ, write both.
 
 A significant symbol gets, where it applies: purpose (one or two sentences with domain terms), contract not visible from types, reasoning (link the ADR if there is one), relationships (owning feature, verified links to docs, callers, config or tests), an example only if use is easy to get wrong, and status/limits.
