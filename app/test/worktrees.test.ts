@@ -89,8 +89,8 @@ test('a session works in its own worktree from the first turn; its tasks share i
 
 test('a new worktree takes the name the user gives it; empty, invalid and taken names are refused', async () => {
   const chat = (worktree: { name?: string; path?: string }) => createSession('P', 'Chat', { integration: 'claude-code' }, worktree);
-  assert.throws(() => chat({ name: ' ' }), /Enter a name for the new worktree/);
-  for (const bad of ['-x', 'a b', 'a/b', 'a..b', 'x.lock', 'a'.repeat(61)]) assert.throws(() => chat({ name: bad }), /not a valid worktree name/, bad);
+  assert.throws(() => chat({ name: ' ' }), /Enter a name for the new branch/);
+  for (const bad of ['-x', 'a b', 'a/b', 'a..b', 'x.lock', 'a'.repeat(61)]) assert.throws(() => chat({ name: bad }), /not a valid branch name/, bad);
   assert.throws(() => chat({ name: 'main' }), /already exists/); // an existing branch
   const s = chat({ name: 'fix-login' });
   assert.equal(s.worktree!.branch, 'fix-login');

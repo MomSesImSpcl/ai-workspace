@@ -138,6 +138,8 @@
   .chat-tokens { white-space: nowrap; }
   .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
   .send-row #foot-status { flex: 1; min-width: 0; }
+  .worktree-head { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--t); }
+  .worktree-head:hover, .worktree-head:focus-visible { color: var(--text); }
   .worktree-pick { display: flex; gap: 6px; min-width: 0; flex: 0 1 360px; }
   .worktree-pick[hidden], .worktree-pick [hidden] { display: none; }
   .worktree-pick select, .worktree-pick input { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
@@ -345,6 +347,7 @@
       <div class="menu" id="session-menu" role="menu" hidden>
         <button role="menuitem" data-mact="pin">Pin</button>
         <button role="menuitem" data-mact="rename">Rename</button>
+        <button role="menuitem" data-mact="folder">Open in folder</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
       </div>
@@ -378,7 +381,7 @@
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
         <!-- The permission mode of the tasks this chat starts (ADR 0011), next to Send; layout only here and in renderCap(). -->
-        <div class="row send-row"><span class="worktree-pick" id="worktree-pick" hidden><select id="worktree" aria-label="Worktree" title="Where this session works: a new worktree and branch, or an existing one to continue (for example after a cache went cold)"></select><input id="worktree-name" aria-label="Name of the new worktree" placeholder="Worktree name" maxlength="60" title="Also the branch name: letters, digits, '.', '_' and '-'"></span><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
+        <div class="row send-row"><span class="worktree-pick" id="worktree-pick" hidden><select id="worktree" aria-label="Branch" title="Where this session works: a new branch in its own worktree folder, or an existing branch to continue (for example after a cache went cold)"></select><input id="worktree-name" aria-label="Name of the new branch" placeholder="Branch name" maxlength="60" title="Letters, digits, '.', '_' and '-'; also the name of its worktree folder"></span><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
         <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
@@ -693,17 +696,18 @@ function renderPickers(s, force = false) {
   $('#worktree-pick').hidden = !choices;
   if (choices) {
     const picked = $('#worktree').value || 'new';
-    $('#worktree').innerHTML = option('new', 'New worktree', picked === 'new')
+    $('#worktree').innerHTML = option('new', 'New branch', picked === 'new')
       + choices.map((w) => option(w.path, `${w.branch}${w.title ? ` · ${w.title}` : ''}`, picked === w.path)).join('');
     $('#worktree-name').hidden = $('#worktree').value !== 'new';
   }
 }
 $('#worktree').onchange = () => { $('#worktree-name').hidden = $('#worktree').value !== 'new'; $('#new-error').textContent = ''; };
+$('#worktree-name').oninput = () => $('#worktree-name').setCustomValidity('');
 // The same rule as `planWorktree` in app/src/worktrees.ts, so a bad name is caught before anything is sent.
 function worktreeNameError(name) {
-  if (!name) return 'Enter a name for the new worktree.';
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/.test(name) || name.endsWith('.lock') || name.includes('..')) return `"${name}" is not a valid worktree name: use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).`;
-  if (state.worktreeChoices?.some((w) => w.branch === name)) return `A worktree named "${name}" already exists: pick it from the list to continue it.`;
+  if (!name) return 'Enter a name for the new branch.';
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/.test(name) || name.endsWith('.lock') || name.includes('..')) return 'Use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).';
+  if (state.worktreeChoices?.some((w) => w.branch === name)) return `"${name}" already exists: pick it from the list to continue it.`;
   return '';
 }
 
@@ -712,11 +716,12 @@ function worktreeNameError(name) {
 function worktreeGroups(list) {
   const groups = new Map();
   for (const s of list) {
-    const key = s.worktree?.branch ?? '';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
+    const key = s.worktree?.path ?? '';
+    if (!groups.has(key)) groups.set(key, { branch: s.worktree?.branch, rows: [] });
+    groups.get(key).rows.push(s);
   }
-  return [...groups].map(([branch, rows]) => `<div class="list-head"><h2 class="eyebrow worktree-head" style="margin:0" title="${esc(branch ? `Worktree and branch ${branch}` : 'Sessions from before worktrees, in the project folder')}">${esc(branch || 'Project folder')}</h2></div>${sessionRows(rows, 'project')}`).join('');
+  // Each heading opens its worktree folder (the project folder for sessions from before worktrees).
+  return [...groups].map(([path, g]) => `<div class="list-head"><button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}" title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button></div>${sessionRows(g.rows, 'project')}`).join('');
 }
 
 function renderSessions() {
@@ -1275,6 +1280,8 @@ async function menuAction(act, id) {
   const s = menuItem('session', id);
   if (!s) return;
   if (act === 'pin') return sessionAction('pin', { pinned: s.pinOrder === undefined }, id);
+  // Where the session's agent works: its worktree, else its project folder or, for a global session, the workspace folder.
+  if (act === 'folder') return void window.desktop?.openFolder(s.worktree?.path ?? (s.projectId ? state.projects.find((p) => p.id === s.projectId)?.root : state.workspaceRoot));
   if (act === 'rename') {
     if (state.session !== id) { state.session = id; await loadSessions(); }
     state.renaming = true;
@@ -1309,6 +1316,8 @@ document.addEventListener('click', async (e) => {
     try { const p = await api('/api/projects', { path: addFolder.dataset.addFolder }); await load(); return selectProject(p.id); }
     catch (err) { return void ($('#project-error').textContent = err.message); }
   }
+  const folder = e.target.closest('[data-open-folder]');
+  if (folder) return void (folder.dataset.openFolder && window.desktop?.openFolder(folder.dataset.openFolder));
   const item = e.target.closest('[data-mact]');
   if (item && state.menu?.kind === 'project') return projectMenuAction(item.dataset.mact, state.menu.id);
   if (item) return menuAction(item.dataset.mact, state.menu?.id);
@@ -1396,7 +1405,8 @@ $('#new').onsubmit = async (e) => {
       else {
         const name = $('#worktree-name').value.trim();
         const bad = worktreeNameError(name);
-        if (bad) { $('#worktree-name').focus(); throw new Error(bad); }
+        // Shown like the browser's own "fill out this field" note on an empty message.
+        if (bad) { $('#worktree-name').setCustomValidity(bad); $('#worktree-name').reportValidity(); return; }
         fresh.worktreeName = name;
       }
     }

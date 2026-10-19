@@ -123,7 +123,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     const projectId = b.global === true ? GLOBAL : text(b.projectId, 'projectId');
     // In the app project every new chat names a new worktree or continues one (selfdev-001).
     const choice = { name: typeof b.worktreeName === 'string' ? b.worktreeName : undefined, path: typeof b.worktree === 'string' ? b.worktree : undefined };
-    if (projectId !== GLOBAL && isAppProject(getProject(projectId)) && choice.name === undefined && !choice.path) throw new HttpError(400, 'Enter a name for the new worktree.');
+    if (projectId !== GLOBAL && isAppProject(getProject(projectId)) && choice.name === undefined && !choice.path) throw new HttpError(400, 'Enter a name for the new branch.');
     let s: Session;
     try { s = createSession(projectId, role, { integration: config.integration, model: config.model }, choice); } catch (e) { throw new HttpError(400, (e as Error).message); }
     s.effort = config.effort;

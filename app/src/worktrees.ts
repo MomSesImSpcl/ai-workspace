@@ -103,10 +103,10 @@ export function planWorktree(project: Project, sessionId: string, choice: Worktr
   }
   if (choice.name === undefined) return { path: join(worktreesDir(project), sessionId), branch: `aiws/${sessionId}` };
   const name = choice.name.trim();
-  if (!name) throw new Error('Enter a name for the new worktree.');
-  if (!WORKTREE_NAME.test(name) || name.endsWith('.lock') || name.includes('..')) throw new Error(`"${name}" is not a valid worktree name: use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).`);
+  if (!name) throw new Error('Enter a name for the new branch.');
+  if (!WORKTREE_NAME.test(name) || name.endsWith('.lock') || name.includes('..')) throw new Error(`"${name}" is not a valid branch name: use letters, digits, ".", "_" and "-", starting with a letter or digit (at most 60 characters).`);
   const path = join(worktreesDir(project), name);
-  if (existsSync(path) || branchExists(project.root, name)) throw new Error(`A branch or worktree named "${name}" already exists: pick another name, or continue it from the list.`);
+  if (existsSync(path) || branchExists(project.root, name)) throw new Error(`A branch named "${name}" already exists: pick another name, or continue it from the list.`);
   return { path, branch: name };
 }
 
