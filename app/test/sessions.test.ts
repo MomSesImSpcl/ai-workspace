@@ -44,13 +44,16 @@ test('a turn streams text and activity, records usage and ends done; the vendor 
     say({ type: 'activity-done', id: 'a1' });
     say({ type: 'text', text: 'Hel' });
     say({ type: 'text', text: 'lo' });
+    say({ type: 'activity', id: 'a2', label: 'Reading `b.txt`' });
+    say({ type: 'activity-done', id: 'a2' });
+    say({ type: 'text', text: 'Done.' });
     say({ type: 'usage', usage: { inputTokens: 10, outputTokens: 2 } });
     return { vendorSessionId: 'v1' };
   }));
   const [t] = turns(readEvents(s.id), false);
   assert.equal(t.state, 'done');
-  assert.equal(t.text, 'Hello');
-  assert.equal(t.activity.length, 1);
+  assert.equal(t.text, 'Hello\n\nDone.'); // pieces of one run join; a run after a tool step is a new paragraph
+  assert.equal(t.activity.length, 2);
   assert.equal(t.usage.inputTokens, 10);
   assert.equal(t.marker, undefined);
   assert.equal(loadSession(s.id).vendorSessionId, 'v1');

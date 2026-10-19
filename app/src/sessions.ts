@@ -411,14 +411,18 @@ const zero = (): Usage => ({ inputTokens: 0, outputTokens: 0 });
 // (app or computer shutdown, crash).
 export function turns(events: SessionEvent[], running: boolean): Turn[] {
   const out: Turn[] = [];
+  let prev: SessionEvent | undefined;
   for (const e of events) {
+    const before = prev;
+    prev = e;
     if (e.type === 'user') {
       out.push({ n: e.turn, user: e.text, resume: e.resume, text: '', activity: [], approvals: [], notices: [], tasks: [], relays: [], state: 'working', usage: zero(), startedAt: e.at });
       continue;
     }
     const t = out.findLast((x) => x.n === e.turn);
     if (!t) continue;
-    if (e.type === 'text') t.text += e.text;
+    // Text after a tool step or other event starts a new paragraph; consecutive text events are pieces of one run.
+    if (e.type === 'text') t.text += (t.text && e.text && before?.type !== 'text' ? '\n\n' : '') + e.text;
     else if (e.type === 'notice') t.notices.push({ text: e.text, blocked: e.blocked });
     else if (e.type === 'switch') t.switchedTo = { from: e.from, to: e.to, model: e.model };
     else if (e.type === 'init') Object.assign(t, { model: e.model, permissionMode: e.permissionMode, ruleFiles: e.ruleFiles, plugins: e.plugins, mcp: e.mcp, skills: e.skills });

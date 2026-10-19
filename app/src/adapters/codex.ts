@@ -302,11 +302,12 @@ export class CodexProcess implements AgentProcess {
         if (p.threadId !== undefined && p.threadId !== threadId) return;
         if (m.method === 'turn/started') turnId = (p.turn as { id: string }).id;
         else if (m.method === 'item/agentMessage/delta') {
+          if (text && !streamed.has(String(p.itemId))) text += '\n\n'; // a new message right after another
           text += String(p.delta ?? '');
           streamed.add(String(p.itemId));
         } else if (m.method === 'item/started' || m.method === 'item/completed') {
           const item = p.item as Item;
-          if (item.type === 'agentMessage' && m.method === 'item/completed' && !streamed.has(item.id) && item.text) text += item.text;
+          if (item.type === 'agentMessage' && m.method === 'item/completed' && !streamed.has(item.id) && item.text) text += (text ? '\n\n' : '') + item.text;
           const a = codexActivity(item);
           if (!a) return;
           flush();
