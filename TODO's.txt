@@ -1,6 +1,5 @@
 The orchestrator should determine the right model + effort level for the task (maybe with optional popup for the user to agree)
 The effort level under the chat should apply to the orchestrator and maybe the orchestrator should also suggest an effort level for itself during context aggregation (maybe also an option to set it itslef), should probably only use effort level for the currently selected model, otherwise the context swithc would be to expensive
-Max token use can probably go, since we never used it and i honestly dont see a use case for it, especially since other apps like the claude app and codex also dont offer it
 Maybe also measure token safe for plugins like caveman, ponytail, rtk, that are meant to always stay on. Maybe even have a build in feature in the workspace that allows for quick measuring of plugins
 Check if its worth to use the 5 min token cache instead of the 1h one (dependant on model and subscription, if decided, maybe needs onboarding step) (also needs to be tested if that can be done)
 The Orchestrator needs to have a list of the implementors available tools, how do we get those. And once we have those maybe we could even decrease the token consumption with custom descriptors (for cases where the description is to long, needs to be tested if thats worth doing)
@@ -8,14 +7,18 @@ Also mention in the token consumtion if it was a cold or a warm start
 
 Add the UI styling md to the repo and mention it in the workflow
 Use the same token usage breakdown as the clode code app (when you click on the usage, not hover)
-Maybe make the on hover box rounded
-Settings menu cleanup
-Make the settings window "absolute", it shouldnt share layout space with the other ui, meaning it on top of everything else
+Maybe make the on hover box rounded (Should be a styling rule)
 
+
+Extendable documentation rulsets, so indexing tools can use code cosumentation to find relevant secions by their documentation and not just by the member names. (User should be able to instrcut the agent to write documentation based on their specific rulset, that is also language dependent)
+Maybe also add a per file extension documentation ruleset to the user settings so a user can add ruleset based on file endings
+Once indexing is implemented, retroactively go through all code sections and make sure to document everything based on the current rulset. (Documentation rulset feature needs to be implementet before that)
+Implementor code ducumentation should probably be a hardcoded feature (maybe with an extendeble rulset), since thats a major point of this workspace (including the indexing functionallity)
 The workspace needs a name in the taks manager its called "Electron"
 Remove the border on the drop downs under the chat window so it looks the same as in the claude app. Should have a fixed widht so the position doesnt move when the text changes
 
-Maybe add a context menu action for sessions to keep them warm, in case the user switches constantly between sessions? Needs to be agent dependant and checked how that agent handles its cache
+Wehen the orchestrator an implementor are the same agent, is it possible to have everysthingf run thorugh 1 cli, still use the task system but that way we could reduce the call delay between them if that is possible (should still repsect the permission system if that is the case)
+Maybe add a context menu action for sessions to keep them warm, in case the user switches constantly between sessions? Needs to be agent dependant and checked how that agent handles its cache. Maybe a colored border on warm session + a visible timer a few min before the session goes cold
 Top right over the chat window, sometimes show a orange triangle, on hover says that some connectors are not active, what does that mean?
 Let the orchestrator create a concise title for the session based on the first prompt
 Text buffer (or whatever that is called, so in long chats not everything is loded into memory)
@@ -24,105 +27,7 @@ Add color scheme picker in settings (maybe auto detect OS color scheme on first 
 On first release add About section + topics update check on every merge (already exists for the readme)
 ALso add currently implemented features on every release to the readme
 Sometimes the App just pops up into the foregrouund, randomly (happens rarely but still annoying)
-Add a TODO list feature into each workspace's project (Simple txt file for quick user edits)
+Add a TODO list feature into each workspace's project (Simple txt file for quick user edits). Also add simple markdown styling features that can be activates through buttons. Maybe with a separate chat in that todo tab, so an AI can sort the todos into categories and check for duplicats, it wont rewrite them, just as a quick sort tool (Should be optional, the user can directly edit the todo list and also add something through this ai chat box)
 Maybe a periodic version control update check, to get notified in a project if a repo has something to pull? (Pull should still be manual)
 Add a hover tooltip to "Workspace Storage" in settings that says what the storage is/contains (Sessions, tasks, etc.)
-
-
-
-
-UI Design & Styling Guidelines
-
-Visual reference: Claude Code desktop (dark theme).
-
-These guidelines establish a consistent visual foundation, not a strict design specification. Use the reference as inspiration and refine individual elements as needed. Usability, readability, and user preferences take precedence.
-
-General Style
-
-Minimalist, modern, professional developer-tool aesthetic.
-
-Dark, neutral surfaces with subtle contrast and restrained accents.
-
-Content-focused design with minimal visual clutter.
-
-Prefer flat surfaces over gradients, heavy shadows, or decorative effects.
-
-Keep navigation compact while allowing the main content room to breathe.
-
-Colors
-
-Suggested starting palette (adjustable):
-
-Main background: #151515
-
-Sidebar: #111111
-
-Elevated surfaces/inputs: #202020
-
-Hover/selected surfaces: #292929
-
-Borders/dividers: #303030
-
-Primary text: #F2F2F2
-
-Secondary text: #A0A0A0
-
-Muted text: #737373
-
-Use accent colors sparingly: blue for active states, green for success, red for errors, and orange for warnings. Colors are examples, not fixed requirements.
-
-Typography
-
-Neutral sans-serif (Inter or system UI); monospace for code and technical content.
-
-Body: ~13–14px; headings: ~14–16px; metadata: ~11–12px.
-
-Prefer regular/medium weights, using semibold selectively.
-
-Establish hierarchy through contrast, weight, and spacing rather than oversized text.
-
-Layout & Components
-
-Suggested spacing scale: 4/8/12/16/24px.
-
-Subtle 1px borders and moderately rounded corners (~6–10px).
-
-Compact toolbars, sidebars, inputs, and navigation.
-
-Comfortable reading width and spacing in content areas.
-
-Selected items should be distinguishable without overly bright backgrounds.
-
-Prefer simple outline icons (~16–18px).
-
-Use collapsible panels and progressive disclosure for secondary information.
-
-Keep scrollbars unobtrusive.
-
-Interaction & Accessibility
-
-Subtle hover/focus transitions (~120–180ms).
-
-Avoid unnecessary animations or distracting visual effects.
-
-Provide clear loading, disabled, selected, and error states.
-
-Maintain sufficient text contrast, visible keyboard focus, and responsive layouts.
-
-Respect reduced-motion preferences.
-
-Consistency & Iteration
-
-Reuse shared design tokens and components wherever practical.
-
-Follow established patterns unless there is a clear reason to improve them.
-
-Styling values are adjustable defaults, not mandatory constraints.
-
-User-approved styling decisions override these guidelines.
-
-Refine individual components without unnecessarily redesigning unrelated UI.
-
-New components should complement the existing interface without requiring identical styling.
-
-Core principle: Maintain a cohesive, minimalist visual identity while allowing continuous, targeted refinement based on functionality and user feedback.
+Give sessions a GUID or a hashed title for faster cross project session searches
