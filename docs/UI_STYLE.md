@@ -15,6 +15,7 @@ Read this before changing the app's interface (`app/src/ui.html`). It sets a sha
 
 The `:root` tokens in `ui.html` are the source of truth; reuse them instead of new literal values. They follow the Claude app's warm dark palette: background `--bg` `#262624`, panels `--panel` `#1f1e1d`, rail `--rail` `#1a1918`, fields `--field` `#30302e`, text `--text` / `--text-dim` / `--text-muted`, accent `--accent` `#d97757`, dividers `--hairline`.
 
+- **Accent:** use only the `--accent*` tokens, never a literal accent colour, so a future accent setting can change it in one place.
 - **Type:** `--font-body` (Inter or the system UI font), `--font-mono` for code, paths and ids. Body 13 px, headings 13 to 16 px, metadata (`.meta`) 11 px. Regular and medium weights; semibold only for titles.
 - **Spacing:** 4, 8, 12, 16, 24 px.
 - **Shape:** 1 px borders in `--hairline`; corners `--radius-sm` (7 px) for controls, `--radius` (10 px) for cards.
