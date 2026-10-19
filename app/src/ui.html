@@ -1055,7 +1055,7 @@ async function capChanged() {
 }
 $('#cap-on').onchange = capChanged;
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
-const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementation' };
+const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementer' };
 // The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.
 const ROLE_INSTRUCTIONS = { Chat: 'chatInstructions', Orchestration: 'orchestratorInstructions', Implementation: 'implementationInstructions' };
 const INSTRUCTION_HINTS = {
@@ -1071,7 +1071,7 @@ function renderAgentSetup() {
   if (!s) { if (!state.agentSetupLoading) { state.agentSetupLoading = true; api('/api/agent-setup').then((v) => { state.agentSetup = v; renderAgentSetup(); }, (e) => { $('#setup-status').textContent = e.message; }); } return; }
   // The folder button sits left of each switch, so both switches stay aligned.
   const rulesBtn = s.rulesFolder && window.desktop ? `<button class="loc icon" type="button" data-open="${esc(s.rulesFolder)}" title="Show ${esc(s.rulesFolder)}" aria-label="Show the global rules file">${FOLDER_ICON}</button>` : '';
-  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<div class="row" style="align-items:center;gap:6px">${rulesBtn}<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label></div>`).join('')
+  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<div class="row" style="align-items:center;gap:6px">${rulesBtn}<label class="row" style="align-items:center;gap:6px" title="Your own rule file for the agent, for Claude Code ${esc(s.rulesFolder ?? '~/.claude/CLAUDE.md')}. Off: only the project's rule files and the workspace folder's AGENTS.md load."><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: Use global rules</label></div>`).join('')
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
   $('#drawer').style.setProperty('--agents', String(agents.length || 1));
@@ -1089,7 +1089,7 @@ function renderAgentSetup() {
     return list.length ? `<tbody data-group><tr class="group"><th colspan="${s.roles.length + 1}">${esc(title)}</th></tr>${list.map((i) => row(agent, i)).join('')}</tbody>` : '';
   }).join('');
   $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><div class="agent-head"><b>${esc(agent)}</b>
-    <input type="search" data-search="${esc(agent)}" value="${esc(state.setupSearch?.[agent] ?? '')}" placeholder="Search ${esc(agent)}" aria-label="Search ${esc(agent)} items"></div>
+    <input type="search" data-search="${esc(agent)}" value="${esc(state.setupSearch?.[agent] ?? '')}" placeholder="Search ${esc(agent)} items" aria-label="Search ${esc(agent)} items"></div>
     <table class="meta" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr></thead>
     ${groups(agent, items)}</table><p class="meta" data-none hidden>No item matches.</p></div>`).join('')
     : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
