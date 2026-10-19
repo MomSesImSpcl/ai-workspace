@@ -901,6 +901,12 @@ function runHtml(t, r, i, count, open, permissions) {
   </details>`;
 }
 
+// The Implementer's default mode for new tasks; the select and each option show the mode's description on hover.
+function permissionField(a) {
+  const modes = state.agents[a.integration]?.modes ?? [];
+  const current = modes.find((m) => m.id === (a.permissionMode ?? 'acceptEdits')) ?? modes[0];
+  return `<label class="field">Default permission<select name="permissionMode" title="${esc(`${current?.hint ? `${current.hint}. ` : ''}The mode of new tasks; a chat can change it for its own tasks.`)}">${modes.map((m) => `<option value="${esc(m.id)}" title="${esc(m.hint ?? '')}" ${m === current ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
+}
 function renderDrawer() {
   if (state.tool === 'settings') {
     const tab = pref.get('settingsTab', 'general');
@@ -922,7 +928,7 @@ function renderDrawer() {
         <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
         <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
         <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
-        ${role === 'Implementation' ? `<label class="field">Default permission<select name="permissionMode" title="The mode of new tasks; a chat can change it for its own tasks">${(state.agents[a.integration]?.modes ?? []).map((m) => option(m.id, m.label, m.id === (a.permissionMode ?? 'acceptEdits'))).join('')}</select></label>` : ''}</div>
+        ${role === 'Implementation' ? permissionField(a) : ''}</div>
         ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
         <span class="meta" data-saved role="status"></span></form>`;
     }).join('');
