@@ -328,7 +328,9 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(chat.id, 'args');
   args = await argsOf(chat.id);
-  assert.equal(flag(args, '--settings'), undefined);
+  // Its settings hold only the write guard (selfdev-002); Claude Code adds hooks from every source, so the user's stay.
+  assert.deepEqual(Object.keys(JSON.parse(flag(args, '--settings')!)), ['hooks']);
+  assert.match(JSON.stringify(JSON.parse(flag(args, '--settings')!).hooks), /guard-hook\.ts/);
   assert.equal(flag(args, '--setting-sources'), undefined);
 });
 
