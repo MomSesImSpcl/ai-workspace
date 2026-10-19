@@ -20,7 +20,7 @@
     --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
     --radius-sm: 7px; --radius: 10px; --radius-lg: 14px;
     --t: 160ms cubic-bezier(.4,0,.2,1);
-    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 300px;
+    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 900px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
   * { box-sizing: border-box; }
@@ -58,11 +58,10 @@
   .pill { font-size: 11px; color: var(--text-dim); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
   .pill .dot { margin-right: 6px; }
 
-  .body { display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
-  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) auto 48px; }
+  .body { position: relative; display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) 48px; min-height: 0; }
+  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) 48px; }
   .app[data-sidebar=collapsed] .sessions-col { visibility: hidden; }
-  /* Fixed columns: a hidden drawer leaves the grid, which would shift the rail off the edge. */
-  .body > .drawer { grid-column: 4; } .body > .rail { grid-column: 5; }
+  .body > .rail { grid-column: 4; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
   /* Chat column: the project's sessions above the open session, full height. */
@@ -251,7 +250,15 @@
   .error { color: var(--red); font-size: 12px; min-height: 1em; margin: 0; }
 
   /* Drawer and utility rail */
-  .drawer { width: var(--drawer-w); overflow: auto; background: var(--panel); border-left: 1px solid var(--hairline); padding: 16px; }
+  /* Drawer floats over everything right of the sessions column (desktop-001); the backdrop fills what it leaves uncovered. */
+  .backdrop { position: absolute; top: 0; bottom: 0; left: var(--sessions-w); right: 48px; z-index: 5; background: rgba(0,0,0,.35); }
+  .drawer { position: absolute; top: 0; bottom: 0; right: 48px; z-index: 6; width: min(var(--drawer-w), calc(100% - var(--sessions-w) - 48px)); overflow: auto; background: var(--panel); border-left: 1px solid var(--hairline); box-shadow: 0 6px 24px rgba(0,0,0,.45); padding: 16px 20px; }
+  .app[data-sidebar=collapsed] .backdrop { left: 0; }
+  .app[data-sidebar=collapsed] .drawer { width: min(var(--drawer-w), calc(100% - 48px)); }
+  .tabs { display: flex; gap: 4px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
+  .tabs button { padding: 8px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-dim); cursor: pointer; }
+  .tabs button:hover { color: var(--text); }
+  .tabs button[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
   .drawer header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .drawer h2 { font-size: 13px; margin: 0; }
   .drawer form { display: grid; gap: 10px; }
@@ -268,8 +275,6 @@
   .rail button[aria-pressed=true] { background: var(--accent-dim); color: var(--accent); }
 
   @media (max-width: 1100px) { :root { --sidebar-w: 310px; } .split { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-  /* Narrow window: the drawer floats over the content instead of squeezing it. */
-  @media (max-width: 900px) { .body { position: relative; } .drawer { position: absolute; right: 48px; top: 0; bottom: 0; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.45); } }
 </style>
 </head>
 <body>
@@ -375,9 +380,16 @@
       </section>
     </main>
 
+    <div class="backdrop" id="backdrop" hidden></div>
     <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title">
       <header><h2 id="drawer-title"></h2><button class="icon-btn" id="close-drawer" aria-label="Close panel">✕</button></header>
       <div id="drawer-settings" hidden>
+        <div class="tabs" role="tablist" aria-label="Settings sections">
+          <button role="tab" id="stab-general" data-stab="general" aria-controls="spanel-general">General</button>
+          <button role="tab" id="stab-agents" data-stab="agents" aria-controls="spanel-agents">Agents</button>
+          <button role="tab" id="stab-setup" data-stab="setup" aria-controls="spanel-setup">Agent setup</button>
+        </div>
+        <div role="tabpanel" id="spanel-general" aria-labelledby="stab-general">
         <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
           <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
           <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
@@ -387,17 +399,22 @@
           <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div>
           <div class="row"><button class="btn small" id="export-storage" type="button">Export…</button><button class="btn small" id="import-storage" type="button">Import…</button></div>
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
+        </div>
+        <div role="tabpanel" id="spanel-agents" aria-labelledby="stab-agents">
         <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
         <div id="roles"></div>
         <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
         <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
         <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
+        </div>
+        <div role="tabpanel" id="spanel-setup" aria-labelledby="stab-setup">
         <!-- What orchestrator chats and tasks load (orchestrator-005, onboarding-010), switched for each run only. -->
-        <div style="display:grid;gap:6px;margin-top:18px"><b>Agent setup</b>
+        <div style="display:grid;gap:6px"><b>Agent setup</b>
           <p class="meta" style="margin:0">What orchestrator chats and tasks load. It is switched for each run only; your agents' own settings stay unchanged. <i>Always on</i>: every run of that role. <i>Orchestrator decides</i>: a task gets it when its goal needs it. <i>Off</i>: never. Applies from the next agent start.</p>
           <div id="rule-switches" style="display:grid;gap:4px"></div>
           <div class="row" style="align-items:center"><button class="btn small" id="list-setup" type="button">List again</button><span class="meta" id="setup-status" role="status"></span></div>
           <div id="setup-items" style="display:grid;gap:10px"></div></div>
+        </div>
       </div>
     </aside>
 
@@ -492,7 +509,7 @@ function setPage(page) {
 
 function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
-  $('#drawer').hidden = !state.tool;
+  $('#drawer').hidden = $('#backdrop').hidden = !state.tool;
   $('#drawer-settings').hidden = state.tool !== 'settings';
   $('#drawer-title').textContent = { settings: 'Settings' }[state.tool] ?? '';
   for (const b of $$('.rail button')) b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool));
@@ -853,6 +870,12 @@ function runHtml(t, r, i, count, open, permissions) {
 
 function renderDrawer() {
   if (state.tool === 'settings') {
+    const tab = pref.get('settingsTab', 'general');
+    for (const b of $$('[data-stab]')) {
+      b.setAttribute('aria-selected', String(b.dataset.stab === tab));
+      b.tabIndex = b.dataset.stab === tab ? 0 : -1;
+      $(`#spanel-${b.dataset.stab}`).hidden = b.dataset.stab !== tab;
+    }
     renderAgentSetup();
     if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
     $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
@@ -894,7 +917,16 @@ $('#toggle-sidebar').onclick = () => {
 };
 for (const b of $$('.nav button')) b.onclick = () => setPage(b.dataset.page);
 for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
-$('#close-drawer').onclick = () => setTool(state.tool);
+$('#close-drawer').onclick = $('#backdrop').onclick = () => setTool(state.tool);
+for (const b of $$('[data-stab]')) b.onclick = () => { pref.set('settingsTab', b.dataset.stab); renderDrawer(); };
+$('.tabs').onkeydown = (e) => {
+  const tabs = $$('[data-stab]'), i = tabs.indexOf(document.activeElement), step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (i < 0 || !step) return;
+  const next = tabs[(i + step + tabs.length) % tabs.length];
+  next.click(); next.focus();
+};
+// Escape closes Settings unless it is closing something on top of it first (a menu or a dialog).
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.tool && !e.defaultPrevented && !state.menu && !$('dialog[open]')) setTool(state.tool); });
 // A new session is created with its first message, so empty sessions do not pile up.
 const newSession = () => {
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
