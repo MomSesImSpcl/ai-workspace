@@ -286,7 +286,7 @@
   .agent-col thead th { position: sticky; top: var(--head-h, 0); z-index: 1; padding: 4px 0 6px; background: var(--panel); box-shadow: inset 0 -1px var(--hairline); }
   .agent-col td:first-child { font-size: 13px; color: var(--text); }
   .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
-  .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+  .role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
   /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
   .tabs { display: flex; justify-content: flex-end; gap: 4px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
   .tabs button { padding: 8px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-dim); cursor: pointer; }
@@ -647,7 +647,7 @@ function renderCap(s) {
 }
 // The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
 function taskModes(s) {
-  const mode = (s ? s.taskMode : state.draftMode) ?? 'acceptEdits';
+  const mode = (s ? s.taskMode : state.draftMode) ?? state.roles.Implementation?.permissionMode ?? 'acceptEdits';
   const modes = state.agents[state.roles.Implementation?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
   return { mode, list: modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }] };
 }
@@ -921,7 +921,8 @@ function renderDrawer() {
       return `<form class="role" data-role="${esc(role)}"><b>${esc(ROLE_NAMES[role] ?? role)}</b>
         <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
         <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
-        <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label></div>
+        <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
+        ${role === 'Implementation' ? `<label class="field">Default permission<select name="permissionMode" title="The mode of new tasks; a chat can change it for its own tasks">${(state.agents[a.integration]?.modes ?? []).map((m) => option(m.id, m.label, m.id === (a.permissionMode ?? 'acceptEdits'))).join('')}</select></label>` : ''}</div>
         ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
         <span class="meta" data-saved role="status"></span></form>`;
     }).join('');
@@ -1403,8 +1404,10 @@ $('#roles').onchange = async (e) => {
   const form = e.target.form, key = e.target.dataset.instr;
   if (!key) {
     // Another agent offers other models, another model other efforts: start again from the defaults.
-    if (e.target.name === 'integration') form.model.value = form.effort.value = '';
+    if (e.target.name === 'integration') { form.model.value = form.effort.value = ''; if (form.permissionMode) form.permissionMode.disabled = true; } // the old agent's mode does not apply
     if (e.target.name === 'model') form.effort.value = '';
+    const mode = e.target.name === 'permissionMode' && state.agents[form.integration.value]?.modes?.find((m) => m.id === e.target.value);
+    if (mode?.warn && !(await ask(`Make ${mode.label} the default for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) { renderDrawer(); return; }
     return form.requestSubmit();
   }
   try { state.settings = await api('/api/settings', { [key]: e.target.value }); form.querySelector('[data-saved]').textContent = 'Saved. Applies from the next agent start.'; }
@@ -1415,7 +1418,7 @@ $('#roles').onsubmit = async (e) => {
   const form = e.target;
   const f = new FormData(form);
   try {
-    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort') });
+    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort'), ...(f.has('permissionMode') ? { permissionMode: f.get('permissionMode') } : {}) });
     document.activeElement?.blur(); // so the render rebuilds the model and effort lists
     await load();
     renderDrawer();

@@ -390,11 +390,11 @@ export function claudeCatalog(): Catalog {
     modes: [
       { id: '', label: "Claude Code's settings", hint: 'Your own Claude Code settings decide' },
       { id: 'manual', label: 'Manual', hint: 'Always ask before making changes' },
-      { id: 'acceptEdits', label: 'Accept edits', hint: 'Automatically accept file edits in the project' },
-      { id: 'auto', label: 'Auto', hint: 'Claude handles permission decisions' },
-      { id: 'plan', label: 'Plan', hint: 'Create a plan before making changes' },
-      { id: 'dontAsk', label: "Don't ask", hint: 'Deny what is not allowed' },
-      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Skip every check', warn: true },
+      { id: 'acceptEdits', label: 'Edit project files', hint: 'Change files in the project without asking; commands and anything outside still ask' },
+      { id: 'auto', label: 'Auto', hint: "Claude Code's safety check decides each action" },
+      { id: 'dontAsk', label: "Don't ask", hint: 'Only what your allow rules permit; the rest is denied without asking' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Never ask, no limits', warn: true },
+      { id: 'plan', label: 'Plan', hint: 'Only read and plan; change nothing' },
     ],
   };
 }

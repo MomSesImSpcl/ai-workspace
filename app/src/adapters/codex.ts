@@ -355,7 +355,7 @@ interface CodexModel { slug: string; display_name?: string; visibility?: string;
 const CODEX_MODES = [
   { id: '', label: "Codex's settings", hint: 'Your own Codex settings decide' },
   { id: 'read-only', label: 'Read only', hint: 'Ask before anything else' },
-  { id: 'auto', label: 'Auto', hint: 'Edit the project, ask for more' },
+  { id: 'auto', label: 'Edit project files', hint: 'Change files in the project without asking; anything more still asks' },
   { id: 'full-access', label: 'Full access', hint: 'Never ask', warn: true },
 ];
 export function parseCodexModels(json: string, configured?: string): Catalog {

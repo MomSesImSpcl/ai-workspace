@@ -235,7 +235,10 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const entry = models.find((m) => m.id === (model ?? ''));
     if (model && !entry) throw new HttpError(400, `model must be one of ${models.map((m) => m.id || 'default').join(', ')}`);
     if (effort && !entry?.efforts?.includes(effort)) throw new HttpError(400, `effort must be one of ${entry?.efforts?.join(', ') || 'none for this model'}`);
-    setRole(b.role, { integration: b.integration, model, effort });
+    const modes = sessionAgents[b.integration]!.catalog().modes ?? [];
+    const permissionMode = typeof b.permissionMode === 'string' ? b.permissionMode : undefined;
+    if (permissionMode !== undefined && !modes.some((m) => m.id === permissionMode)) throw new HttpError(400, `permissionMode must be one of ${modes.map((m) => m.id || "'' (the agent's settings)").join(', ')}`);
+    setRole(b.role, { integration: b.integration, model, effort, ...(permissionMode !== undefined ? { permissionMode } : {}) });
     return getRoles();
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));

@@ -7,6 +7,7 @@ export interface Assignment {
   integration: string;
   model?: string;
   effort?: string; // unset: the agent's own default
+  permissionMode?: string; // tasks' default mode, an id of the agent's catalog `modes`; unset: the workspace default, '': the agent's settings
 }
 
 // In the order Settings shows them. A role saved earlier but no longer defined is ignored.
