@@ -1,0 +1,3 @@
+# Skills switch keeps plugin skills
+
+Found with the user (2026-10-19): switching "Standalone skills" off for Claude Code added `--disable-slash-commands`, which drops every skill, so an enabled plugin lost its skills (caveman: 22 skills to none in a real run). Fixed in `app/src/adapters/claude-code.ts`: the flag is used only when the role's global rules are on (standalone skills load only from the user source) and no plugin of the run has a `skills` folder. Standalone skills that are byte-identical copies of a plugin's `SKILL.md` are labelled as copies, matched by content, not name. [Details](DETAILS.md).

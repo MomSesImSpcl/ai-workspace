@@ -258,6 +258,10 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   const { setWorkspaceRoot } = await import('../src/store.ts');
   writeFileSync(join(root, '..', 'AGENTS.md'), 'Workspace rule: be kind.');
   setWorkspaceRoot(join(root, '..'));
+  // A standalone skill that is a copy of the plugin's own skill (same SKILL.md).
+  const pluginDir = join(root, '..', 'demo-plugin');
+  for (const d of [join(pluginDir, 'skills', 'tidy'), join(process.env.CLAUDE_CONFIG_DIR!, 'skills', 'tidy-copy'), join(process.env.CLAUDE_CONFIG_DIR!, 'skills', 'own')]) { mkdirSync(d, { recursive: true }); writeFileSync(join(d, 'SKILL.md'), d.endsWith('own') ? 'mine' : 'tidy up'); }
+  process.env.FAKE_PLUGIN_PATH = pluginDir;
   const argsOf = async (id: string) => { await runTurn(id); return JSON.parse(last(id).text) as string[]; };
   const flag = (args: string[], f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
   // The orchestrator: reading tools only, every listed item off, no global rules, the workspace's AGENTS.md added.
@@ -268,9 +272,10 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   assert.match(flag(args, '--disallowedTools')!, /mcp__claude_ai_github/);
   assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins['demo@market'], false);
   assert.equal(flag(args, '--setting-sources'), 'project,local');
-  assert.ok(args.includes('--disable-slash-commands') === false); // no standalone skills listed in this test's Claude home
+  assert.ok(!args.includes('--disable-slash-commands')); // global rules off: standalone skills do not load anyway
+  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.find((i) => i.kind === 'skills')!.parts!.map((p) => p.name).sort(), ['own', "tidy-copy (copy of the demo plugin's skill)"]);
   assert.match(flag(args, '--append-system-prompt')!, /workspace's own rules[\s\S]*be kind/);
-  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.slice(0, 3).map((i) => i.id), ['plugin:demo@market', 'mcp:claude.ai github', 'tool:Read']);
+  assert.deepEqual(getAgentSetup().inventory!['claude-code']!.slice(0, 3).map((i) => i.id), ['plugin:demo@market', 'mcp:claude.ai github', 'skills']);
   // A task: an item the orchestrator decides loads only when picked; an always-on item always; global rules per role.
   setItemState('Implementation', 'claude-code', 'plugin:demo@market', 'on');
   setGlobalRules('Implementation', true);
@@ -281,6 +286,10 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   assert.match(flag(args, '--system-prompt')!, /^You are a coding agent/); // its own system prompt is an item too
   assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins, undefined);
   assert.equal(flag(args, '--setting-sources'), undefined);
+  assert.ok(!args.includes('--disable-slash-commands')); // the plugin of this run keeps its skills
+  setItemState('Implementation', 'claude-code', 'plugin:demo@market', 'off');
+  assert.ok((await argsOf(createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['tool:Read'] }).id)).includes('--disable-slash-commands'));
+  setItemState('Implementation', 'claude-code', 'plugin:demo@market', 'on');
   const picked = createTask({ projectId: 'P', goal: 'args', role: 'Implementation', setup: ['mcp:claude.ai github', 'tool:Read'] });
   args = await argsOf(picked.id);
   assert.equal(flag(args, '--disallowedTools'), undefined);

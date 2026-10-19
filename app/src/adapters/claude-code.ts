@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,6 +136,9 @@ const CLAUDE_TOOLS: Record<string, string> = {
   EnterWorktree: 'Work in a git worktree', ExitWorktree: 'Leave a git worktree',
 };
 
+const subdirs = (dir: string) => { try { return readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return []; } };
+const readText = (file: string) => { try { return readFileSync(file, 'utf8'); } catch { return undefined; } };
+
 // What Claude Code loads besides its own prompt and tools (onboarding-010), read from its own CLI without a model
 // call: enabled plugins, MCP servers including claude.ai connectors, standalone skills as one item, the user's hooks.
 export function claudeInventory(root: string): SetupItem[] {
@@ -152,9 +156,14 @@ export function claudeInventory(root: string): SetupItem[] {
     const m = /^(.+?): (.+) - \S+ \w/.exec(line.trim());
     if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}`, path: commandFile(m[2]) });
   }
-  let skills: string[] = [];
-  try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
-  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}`, parts: skills.map((name) => ({ name, path: fileOr(join(claudeHome(), 'skills', name), 'SKILL.md') })) });
+  const skills = subdirs(join(claudeHome(), 'skills'));
+  // Some plugins also copy their skills into the user's skills folder; such a copy loads on its own, so it stays
+  // listed, marked by its identical SKILL.md rather than by its folder name.
+  const pluginSkills = new Map<string, string>();
+  for (const p of items.filter((i) => i.kind === 'plugin' && i.path)) for (const s of subdirs(join(p.path!, 'skills'))) pluginSkills.set(readText(join(p.path!, 'skills', s, 'SKILL.md')) ?? '', p.title);
+  pluginSkills.delete('');
+  const label = (name: string) => { const from = pluginSkills.get(readText(join(claudeHome(), 'skills', name, 'SKILL.md')) ?? ''); return from ? `${name} (copy of the ${from} plugin's skill)` : name; };
+  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map(label).join(', ')}`, parts: skills.map((name) => ({ name: label(name), path: fileOr(join(claudeHome(), 'skills', name), 'SKILL.md') })) });
   for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
   items.push(DELEGATE);
   items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
@@ -250,7 +259,9 @@ export class ClaudeProcess implements AgentProcess {
       for (const i of setup.items.filter((i) => !setup.on(i))) {
         if (i.kind === 'plugin') settings.enabledPlugins = { ...settings.enabledPlugins, [i.id.slice('plugin:'.length)]: false };
         else if (i.kind === 'mcp') { disallowed.push(`mcp__${i.title.replace(/[^\w-]/g, '_')}`); delete mcpServers[i.title]; }
-        else if (i.kind === 'skills') args.push('--disable-slash-commands');
+        // The flag drops every skill, also those of plugins and Claude Code's own. Standalone skills load only from
+        // the user source, which is left out when global rules are off, and a plugin of this run keeps its skills.
+        else if (i.kind === 'skills' && setup.globalRules && !setup.items.some((p) => p.kind === 'plugin' && setup.on(p) && p.path && existsSync(join(p.path, 'skills')))) args.push('--disable-slash-commands');
         else if (i.kind === 'hooks') delete settings.hooks; // shortcut: with global rules on, the user's hooks cannot be switched off for one run and stay on
       }
     }

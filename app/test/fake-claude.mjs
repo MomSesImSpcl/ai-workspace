@@ -5,7 +5,7 @@
 import { createInterface } from 'node:readline';
 
 // The setup inventory (onboarding-010): one plugin and one MCP server, then exit.
-if (process.argv[2] === 'plugin') { console.log(JSON.stringify([{ id: 'demo@market', enabled: true }, { id: 'old@market', enabled: false }])); process.exit(0); }
+if (process.argv[2] === 'plugin') { console.log(JSON.stringify([{ id: 'demo@market', enabled: true, installPath: process.env.FAKE_PLUGIN_PATH }, { id: 'old@market', enabled: false }])); process.exit(0); }
 if (process.argv[2] === 'mcp') { console.log('Checking MCP server health…\n\nclaude.ai github: https://example.test/mcp - ✔ Connected'); process.exit(0); }
 
 let turns = 0;
