@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
@@ -159,8 +159,8 @@ export class CodexProcess implements AgentProcess {
     type Skill = { name: string; path: string; enabled?: boolean; pluginId?: string | null };
     const { data = [] } = await this.request('skills/list', { cwds: [this.root] }) as { data?: { skills: Skill[] }[] };
     const skills = data.flatMap((d) => d.skills).filter((k) => k.enabled !== false && !k.pluginId);
-    if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}` });
-    if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json' });
+    if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}`, parts: skills.map((k) => ({ name: k.name, path: dirname(k.path) })) });
+    if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json', path: userCodexHome() });
     // Built-in parts with a feature switch; editing (apply_patch) and command execution always stay.
     for (const [flag, title, description] of CODEX_FEATURES) items.push({ id: `feature:${flag}`, kind: 'feature', title, description });
     items.push(DELEGATE);

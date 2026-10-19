@@ -143,7 +143,7 @@ export function claudeInventory(root: string): SetupItem[] {
   try { plugins = JSON.parse(run(['plugin', 'list', '--json'])); } catch { /* none listed */ }
   for (const p of plugins.filter((p) => p.enabled)) {
     const manifest = p.installPath ? readJsonFile<{ description?: string }>(join(p.installPath, '.claude-plugin', 'plugin.json')) : undefined;
-    items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.id.split('@')[0], description: manifest?.description });
+    items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.id.split('@')[0], description: manifest?.description, path: p.installPath });
   }
   // Lines read "<name>: <command or URL> - <status>".
   for (const line of run(['mcp', 'list']).split('\n')) {
@@ -152,12 +152,12 @@ export function claudeInventory(root: string): SetupItem[] {
   }
   let skills: string[] = [];
   try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
-  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}` });
+  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}`, parts: skills.map((name) => ({ name, path: join(claudeHome(), 'skills', name) })) });
   for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
   items.push(DELEGATE);
   items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
   const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
-  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}` });
+  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}`, path: claudeHome() });
   return items;
 }
 

@@ -9,7 +9,8 @@ import { ORCHESTRATION, type Session } from './sessions.ts';
 export type ItemKind = 'plugin' | 'mcp' | 'apps' | 'skills' | 'hooks' | 'tool' | 'feature' | 'prompt' | 'workspace';
 // The workspace's own `delegate` tool for tasks: a task without it cannot hand work to a subtask.
 export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: 'Delegate', description: "Hand a self-contained part to another workspace role's agent as a subtask" };
-export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string }
+// `path` is the item's folder and `parts` the things it switches together, each with its folder, when known.
+export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string; path?: string; parts?: { name: string; path: string }[] }
 export type ItemState = 'on' | 'decide' | 'off';
 export const SETUP_ROLES = [ORCHESTRATION, 'Implementation']; // roles whose agent runs with a chosen setup
 export const RULE_ROLES = [ORCHESTRATION, 'Implementation']; // the global-rules switch per role
