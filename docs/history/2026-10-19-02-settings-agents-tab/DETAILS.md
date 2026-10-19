@@ -1,0 +1,26 @@
+# Settings Agents tab: verification
+
+- Code:
+  - `app/src/roles.ts`: three roles in order, `effort`, unknown role refused, stale roles ignored.
+  - `app/src/ui.ts`: roles API checks agent, model and effort against the catalog; settings API takes the three instruction keys; `manual-browser` removed.
+  - `app/src/sessions.ts`: `ownInstructions`.
+  - Both adapters: chat and task instructions appended.
+  - `app/src/setup.ts`: no design rule switch.
+  - `app/src/cli.ts`: `ws ui` stores the source checkout as the workspace folder when none is set.
+  - `app/src/ui.html`: Agents tab and Agent setup layout.
+- `npm test`: 49/49 pass. Updated `test/tasks.test.ts` (role order, unknown role) and `test/sessions.test.ts` (unknown model 400, chat instructions saved).
+- Browser pane, UI server with a throwaway `AI_WORKSPACE_HOME`, 1600 × 900:
+  - The workspace folder was prefilled with the checkout.
+  - Roles were shown as Chat, Orchestrator, Implementation. The agent lists offered only `claude-code` and `codex`.
+  - Chat set to Opus with effort max was stored as `{ integration: 'claude-code', model: 'opus', effort: 'max' }`.
+  - Switching Chat to codex stored `{ integration: 'codex' }` and listed the Codex models.
+  - The chat instructions were saved.
+  - On the Agent setup tab, the panel ran from the sessions column (x 230) to the rail.
+  - Two agent columns, 560 px each, side by side, each with its own vertical scroll. Long item names wrap.
+  - The tabs stayed at the same x (1532) on every tab.
+  - Follow-up (user): Agent setup content keeps to the right. Its top part spans x 672–1532, the same as General's 673–1532; the agent columns span 396–956 and 972–1532, packed right.
+  - Follow-up (user): at 2000 px wide, two agents give a 1186 px panel with no sideways scroll; it is capped at the sessions column. The agent name stays at the top of its column after scrolling 400 px.
+  - Follow-up (user): both agents show the groups Built-in, Plugins, MCP servers and connectors, Skills and Hooks. Searching "cave" in claude-code leaves Plugins: caveman, MCP: caveman and Skills: Standalone skills. A switch's tooltip reads "Off".
+- Not checked:
+  - The Electron window.
+  - A real agent run with the new instructions; the notes are built in the same place as the orchestrator instructions.

@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
-import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, TASK_NOTE } from '../sessions.ts';
+import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
 // workspace server, which shows them as approval cards (sessions-019) and offers tasks `delegate`.
@@ -110,7 +110,9 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   return { events: [] };
 }
 
-const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+// The file inside a folder when it exists, else the folder, so the user is shown what to look for.
+export const fileOr = (dir: string, file: string) => (existsSync(join(dir, file)) ? join(dir, file) : dir);
+export const claudeHome = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
 const readJsonFile = <T>(file: string): T | undefined => { try { return JSON.parse(readFileSync(file, 'utf8')) as T; } catch { return undefined; } };
 type ClaudeSettings = { enabledPlugins?: Record<string, boolean>; hooks?: Record<string, unknown[]> } & Record<string, unknown>;
 
@@ -143,21 +145,21 @@ export function claudeInventory(root: string): SetupItem[] {
   try { plugins = JSON.parse(run(['plugin', 'list', '--json'])); } catch { /* none listed */ }
   for (const p of plugins.filter((p) => p.enabled)) {
     const manifest = p.installPath ? readJsonFile<{ description?: string }>(join(p.installPath, '.claude-plugin', 'plugin.json')) : undefined;
-    items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.id.split('@')[0], description: manifest?.description });
+    items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.id.split('@')[0], description: manifest?.description, path: p.installPath });
   }
   // Lines read "<name>: <command or URL> - <status>".
   for (const line of run(['mcp', 'list']).split('\n')) {
     const m = /^(.+?): (.+) - \S+ \w/.exec(line.trim());
-    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}` });
+    if (m && m[1] !== 'aiws') items.push({ id: `mcp:${m[1]}`, kind: 'mcp', title: m[1], description: m[1].startsWith('claude.ai ') ? 'claude.ai connector' : `MCP server: ${m[2].trim()}`, path: commandFile(m[2]) });
   }
   let skills: string[] = [];
   try { skills = readdirSync(join(claudeHome(), 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* none */ }
-  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}` });
+  if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.join(', ')}`, parts: skills.map((name) => ({ name, path: fileOr(join(claudeHome(), 'skills', name), 'SKILL.md') })) });
   for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
   items.push(DELEGATE);
   items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
   const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
-  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}` });
+  if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}`, path: join(claudeHome(), 'settings.json') });
   return items;
 }
 
@@ -269,7 +271,7 @@ export class ClaudeProcess implements AgentProcess {
     if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.'}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') + ownInstructions('implementationInstructions') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.' + ownInstructions('chatInstructions')}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
@@ -388,11 +390,11 @@ export function claudeCatalog(): Catalog {
     modes: [
       { id: '', label: "Claude Code's settings", hint: 'Your own Claude Code settings decide' },
       { id: 'manual', label: 'Manual', hint: 'Always ask before making changes' },
-      { id: 'acceptEdits', label: 'Accept edits', hint: 'Automatically accept file edits in the project' },
-      { id: 'auto', label: 'Auto', hint: 'Claude handles permission decisions' },
-      { id: 'plan', label: 'Plan', hint: 'Create a plan before making changes' },
-      { id: 'dontAsk', label: "Don't ask", hint: 'Deny what is not allowed' },
-      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Skip every check', warn: true },
+      { id: 'acceptEdits', label: 'Edit project files', hint: 'Change files in the project without asking; commands and anything outside still ask' },
+      { id: 'auto', label: 'Auto', hint: "Claude Code's safety check decides each action" },
+      { id: 'dontAsk', label: "Don't ask", hint: 'Only what your allow rules permit; the rest is denied without asking' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', hint: 'Never ask, no limits', warn: true },
+      { id: 'plan', label: 'Plan', hint: 'Only read and plan; change nothing' },
     ],
   };
 }

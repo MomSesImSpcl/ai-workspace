@@ -20,7 +20,7 @@
     --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
     --radius-sm: 7px; --radius: 10px; --radius-lg: 14px;
     --t: 160ms cubic-bezier(.4,0,.2,1);
-    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 300px;
+    --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 900px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
   * { box-sizing: border-box; }
@@ -58,11 +58,10 @@
   .pill { font-size: 11px; color: var(--text-dim); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
   .pill .dot { margin-right: 6px; }
 
-  .body { display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) auto 48px; min-height: 0; }
-  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) auto 48px; }
+  .body { position: relative; display: grid; grid-template-columns: var(--sessions-w) var(--sidebar-w) minmax(0,1fr) 48px; min-height: 0; }
+  .app[data-sidebar=collapsed] .body { grid-template-columns: 0 0 minmax(0,1fr) 48px; }
   .app[data-sidebar=collapsed] .sessions-col { visibility: hidden; }
-  /* Fixed columns: a hidden drawer leaves the grid, which would shift the rail off the edge. */
-  .body > .drawer { grid-column: 4; } .body > .rail { grid-column: 5; }
+  .body > .rail { grid-column: 4; }
   .app[data-sidebar=collapsed] .sidebar { visibility: hidden; }
 
   /* Chat column: the project's sessions above the open session, full height. */
@@ -136,10 +135,8 @@
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
   .chat-tokens { white-space: nowrap; }
-  .task-cap { flex-wrap: nowrap; gap: 6px; align-items: center; }
-  .task-cap .check { padding-bottom: 0; }
-  .task-cap input[type=number] { width: 90px; padding: 3px 6px; font-size: 11px; }
-  .task-cap .perm-label { margin-left: auto; }
+  .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
+  .send-row #foot-status { flex: 1; min-width: 0; }
   .mode-menu { min-width: 260px; }
   .mode-menu .menu-title { padding: 6px 10px 4px; font-size: 12px; color: var(--text-muted); }
   .mode-menu button { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -251,7 +248,48 @@
   .error { color: var(--red); font-size: 12px; min-height: 1em; margin: 0; }
 
   /* Drawer and utility rail */
-  .drawer { width: var(--drawer-w); overflow: auto; background: var(--panel); border-left: 1px solid var(--hairline); padding: 16px; }
+  /* Drawer floats over everything right of the sessions column (desktop-001); the backdrop fills what it leaves uncovered. */
+  .backdrop { position: absolute; top: 0; bottom: 0; left: var(--sessions-w); right: 48px; z-index: 5; background: rgba(0,0,0,.35); }
+  .drawer { position: absolute; top: 0; bottom: 0; right: 48px; z-index: 6; display: flex; flex-direction: column; width: min(var(--drawer-w), calc(100% - var(--sessions-w) - 48px)); background: var(--panel); border-left: 1px solid var(--hairline); box-shadow: 0 6px 24px rgba(0,0,0,.45); padding: 16px 20px; }
+  /* The Agent setup tab spans up to the sessions column: one column per agent, scrolled sideways. */
+  /* Wide enough for every agent's column (560 px + 16 px gap, plus padding), never past the sessions column. */
+  .drawer[data-wide=true] { width: min(max(var(--drawer-w), calc(var(--agents, 1) * 576px + 34px)), calc(100% - var(--sessions-w) - 48px)); }
+  .app[data-sidebar=collapsed] .backdrop { left: 0; }
+  .app[data-sidebar=collapsed] .drawer { width: min(var(--drawer-w), calc(100% - 48px)); }
+  .app[data-sidebar=collapsed] .drawer[data-wide=true] { width: min(max(var(--drawer-w), calc(var(--agents, 1) * 576px + 34px)), calc(100% - 48px)); }
+  #drawer-settings { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #drawer-settings [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; }
+  #spanel-setup { display: flex; flex-direction: column; gap: 6px; overflow: hidden !important; }
+  #setup-items { flex: 1; min-height: 0; display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
+  #setup-items > .agent-col { flex: 0 0 560px; max-width: 90%; min-width: 0; overflow-y: auto; padding-right: 6px; }
+  /* Agent setup content keeps to the right, where the other tabs show theirs: the top part at the normal panel width,
+     the columns packed against the right edge (an auto margin, unlike flex-end, keeps overflow scrollable). */
+  #spanel-setup > div > :not(#setup-items) { align-self: flex-end; width: min(calc(var(--drawer-w) - 40px), 100%); }
+  #setup-items > .agent-col:first-child { margin-left: auto; }
+  /* The agent's name stays above its list while the list scrolls. */
+  .agent-head { position: sticky; top: 0; z-index: 1; display: grid; gap: 6px; padding: 4px 0 8px; background: var(--panel); }
+  .agent-head b { text-align: center; }
+  .agent-col tr.group th { padding: 14px 0 4px; border-top: 1px solid var(--hairline); text-align: left; color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .agent-col tbody:first-of-type tr.group th { border-top: 0; padding-top: 6px; }
+  .agent-col td { padding: 3px 4px 3px 0; vertical-align: middle; }
+  .agent-col .parts { opacity: .8; }
+  .agent-col div.parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 11px; }
+  .loc.icon { padding: 3px 5px; border: 1px solid var(--hairline); border-radius: 6px; background: none; color: var(--text-dim); cursor: pointer; display: inline-flex; }
+  .loc.icon:hover { background: var(--surface-2); }
+  .agent-col .loc { display: inline-flex; align-items: center; gap: 5px; padding: 1px 6px; margin-left: -6px; border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; }
+  .agent-col div.parts .loc { margin-left: 0; border-color: var(--hairline); }
+  .agent-col .loc:hover { background: var(--surface-2); }
+  .agent-col .loc svg { opacity: .6; }
+  /* The column titles stay under the agent's name; a shadow draws their line, since borders on sticky cells scroll away. */
+  .agent-col thead th { position: sticky; top: var(--head-h, 0); z-index: 1; padding: 4px 0 6px; background: var(--panel); box-shadow: inset 0 -1px var(--hairline); }
+  .agent-col td:first-child { font-size: 13px; color: var(--text); }
+  .agent-col table { table-layout: fixed; } .agent-col th:first-child { width: 50%; } .agent-col td { overflow-wrap: anywhere; } .agent-col select { max-width: 100%; }
+  .role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  /* Tabs sit on the right so they stay put when the panel's left edge moves with its width. */
+  .tabs { display: flex; justify-content: flex-end; gap: 4px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
+  .tabs button { padding: 8px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-dim); cursor: pointer; }
+  .tabs button:hover { color: var(--text); }
+  .tabs button[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
   .drawer header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .drawer h2 { font-size: 13px; margin: 0; }
   .drawer form { display: grid; gap: 10px; }
@@ -268,8 +306,6 @@
   .rail button[aria-pressed=true] { background: var(--accent-dim); color: var(--accent); }
 
   @media (max-width: 1100px) { :root { --sidebar-w: 310px; } .split { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-  /* Narrow window: the drawer floats over the content instead of squeezing it. */
-  @media (max-width: 900px) { .body { position: relative; } .drawer { position: absolute; right: 48px; top: 0; bottom: 0; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.45); } }
 </style>
 </head>
 <body>
@@ -332,16 +368,14 @@
         <div class="chat-state" id="chat-state" role="status"></div>
         <textarea name="text" required aria-label="Message"></textarea>
         <div class="row pickers">
-          <select id="role" aria-label="Session role" title="Orchestrator: every change runs as a task; questions are answered here. Chat: the agent works itself."><option value="Orchestration">Orchestrator</option><option value="Chat">Chat</option></select>
+          <select id="role" aria-label="Session role" title="Orchestrator: every change runs as a task; questions are answered here. Chat: the agent works itself."><option value="Chat">Chat</option><option value="Orchestration">Orchestrator</option></select>
           <select id="agent" aria-label="Agent" title="Agent"></select>
           <select id="model" aria-label="Model" title="Model"></select>
           <select id="effort" aria-label="Effort level" title="Effort level"></select>
         </div>
-        <!-- Settings for the tasks this chat starts (ADR 0011): layout only here and in renderCap(). -->
-        <div class="row task-cap"><label class="check"><input type="checkbox" id="cap-on"> Cap new tasks at</label><input id="cap" type="number" min="1" step="1000" value="200000" aria-label="Token cap for new tasks"><span class="meta">tokens</span>
-          <span class="meta perm-label">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button></div>
+        <!-- The permission mode of the tasks this chat starts (ADR 0011), next to Send; layout only here and in renderCap(). -->
+        <div class="row send-row"><span class="meta" id="foot-status"></span><span class="meta">Permissions</span><button type="button" class="btn small" id="task-mode" aria-haspopup="menu" aria-expanded="false" title="Permission mode of the tasks this chat starts"></button><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></div>
         <div class="menu mode-menu" id="mode-menu" role="menu" aria-label="Permission mode of new tasks" hidden></div>
-        <div class="row" style="justify-content:space-between;align-items:center"><span class="meta" id="foot-status"></span><span class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn small" id="stop" type="button" hidden>Stop</button><button class="btn primary small" id="send">Send</button></span></div>
         <p class="error" id="new-error" role="alert"></p>
       </form>
     </aside>
@@ -375,9 +409,16 @@
       </section>
     </main>
 
+    <div class="backdrop" id="backdrop" hidden></div>
     <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title">
       <header><h2 id="drawer-title"></h2><button class="icon-btn" id="close-drawer" aria-label="Close panel">✕</button></header>
       <div id="drawer-settings" hidden>
+        <div class="tabs" role="tablist" aria-label="Settings sections">
+          <button role="tab" id="stab-general" data-stab="general" aria-controls="spanel-general">General</button>
+          <button role="tab" id="stab-agents" data-stab="agents" aria-controls="spanel-agents">Agents</button>
+          <button role="tab" id="stab-setup" data-stab="setup" aria-controls="spanel-setup">Agent setup</button>
+        </div>
+        <div role="tabpanel" id="spanel-general" aria-labelledby="stab-general">
         <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
           <p class="meta" style="margin:0">Where your projects usually live. Adding a project starts here.</p>
           <label class="field">Folder<input name="root" required placeholder="Click to choose a folder, or type its path"></label>
@@ -387,17 +428,19 @@
           <div class="row" style="align-items:center"><code class="meta" id="storage-path" style="flex:1;overflow-wrap:anywhere"></code><button class="btn small" id="open-storage" type="button">Open</button></div>
           <div class="row"><button class="btn small" id="export-storage" type="button">Export…</button><button class="btn small" id="import-storage" type="button">Import…</button></div>
           <p class="meta" id="transfer-result" role="status" style="margin:0"></p></div>
-        <p class="meta" style="margin:0 0 6px">Which agent runs each role. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent.</p>
+        </div>
+        <div role="tabpanel" id="spanel-agents" aria-labelledby="stab-agents">
+        <p class="meta" style="margin:0 0 6px">Which agent runs each role, with its default model and effort. Chat is used for new sessions; tasks use the role chosen when they start. Running work keeps its agent. Instructions are optional and apply from the next agent start.</p>
         <div id="roles"></div>
-        <!-- The user's own rules for the orchestrator, added to its instructions in every orchestrator chat. -->
-        <label class="field" style="margin-top:14px">Orchestrator instructions<textarea id="orch-rules" rows="4" placeholder="For example: keep task goals under 50 words. Use Haiku for simple file operations."></textarea></label>
-        <span class="meta" id="orch-rules-saved" role="status">Applies to orchestrator chats from their next agent start (a new chat, or after the chat was idle).</span>
+        </div>
+        <div role="tabpanel" id="spanel-setup" aria-labelledby="stab-setup">
         <!-- What orchestrator chats and tasks load (orchestrator-005, onboarding-010), switched for each run only. -->
-        <div style="display:grid;gap:6px;margin-top:18px"><b>Agent setup</b>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0"><b>Agent setup</b>
           <p class="meta" style="margin:0">What orchestrator chats and tasks load. It is switched for each run only; your agents' own settings stay unchanged. <i>Always on</i>: every run of that role. <i>Orchestrator decides</i>: a task gets it when its goal needs it. <i>Off</i>: never. Applies from the next agent start.</p>
           <div id="rule-switches" style="display:grid;gap:4px"></div>
           <div class="row" style="align-items:center"><button class="btn small" id="list-setup" type="button">List again</button><span class="meta" id="setup-status" role="status"></span></div>
-          <div id="setup-items" style="display:grid;gap:10px"></div></div>
+          <div id="setup-items"></div></div>
+        </div>
       </div>
     </aside>
 
@@ -492,8 +535,9 @@ function setPage(page) {
 
 function setTool(tool) {
   state.tool = state.tool === tool ? null : tool; // a second click closes the drawer; the page stays
-  $('#drawer').hidden = !state.tool;
+  $('#drawer').hidden = $('#backdrop').hidden = !state.tool;
   $('#drawer-settings').hidden = state.tool !== 'settings';
+  if (!state.tool) delete $('#drawer').dataset.wide;
   $('#drawer-title').textContent = { settings: 'Settings' }[state.tool] ?? '';
   for (const b of $$('.rail button')) b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool));
   renderDrawer();
@@ -583,21 +627,18 @@ function pickerValues(s) {
 }
 function roleDraft(role) {
   const a = state.roles[role] ?? { integration: 'claude-code' };
-  return { role, integration: state.agents[a.integration] ? a.integration : 'claude-code', model: a.model ?? '', effort: '' };
+  // The role's defaults from Settings; on the fallback agent its model and effort would not fit.
+  const own = !!state.agents[a.integration];
+  return { role, integration: own ? a.integration : 'claude-code', model: own ? a.model ?? '' : '', effort: own ? a.effort ?? '' : '' };
 }
-// The task cap switch next to the chat box (ADR 0011): unchecked, the chat's new tasks run uncapped.
+// The permission mode next to Send. Tasks run uncapped; a cap is asked of the orchestrator in words (ADR 0011).
 function renderCap(s) {
-  if (['cap', 'cap-on'].includes(document.activeElement?.id)) return;
-  const cap = s ? s.taskCap : state.draftCap;
-  $('#cap-on').checked = cap !== undefined;
-  if (cap !== undefined) $('#cap').value = cap;
-  $('#cap').disabled = cap === undefined;
   const { mode, list } = taskModes(s);
   $('#task-mode').textContent = `${list.find((m) => m.id === mode)?.label ?? mode} ▾`;
 }
 // The modes of the Implementation role's agent; a task on another agent keeps that agent's settings if it lacks the mode.
 function taskModes(s) {
-  const mode = (s ? s.taskMode : state.draftMode) ?? 'acceptEdits';
+  const mode = (s ? s.taskMode : state.draftMode) ?? state.roles.Implementation?.permissionMode ?? 'acceptEdits';
   const modes = state.agents[state.roles.Implementation?.integration]?.modes ?? [{ id: '', label: "The agent's settings" }];
   return { mode, list: modes.some((m) => m.id === mode) ? modes : [...modes, { id: mode, label: mode }] };
 }
@@ -851,16 +892,44 @@ function runHtml(t, r, i, count, open, permissions) {
   </details>`;
 }
 
+// The Implementer's default mode for new tasks; the select and each option show the mode's description on hover.
+// A confirmation shows for 2 s; an error (set directly) stays until the next change replaces it.
+function flash(el, text) {
+  if (!el) return;
+  el.textContent = text;
+  clearTimeout(el.flashTimer);
+  el.flashTimer = setTimeout(() => { el.textContent = ''; }, 2000);
+}
+const fail = (el, text) => { if (el) { clearTimeout(el.flashTimer); el.textContent = text; } };
+function permissionField(a) {
+  const modes = state.agents[a.integration]?.modes ?? [];
+  const current = modes.find((m) => m.id === (a.permissionMode ?? 'acceptEdits')) ?? modes[0];
+  return `<label class="field">Default permission<select name="permissionMode" title="${esc(`${current?.hint ? `${current.hint}. ` : ''}The mode of new tasks; a chat can change it for its own tasks.`)}">${modes.map((m) => `<option value="${esc(m.id)}" title="${esc(m.hint ?? '')}" ${m === current ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>`;
+}
 function renderDrawer() {
   if (state.tool === 'settings') {
+    const tab = pref.get('settingsTab', 'general');
+    $('#drawer').dataset.wide = String(tab === 'setup');
+    for (const b of $$('[data-stab]')) {
+      b.setAttribute('aria-selected', String(b.dataset.stab === tab));
+      b.tabIndex = b.dataset.stab === tab ? 0 : -1;
+      $(`#spanel-${b.dataset.stab}`).hidden = b.dataset.stab !== tab;
+    }
     renderAgentSetup();
-    if (document.activeElement?.id !== 'orch-rules') $('#orch-rules').value = state.settings?.orchestratorInstructions ?? '';
-    $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
+    // Not rebuilt while a field in it is in use, so typing and an open list are kept.
+    if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
       const options = [...new Set([...state.integrations, a.integration])];
-      return `<form class="role" data-role="${esc(role)}"><b>${esc(role)}</b>
-        <div class="row"><label class="field">Agent<select name="integration">${options.map((i) => `<option ${i === a.integration ? 'selected' : ''}>${esc(i)}</option>`).join('')}</select></label>
-        <label class="field">Model (optional)<input name="model" value="${esc(a.model)}" placeholder="default"></label></div>
-        <span class="meta" data-saved role="status"></span></form>`;
+      // Model and effort come from the agent's catalog (onboarding-008); the effort list follows the model.
+      const models = state.agents[a.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
+      const efforts = (models.find((m) => m.id === (a.model ?? '')) ?? models[0]).efforts;
+      const key = ROLE_INSTRUCTIONS[role];
+      return `<form class="role" data-role="${esc(role)}"><div class="row" style="align-items:baseline;gap:8px"><b>${esc(ROLE_NAMES[role] ?? role)}</b><span class="meta" data-saved role="status"></span></div>
+        <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
+        <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
+        <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
+        ${role === 'Implementation' ? permissionField(a) : ''}</div>
+        ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
+        </form>`;
     }).join('');
   }
 }
@@ -894,7 +963,16 @@ $('#toggle-sidebar').onclick = () => {
 };
 for (const b of $$('.nav button')) b.onclick = () => setPage(b.dataset.page);
 for (const b of $$('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
-$('#close-drawer').onclick = () => setTool(state.tool);
+$('#close-drawer').onclick = $('#backdrop').onclick = () => setTool(state.tool);
+for (const b of $$('[data-stab]')) b.onclick = () => { pref.set('settingsTab', b.dataset.stab); renderDrawer(); };
+$('.tabs').onkeydown = (e) => {
+  const tabs = $$('[data-stab]'), i = tabs.indexOf(document.activeElement), step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (i < 0 || !step) return;
+  const next = tabs[(i + step + tabs.length) % tabs.length];
+  next.click(); next.focus();
+};
+// Escape closes Settings unless it is closing something on top of it first (a menu or a dialog).
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.tool && !e.defaultPrevented && !state.menu && !$('dialog[open]')) setTool(state.tool); });
 // A new session is created with its first message, so empty sessions do not pile up.
 const newSession = () => {
   if ($('#app').dataset.sidebar === 'collapsed') $('#toggle-sidebar').click();
@@ -977,42 +1055,75 @@ async function pickerChanged(which) {
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
 $('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null); };
-async function capChanged() {
-  const cap = $('#cap-on').checked ? Math.max(1, Math.round(Number($('#cap').value) || 0)) : undefined;
-  $('#cap').disabled = cap === undefined;
-  if (!state.session) return void (state.draftCap = cap);
-  await sessionAction('cap', { taskCap: cap ?? null });
-}
-$('#cap-on').onchange = capChanged;
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
-const ROLE_NAMES = { ArchitectureReasoning: 'Design', Orchestration: 'Orchestrator', Implementation: 'Implementation' };
+const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementer' };
+// The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.
+const ROLE_INSTRUCTIONS = { Chat: 'chatInstructions', Orchestration: 'orchestratorInstructions', Implementation: 'implementationInstructions' };
+const INSTRUCTION_HINTS = {
+  chatInstructions: 'For example: answer in German.',
+  orchestratorInstructions: 'For example: keep task goals under 50 words. Use Haiku for simple file operations.',
+  implementationInstructions: 'For example: run the tests before you finish.',
+};
+const FOLDER_ICON = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg>';
+const SETUP_GROUPS = [['Built-in', ['tool', 'feature', 'prompt', 'workspace']], ['Plugins', ['plugin']], ['MCP servers and connectors', ['mcp', 'apps']], ['Skills', ['skills']], ['Hooks', ['hooks']]];
 const STATE_NAMES = { on: 'Always on', decide: 'Orchestrator decides', off: 'Off' };
 function renderAgentSetup() {
   const s = state.agentSetup;
   if (!s) { if (!state.agentSetupLoading) { state.agentSetupLoading = true; api('/api/agent-setup').then((v) => { state.agentSetup = v; renderAgentSetup(); }, (e) => { $('#setup-status').textContent = e.message; }); } return; }
-  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<label class="row" style="align-items:center;gap:6px"><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: load my global rule files</label>`).join('')
+  // The folder button sits left of each switch, so both switches stay aligned.
+  const rulesBtn = s.rulesFolder && window.desktop ? `<button class="loc icon" type="button" data-open="${esc(s.rulesFolder)}" title="Show ${esc(s.rulesFolder)}" aria-label="Show the global rules file">${FOLDER_ICON}</button>` : '';
+  $('#rule-switches').innerHTML = s.ruleRoles.map((r) => `<div class="row" style="align-items:center;gap:6px">${rulesBtn}<label class="row" style="align-items:center;gap:6px" title="The agent's own global rule file on this computer, the one it loads in every project by default. Off: only the project's rule files and the workspace folder's AGENTS.md load."><input type="checkbox" data-rules="${esc(r)}" ${s.globalRules[r] ? 'checked' : ''}>${esc(ROLE_NAMES[r] ?? r)}: Use global rules</label></div>`).join('')
     + '<p class="meta" style="margin:0">Off: only the workspace folder\'s AGENTS.md and the project\'s rule files load. Codex always loads its global AGENTS.md; it has no switch for one run.</p>';
   const agents = Object.entries(s.inventory);
-  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div><b>${esc(agent)}</b>
-    <table class="meta" style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr>
-    ${items.map((i) => `<tr><td title="${esc(i.description ?? '')}">${esc(i.title)}<br><span style="opacity:.8">${esc(i.description ?? '')}</span></td>${s.roles.map((r) => `<td><select aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([v, l]) => `<option value="${v}" ${s.states[r]?.[agent]?.[i.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}</tr>`).join('')}</table></div>`).join('')
+  $('#drawer').style.setProperty('--agents', String(agents.length || 1));
+  const select = (agent, i, r) => {
+    const v = s.states[r]?.[agent]?.[i.id];
+    return `<td><select title="${esc(STATE_NAMES[v] ?? '')}" aria-label="${esc(`${i.title}, ${ROLE_NAMES[r] ?? r}`)}" data-agent="${esc(agent)}" data-item="${esc(i.id)}" data-role="${esc(r)}">${Object.entries(STATE_NAMES).map(([k, l]) => option(k, l, v === k)).join('')}</select></td>`;
+  };
+  // One switch for several things (skills, hooks): their names stay visible under the item, the rest is a tooltip.
+  const parts = (i) => (i.kind === 'skills' || i.kind === 'hooks') && i.description ? (i.description.split(': ')[1] ?? i.description) : '';
+  // A known folder makes the name (or each part) a button that opens it in the desktop app.
+  const folder = (label, path, tip) => path && window.desktop ? `<button class="loc" type="button" data-open="${esc(path)}" title="${esc(tip)}">${esc(label)}${FOLDER_ICON}</button>` : `<span title="${esc(tip)}">${esc(label)}</span>`;
+  const row = (agent, i) => `<tr data-text="${esc(`${i.title} ${i.description ?? ''}`.toLowerCase())}"><td>${folder(i.title, i.path, i.description ?? '')}${i.parts ? `<div class="parts">${i.parts.map((p) => folder(p.name, p.path, p.path)).join('')}</div>` : parts(i) ? `<br><span class="parts">${esc(parts(i))}</span>` : ''}</td>${s.roles.map((r) => select(agent, i, r)).join('')}</tr>`;
+  const groups = (agent, items) => SETUP_GROUPS.map(([title, kinds]) => {
+    const list = items.filter((i) => kinds.includes(i.kind)).sort((a, b) => a.title.localeCompare(b.title));
+    return list.length ? `<tbody data-group><tr class="group"><th colspan="${s.roles.length + 1}">${esc(title)}</th></tr>${list.map((i) => row(agent, i)).join('')}</tbody>` : '';
+  }).join('');
+  $('#setup-items').innerHTML = agents.length ? agents.map(([agent, items]) => `<div class="agent-col"><div class="agent-head"><b>${esc(agent)}</b>
+    <input type="search" data-search="${esc(agent)}" value="${esc(state.setupSearch?.[agent] ?? '')}" placeholder="Search ${esc(agent)} items" aria-label="Search ${esc(agent)} items"></div>
+    <table class="meta" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Item</th>${s.roles.map((r) => `<th style="text-align:left">${esc(ROLE_NAMES[r] ?? r)}</th>`).join('')}</tr></thead>
+    ${groups(agent, items)}</table><p class="meta" data-none hidden>No item matches.</p></div>`).join('')
     : '<p class="meta" style="margin:0">Nothing listed yet. Press List again, or start an orchestrator chat or a task.</p>';
+  for (const [agent] of agents) filterSetup(agent);
+  for (const col of $$('.agent-col')) col.style.setProperty('--head-h', `${col.querySelector('.agent-head').offsetHeight}px`);
 }
+// Search keeps the groups: rows that do not match are hidden, and so is a group left empty.
+function filterSetup(agent) {
+  const col = $(`[data-search="${CSS.escape(agent)}"]`)?.closest('.agent-col');
+  if (!col) return;
+  const q = (state.setupSearch?.[agent] ?? '').trim().toLowerCase();
+  for (const tr of col.querySelectorAll('tr[data-text]')) tr.hidden = !!q && !tr.dataset.text.includes(q);
+  for (const g of col.querySelectorAll('[data-group]')) g.hidden = !g.querySelector('tr[data-text]:not([hidden])');
+  col.querySelector('[data-none]').hidden = !!col.querySelector('tr[data-text]:not([hidden])');
+}
+$('#rule-switches').onclick = $('#setup-items').onclick = (e) => { const b = e.target.closest('[data-open]'); if (b) window.desktop?.showPath(b.dataset.open); };
+$('#setup-items').oninput = (e) => {
+  const agent = e.target.dataset.search;
+  if (agent === undefined) return;
+  state.setupSearch = { ...state.setupSearch, [agent]: e.target.value };
+  filterSetup(agent);
+};
 async function setupChange(body) {
-  try { state.agentSetup = await api('/api/agent-setup', body); $('#setup-status').textContent = 'Saved. Applies from the next agent start.'; }
-  catch (err) { $('#setup-status').textContent = err.message; }
+  try { state.agentSetup = await api('/api/agent-setup', body); flash($('#setup-status'), 'Saved. Applies from the next agent start.'); }
+  catch (err) { fail($('#setup-status'), err.message); }
   renderAgentSetup();
 }
 $('#rule-switches').onchange = (e) => e.target.dataset.rules && setupChange({ role: e.target.dataset.rules, globalRules: e.target.checked });
 $('#setup-items').onchange = (e) => { const d = e.target.dataset; if (d.item) setupChange({ role: d.role, agent: d.agent, item: d.item, state: e.target.value }); };
 $('#list-setup').onclick = async () => {
-  $('#setup-status').textContent = 'Listing what each agent loads…';
-  try { state.agentSetup = await api('/api/agent-setup/list', {}); $('#setup-status').textContent = 'Listed.'; } catch (err) { $('#setup-status').textContent = err.message; }
+  fail($('#setup-status'), 'Listing what each agent loads…'); // stays until the listing ends
+  try { state.agentSetup = await api('/api/agent-setup/list', {}); flash($('#setup-status'), 'Listed.'); } catch (err) { fail($('#setup-status'), err.message); }
   renderAgentSetup();
-};
-$('#orch-rules').onchange = async () => {
-  try { state.settings = await api('/api/settings', { orchestratorInstructions: $('#orch-rules').value }); $('#orch-rules-saved').textContent = 'Saved. Applies to orchestrator chats from their next agent start.'; }
-  catch (err) { $('#orch-rules-saved').textContent = err.message; }
 };
 for (const b of $$('[data-scope]')) b.onclick = () => { pref.set('taskScope', b.dataset.scope); render(); };
 $('#task-mode').onclick = (e) => { e.stopPropagation(); $('#mode-menu').hidden ? openModeMenu() : closeModeMenu(); };
@@ -1028,7 +1139,6 @@ $('#mode-menu').onkeydown = (e) => {
   }
 };
 document.addEventListener('click', () => $('#mode-menu').hidden || closeModeMenu());
-$('#cap').onchange = capChanged;
 
 // Override dialog for one task: the same agent, model and effort choices as the composer, from the catalog.
 async function changeTask(id) {
@@ -1241,10 +1351,9 @@ $('#new').onsubmit = async (e) => {
   try {
     if (!state.session && !state.newGlobal && !state.project) throw new Error('Add a project first (Projects page).');
     const config = { integration: $('#agent').value, model: $('#model').value, effort: $('#effort').value };
-    const fresh = { role: $('#role').value, taskCap: state.draftCap, taskMode: state.draftMode, ...config };
+    const fresh = { role: $('#role').value, taskMode: state.draftMode, ...config };
     const id = state.session ?? (await api('/api/sessions', state.newGlobal ? { global: true, ...fresh } : { projectId: state.project, ...fresh })).id;
     state.draft = null;
-    state.draftCap = undefined;
     state.draftMode = undefined;
     await api(`/api/sessions/${id}/message`, { text: f.get('text') });
     e.target.text.value = '';
@@ -1287,17 +1396,33 @@ $('#project').onsubmit = async (e) => {
 };
 // Settings save on change (a picked option, or a text field when it loses focus or on Enter); there is no Save button.
 $('#workspace-form').onchange = (e) => e.currentTarget.requestSubmit();
-$('#roles').onchange = (e) => e.target.form?.requestSubmit();
-$('#roles').onsubmit = async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const f = new FormData(form);
-  try {
-    state.roles = await api('/api/roles', { role: form.dataset.role, integration: f.get('integration'), model: f.get('model') || undefined });
-    await load();
-    form.querySelector('[data-saved]').textContent = 'Saved';
-  } catch (err) { form.querySelector('[data-saved]').textContent = err.message; }
+$('#roles').onchange = async (e) => {
+  const form = e.target.form, key = e.target.dataset.instr;
+  if (!key) {
+    // Another agent: its last choices for this role come back (the server checks them); another model: other efforts.
+    if (e.target.name === 'integration') return saveRole(form, { role: form.dataset.role, integration: form.integration.value, restore: true });
+    if (e.target.name === 'model') form.effort.value = '';
+    const mode = e.target.name === 'permissionMode' && state.agents[form.integration.value]?.modes?.find((m) => m.id === e.target.value);
+    if (mode?.warn && !(await ask(`Make ${mode.label} the default for new tasks?`, 'Tasks then run every command and edit without asking, also outside the project folder.', 'Enable', true))) { renderDrawer(); return; }
+    return form.requestSubmit();
+  }
+  try { state.settings = await api('/api/settings', { [key]: e.target.value }); flash(form.querySelector('[data-saved]'), 'Saved. Applies from the next agent start.'); }
+  catch (err) { fail(form.querySelector('[data-saved]'), err.message); }
 };
+$('#roles').onsubmit = (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  saveRole(e.target, { role: e.target.dataset.role, integration: f.get('integration'), model: f.get('model'), effort: f.get('effort'), ...(f.has('permissionMode') ? { permissionMode: f.get('permissionMode') } : {}) });
+};
+async function saveRole(form, body) {
+  try {
+    state.roles = await api('/api/roles', body);
+    document.activeElement?.blur(); // so the render rebuilds the model and effort lists
+    await load();
+    renderDrawer();
+  } catch (err) { return fail(form.querySelector('[data-saved]'), err.message); }
+  flash($(`#roles form[data-role="${CSS.escape(body.role)}"] [data-saved]`), 'Saved'); // the render rebuilt the form
+}
 
 // Drag (or arrow keys on the handle) to resize the chat column, between 280px and 70% of the window.
 const setChatWidth = (px) => {

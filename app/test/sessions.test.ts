@@ -151,7 +151,11 @@ test('session API creates, renames, archives and deletes; approvals need a pendi
   try {
     const { data: s } = await post('/api/sessions', { projectId: 'TEST', role: 'Implementation' });
     assert.equal(s.integration, 'claude-code');
-    assert.equal((await post('/api/sessions', { projectId: 'TEST', role: 'ArchitectureReasoning' })).status, 400); // manual-browser cannot run sessions
+    assert.equal((await post('/api/sessions', { projectId: 'TEST', role: 'ArchitectureReasoning' })).status, 400); // no such role
+    assert.equal((await post('/api/roles', { role: 'Chat', integration: 'claude-code', model: 'no-such-model' })).status, 400);
+    assert.equal((await post('/api/roles', { role: 'Implementation', integration: 'claude-code', permissionMode: 'nope' })).status, 400);
+    assert.equal((await post('/api/roles', { role: 'Implementation', integration: 'claude-code', permissionMode: 'manual' })).data.Implementation.permissionMode, 'manual');
+    assert.equal((await post('/api/settings', { chatInstructions: 'Answer in German.' })).data.chatInstructions, 'Answer in German.');
     assert.equal((await post(`/api/sessions/${s.id}/rename`, { title: 'Login bug' })).data.title, 'Login bug');
     assert.equal((await post(`/api/sessions/${s.id}/archive`, { archived: true })).data.archived, true);
     assert.equal((await post(`/api/sessions/${s.id}/approve`, { approval: 'nope', allow: true })).status, 409);

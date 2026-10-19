@@ -28,7 +28,6 @@ The user assigns any agent to any role ([routing-001](features/model-routing/SPE
 |---|---|---|---|---|
 | Claude Code CLI (`claude`) | `Implementation` | 2.1.301 (2026-10-17) | Install per [docs](https://docs.anthropic.com/en/docs/claude-code), then `/login` with a Claude subscription (quota) | Real runs Windows-only so far ([#10](https://github.com/MomSesImSpcl/ai-workspace/issues/10)) |
 | Codex CLI (`codex`) | `Orchestration` | 0.163.0 installed (2026-10-17) | `npm install -g @openai/codex`; one-time `codex login` (Sign in with ChatGPT, subscription quota) with `CODEX_HOME=~/.ai-workspace/codex` | Windows bypasses the npm `.cmd` shim. Windows, needed for Codex to write once ADR 0004 is implemented: set `[windows] sandbox = "unelevated"` (or `"elevated"`, one admin approval) in the Codex `config.toml`, then check that `codex doctor` no longer reports "sandbox backend disabled" (not yet tested; [why](history/2026-10-17-11-codex-limit-and-windows-writes/SUMMARY.md)) |
-| `manual-browser` | `ArchitectureReasoning` | — | Nothing to install; no runnable adapter yet | Manual handoff |
 
 ## npm packages (`app/package.json`, pinned in the lockfile)
 

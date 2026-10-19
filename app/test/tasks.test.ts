@@ -458,7 +458,8 @@ test('roles keep independent assignments; integrations without a session agent f
   setRole('Orchestration', { integration: 'not-built' });
   const roles = getRoles();
   assert.equal(roles.Orchestration!.integration, 'not-built');
-  assert.equal(roles.ArchitectureReasoning!.integration, 'manual-browser');
+  assert.deepEqual(Object.keys(roles), ['Chat', 'Orchestration', 'Implementation']); // the order Settings shows
+  assert.throws(() => setRole('ArchitectureReasoning', { integration: 'claude-code' }), /Unknown role/);
   assert.throws(() => sessionAgent('not-built'), /cannot run sessions/);
 });
 
@@ -499,12 +500,26 @@ test('ui API serves loopback requests and rejects foreign hosts, origins and non
     const add = (body: unknown) => post('/api/projects', json, JSON.stringify(body));
     assert.equal((await (await add({ path: root, id: 'web' })).json()).id, 'web');
     assert.equal((await add({ path: 'relative/dir' })).status, 400);
-    const roles = await (await post('/api/roles', json, JSON.stringify({ role: 'Implementation', integration: 'codex', model: ' ' }))).json();
-    assert.deepEqual(roles.Implementation, { integration: 'codex' });
+    const roles = await (await post('/api/roles', json, JSON.stringify({ role: 'Implementation', integration: 'codex', model: '', effort: '' }))).json();
+    assert.equal(roles.Implementation.integration, 'codex');
+    assert.equal(roles.Implementation.model, undefined);
+    const set = (body: unknown) => post('/api/roles', json, JSON.stringify(body)).then((r) => r.json());
+    await set({ role: 'Chat', integration: 'claude-code', model: 'opus', effort: 'high' });
+    await set({ role: 'Chat', integration: 'codex', restore: true });
+    const back = (await set({ role: 'Chat', integration: 'claude-code', restore: true })).Chat;
+    assert.deepEqual([back.integration, back.model, back.effort], ['claude-code', 'opus', 'high']); // the role's last choices for that agent
     const s = loadSession(t.id);
     s.title = 'renamed';
     saveSession(s);
   } finally {
     server.close();
   }
+});
+
+test('an MCP server command names its program file only for an existing absolute path, spaces included', async () => {
+  const { commandFile } = await import('../src/setup.ts');
+  assert.equal(commandFile(`${process.execPath} --flag`), process.execPath);
+  assert.equal(commandFile(`"${process.execPath}" --flag`), process.execPath);
+  assert.equal(commandFile('npx some-server'), undefined);
+  assert.equal(commandFile('https://example.test/mcp'), undefined);
 });

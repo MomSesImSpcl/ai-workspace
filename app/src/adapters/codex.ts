@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, TASK_NOTE } from '../sessions.ts';
+import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -154,13 +154,13 @@ export class CodexProcess implements AgentProcess {
     const { marketplaces = [] } = await this.request('plugin/list', {}) as { marketplaces?: { plugins: Plugin[] }[] };
     for (const p of marketplaces.flatMap((m) => m.plugins).filter((p) => p.installed && p.enabled)) items.push({ id: `plugin:${p.id}`, kind: 'plugin', title: p.interface?.displayName ?? p.name, description: p.interface?.shortDescription });
     const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { mcp_servers?: Record<string, { command?: string; url?: string }> } };
-    for (const [name, c] of Object.entries(config?.mcp_servers ?? {})) items.push({ id: `mcp:${name}`, kind: 'mcp', title: name, description: `MCP server: ${c.command ?? c.url ?? ''}` });
+    for (const [name, c] of Object.entries(config?.mcp_servers ?? {})) items.push({ id: `mcp:${name}`, kind: 'mcp', title: name, description: `MCP server: ${c.command ?? c.url ?? ''}`, path: c.command ? commandFile(c.command) : undefined });
     items.push({ id: 'apps', kind: 'apps', title: 'Apps and connectors', description: 'Codex apps (codex_apps), for example GitHub, Gmail and Google Drive' });
     type Skill = { name: string; path: string; enabled?: boolean; pluginId?: string | null };
     const { data = [] } = await this.request('skills/list', { cwds: [this.root] }) as { data?: { skills: Skill[] }[] };
     const skills = data.flatMap((d) => d.skills).filter((k) => k.enabled !== false && !k.pluginId);
-    if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}` });
-    if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json' });
+    if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map((k) => k.name).join(', ')}`, parts: skills.map((k) => ({ name: k.name, path: k.path })) });
+    if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json', path: join(userCodexHome(), 'hooks.json') });
     // Built-in parts with a feature switch; editing (apply_patch) and command execution always stay.
     for (const [flag, title, description] of CODEX_FEATURES) items.push({ id: `feature:${flag}`, kind: 'feature', title, description });
     items.push(DELEGATE);
@@ -176,13 +176,13 @@ export class CodexProcess implements AgentProcess {
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}`;
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}${ownInstructions('implementationInstructions')}`;
     } else if (task) {
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}`;
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${ownInstructions('implementationInstructions')}`;
     } else if (!task) {
       // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool.';
+      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool.' + ownInstructions('chatInstructions');
     }
     if (!task && this.session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
@@ -355,7 +355,7 @@ interface CodexModel { slug: string; display_name?: string; visibility?: string;
 const CODEX_MODES = [
   { id: '', label: "Codex's settings", hint: 'Your own Codex settings decide' },
   { id: 'read-only', label: 'Read only', hint: 'Ask before anything else' },
-  { id: 'auto', label: 'Auto', hint: 'Edit the project, ask for more' },
+  { id: 'auto', label: 'Edit project files', hint: 'Change files in the project without asking; anything more still asks' },
   { id: 'full-access', label: 'Full access', hint: 'Never ask', warn: true },
 ];
 export function parseCodexModels(json: string, configured?: string): Catalog {

@@ -9,7 +9,7 @@
 For complex software features, provide a reusable **architecture → implementation → review** workflow that uses configurable roles rather than named models:
 
 1. Local retrieval/indexing gathers current project architecture, relevant code, tests, installed dependencies and Technology Catalog candidates.
-2. An `ArchitectureReasoning` worker writes a concise, versioned feature specification covering goals, non-goals, APIs/data structures, dependencies, data ownership, networking/security/concurrency, failure modes, implementation steps, tests and acceptance criteria.
+2. The orchestrator chat (in Plan Mode, [orchestrator-007](../ai-orchestrator/SPEC.md)) writes a concise, versioned feature specification covering goals, non-goals, APIs/data structures, dependencies, data ownership, networking/security/concurrency, failure modes, implementation steps, tests and acceptance criteria.
 3. An `Implementation` worker makes focused code changes, runs compilation/tests, responds to compiler/runtime evidence and records diffs. Routine edit/build/fix loops should not require the most expensive architect model.
 4. If the existing specification is factually wrong or conflicts with the project, stop that step and escalate with concrete evidence/options; do not force implementation to match an invalid plan.
 5. An independent architecture/code review checks the spec, actual diff, tests, performance/security implications and integration risk; fixes flow back to the implementer.

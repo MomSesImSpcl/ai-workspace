@@ -91,6 +91,13 @@ ipcMain.handle('open-folder', (_event, path) => {
   if (typeof path !== 'string' || !existsSync(path) || !statSync(path).isDirectory()) return 'not a folder';
   return shell.openPath(path);
 });
+// A file is only shown, selected in its folder, never opened or run; a folder is opened.
+ipcMain.handle('show-path', (_event, path) => {
+  if (typeof path !== 'string' || !existsSync(path)) return 'not found';
+  if (statSync(path).isDirectory()) return shell.openPath(path);
+  shell.showItemInFolder(path);
+  return '';
+});
 
 // Restart reloads everything (shell, server, page) after code changes; agent work runs in its own processes and continues.
 // The taskbar button blinks while a task waits for the user's approval and the window is not in front.

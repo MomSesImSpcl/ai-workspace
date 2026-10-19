@@ -66,7 +66,7 @@ export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId'
   if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
   // A task based on an earlier one keeps that one's setup items.
   const setup = [...new Set([...(f.basedOn ? loadSession(f.basedOn).task?.setup ?? [] : []), ...(f.setup ?? [])])];
-  const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
