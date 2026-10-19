@@ -17,6 +17,14 @@ Scope: [selfdev-002](../../features/self-development/SPEC.md#requirements), [ADR
 - Earlier, in the local session (Windows): Codex's Windows sandbox blocked writes outside the session folder and writes into the checkout's `.git` folder from a worktree, so worktree commits need approval.
 - Not run: the app on Windows with real Claude Code and Codex sessions in an app-project worktree.
 
+## Follow-ups the same day (user)
+
+- Commands that only read pass (`readOnlyCommand`).
+- Every blocked write is a chat notice with the command or file and, for a command, where the read list is (`guardNotice`, `GUARD_MARK`; Claude Code's taken from the hook reason in the tool result, checked against a real stream line).
+- Codex: worktree sessions get `commitRoots` as writable sandbox folders; full access becomes approval `never`, so writes beyond the sandbox fail instead of asking. Not run with the real Codex: [#20](https://github.com/MomSesImSpcl/ai-workspace/issues/20).
+- Global chats stay read-only in the checkout: the app is developed through worktrees only.
+- Tests 59/59.
+
 ## Limits
 
 - [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18): paths computed at run time are not seen by the shell check; Claude Code has no OS sandbox on Windows.

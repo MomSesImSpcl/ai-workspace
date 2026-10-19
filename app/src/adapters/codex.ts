@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { guardedCommand, guardedPath, guardedTree, guardFor, type Guard } from '../worktrees.ts';
+import { commitRoots, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -233,12 +233,17 @@ export class CodexProcess implements AgentProcess {
       const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { sandbox_mode?: string } };
       if (config?.sandbox_mode === 'danger-full-access') params.sandbox = 'danger-full-access';
     }
-    if (this.session.worktree && params.sandbox === 'danger-full-access') {
-      // A worktree session keeps its writes in its folder, so the running app's checkout and storage stay
-      // untouched (selfdev-002, ADR 0015): full access becomes workspace-write with network, and Codex asks before
-      // anything beyond it, such as a commit, since git's folder of a worktree lies in the checkout.
-      Object.assign(params, { sandbox: 'workspace-write', approvalPolicy: 'on-request' });
-      ((params.config ??= {}) as Record<string, unknown>)['sandbox_workspace_write.network_access'] = true;
+    if (this.session.worktree) {
+      // A worktree session keeps its writes in its folder, so the running app's checkout and storage stay untouched
+      // (selfdev-002, ADR 0015). Git's folder of a worktree lies in the checkout, so the parts a commit writes to are
+      // added to the sandbox. Full access becomes workspace-write with network, and anything beyond it fails
+      // instead of asking (user, 2026-10-19).
+      const config = (params.config ??= {}) as Record<string, unknown>;
+      try { config['sandbox_workspace_write.writable_roots'] = commitRoots(this.root); } catch { /* not a git folder: commits fail */ }
+      if (params.sandbox === 'danger-full-access') {
+        Object.assign(params, { sandbox: 'workspace-write', approvalPolicy: 'never' });
+        config['sandbox_workspace_write.network_access'] = true;
+      }
     }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {
@@ -319,7 +324,8 @@ export class CodexProcess implements AgentProcess {
         // A request to write into the running app's checkout or storage is declined without a card (selfdev-002).
         const hit = guardedRequest(guard, m.method!, m.params ?? {}, edits);
         if (hit) {
-          emit({ type: 'notice', text: `Declined: the agent asked to write to ${hit}, but the running app's checkout and the workspace's storage stay untouched (selfdev-002).` });
+          const p = m.params ?? {};
+          emit({ type: 'notice', text: guardNotice(hit, typeof p.command === 'string' ? { command: p.command } : { file: (edits.get(String(p.itemId)) ?? [])[0] ?? `the folders it asked for (${hit})` }) });
           return reply(m.id!, m.method === 'item/permissions/requestApproval' ? { permissions: {}, scope: 'turn' } : { decision: 'decline' });
         }
         const card = approvalCard(m.method!, m.params ?? {});

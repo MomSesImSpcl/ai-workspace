@@ -217,6 +217,29 @@ const spellings = (dir: string) => {
 /** Matches a folder's spelling where a path to it or into it can stand (not a longer folder name). */
 const spellingRe = (s: string) => new RegExp(`${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g');
 
+/**
+ * The folders in the checkout's `.git` that a commit in the worktree at `path` writes to (selfdev-002, ADR 0015): the
+ * worktree's own git folder, the object store, and the branch refs and their logs. Not `hooks` or `config`, so an
+ * agent cannot leave code that runs in the checkout. Given to Codex's sandbox as writable, so commits need no approval.
+ */
+export function commitRoots(path: string): string[] {
+  const own = resolve(path, git(path, ['rev-parse', '--git-dir']));
+  const common = resolve(path, git(path, ['rev-parse', '--git-common-dir']));
+  return [own, join(common, 'objects'), join(common, 'refs', 'heads'), join(common, 'logs', 'refs', 'heads')].filter((d) => existsSync(d));
+}
+
+/** Starts every notice of a blocked write, so the Claude Code adapter finds it in the hook's deny reason. */
+export const GUARD_MARK = 'Blocked by the write guard (selfdev-002)';
+
+/**
+ * The chat notice for a blocked write (selfdev-002): what was blocked and, for a command, how a reading one is let
+ * through, so the user can check it and extend the read list.
+ */
+export function guardNotice(hit: string, what: { command?: string; file?: string }): string {
+  if (what.file) return `${GUARD_MARK}: writing ${what.file} would change ${hit}.`;
+  return `${GUARD_MARK}: the command \`${what.command}\` would run in or name ${hit}. If it only reads, add its program to the read list (\`READERS\` or \`GIT_READERS\` in app/src/worktrees.ts).`;
+}
+
 /** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */
 const READERS = new Set(['cd', 'pushd', 'popd', 'pwd', 'ls', 'dir', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'find', 'stat', 'du', 'diff', 'cmp', 'echo', 'realpath', 'readlink', 'basename', 'dirname', 'md5sum', 'sha1sum', 'sha256sum', 'which', 'where', 'true', 'test', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'select-string', 'sls', 'test-path', 'resolve-path', 'get-location', 'set-location', 'measure-object', 'select-object', 'git']);
 /** Git subcommands that only read; `branch` and `remote` only when they list. */

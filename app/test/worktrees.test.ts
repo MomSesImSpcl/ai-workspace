@@ -3,7 +3,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +11,9 @@ import { addMessage, createSession, loadSession, readEvents, type SessionAgent }
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, appRepo, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { addAppProject, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
 import { guardedRequest } from '../src/adapters/codex.ts';
+import { sessionEvents } from '../src/adapters/claude-code.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -197,5 +198,20 @@ test('the Claude Code hook denies a guarded write and lets the own worktree thro
   const out = JSON.parse(run('Write', { file_path: join(root, 'a.txt'), content: 'x' }));
   assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(run('Edit', { file_path: join(g.allow, 'a.txt') }), '');
-  assert.equal(JSON.parse(run('Bash', { command: `rm "${root}/a.txt"` })).hookSpecificOutput.permissionDecision, 'deny');
+  const denied = JSON.parse(run('Bash', { command: `rm "${root}/a.txt"` })).hookSpecificOutput;
+  assert.equal(denied.permissionDecision, 'deny');
+  // The chat shows the reason's first paragraph as a notice, with the command, so a reading one can be listed.
+  const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: `PreToolUse:Bash hook error: ${denied.permissionDecisionReason}` }] } });
+  const notice = sessionEvents(line, g.allow).events.find((e) => e.type === 'notice');
+  assert.ok(notice?.type === 'notice' && notice.text.startsWith(GUARD_MARK) && notice.text.includes(`rm "${root}/a.txt"`) && notice.text.includes('READERS') && !notice.text.includes('\n'));
+});
+
+test('a worktree commit may write only its own git folder, objects and branch refs in the checkout (Codex sandbox)', () => {
+  const wt = join(dirname(root), 'wt');
+  git('worktree', 'add', '-q', '-b', 'fix', wt);
+  // Real paths, since git reports them (macOS /private/var, Windows long names).
+  const real = (d: string) => realpathSync.native(d).replaceAll('\\', '/').toLowerCase();
+  const roots = commitRoots(wt).map(real);
+  const dotGit = real(join(root, '.git'));
+  assert.deepEqual(roots, [`${dotGit}/worktrees/wt`, `${dotGit}/objects`, `${dotGit}/refs/heads`, `${dotGit}/logs/refs/heads`]);
 });

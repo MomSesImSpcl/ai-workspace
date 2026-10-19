@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
-import { guardFor } from '../worktrees.ts';
+import { GUARD_MARK, guardFor } from '../worktrees.ts';
 import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -82,7 +82,7 @@ interface StreamLine {
   mcp_servers?: { name: string; status: string }[];
   skills?: unknown[];
   event?: { type: string; delta?: { type: string; text?: string } };
-  message?: { id?: string; usage?: ClaudeUsage; content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean }[] };
+  message?: { id?: string; usage?: ClaudeUsage; content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean; content?: string | { type: string; text?: string }[] }[] };
 }
 
 // Maps one stream-json line to contract events; text arrives as deltas (--include-partial-messages).
@@ -107,7 +107,15 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
     return { events, usage: e.message?.id && e.message.usage ? { id: e.message.id, usage: tokens(e.message.usage) } : undefined };
   }
   if (e.type === 'user') {
-    return { events: (e.message?.content ?? []).filter((b) => b.type === 'tool_result' && b.tool_use_id).map((b) => ({ type: 'activity-done' as const, id: b.tool_use_id!, error: b.is_error || undefined })) };
+    const results = (e.message?.content ?? []).filter((b) => b.type === 'tool_result' && b.tool_use_id);
+    const events: Body[] = results.map((b) => ({ type: 'activity-done' as const, id: b.tool_use_id!, error: b.is_error || undefined }));
+    // A write the guard hook denied is also shown to the user (selfdev-002): the first paragraph of its reason.
+    for (const b of results.filter((r) => r.is_error)) {
+      const text = typeof b.content === 'string' ? b.content : (b.content ?? []).map((c) => c.text ?? '').join('');
+      const at = text.indexOf(GUARD_MARK);
+      if (at >= 0) events.push({ type: 'notice', text: text.slice(at).split('\n\n')[0]! });
+    }
+    return { events };
   }
   if (e.type === 'result') return { events: [], result: parseResult(line), sessionId: e.session_id };
   return { events: [] };
