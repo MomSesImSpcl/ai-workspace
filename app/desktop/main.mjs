@@ -120,6 +120,7 @@ ipcMain.handle('restart', () => {
   if (mainWindow) saveBounds(mainWindow);
   step('window position saved');
   server?.kill();
+  step('server stopped');
   const args = [...process.argv.slice(1).filter((a) => a !== RELAUNCHED && !a.startsWith(REPLACES)), RELAUNCHED, `${REPLACES}${process.pid}`];
   spawn(process.execPath, args, { cwd: process.cwd(), detached: true, stdio: 'ignore' }).unref();
   step('new instance started; exiting');
