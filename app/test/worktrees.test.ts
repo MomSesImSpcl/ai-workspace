@@ -352,3 +352,22 @@ test('app-project chats and top-level tasks get request_merge; orchestrator chat
   const plain = createSession('Plain', 'Chat', { integration: 'claude-code' });
   assert.ok(!(await tools(plain.id)).includes('request_merge'));
 });
+
+test("a write into the running app's checkout during a turn is reported in the chat; earlier changes are not (#18)", async () => {
+  writeFileSync(join(root, 'notes.txt'), 'the user\'s own notes'); // changed before the turn: not the agent's
+  let write = true;
+  const agent: Record<string, SessionAgent> = { 'claude-code': { open: () => ({ turn: async () => {
+    if (write) { writeFileSync(join(root, 'a.txt'), 'changed'); writeFileSync(join(root, 'stray.txt'), 'x'); }
+    return {};
+  }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } };
+  const s = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(s.id, 'go');
+  await runTurn(s.id, agent);
+  const notices = () => readEvents(s.id).filter((e) => e.type === 'notice').map((e) => e.type === 'notice' ? e.text : '').filter((t) => t.includes("running app's checkout"));
+  assert.equal(notices().length, 1);
+  assert.match(notices()[0]!, /changed during this turn: a\.txt, stray\.txt\. /);
+  write = false;
+  addMessage(s.id, 'again');
+  await runTurn(s.id, agent);
+  assert.equal(notices().length, 1, 'a turn that changes nothing adds no notice');
+});

@@ -22,6 +22,11 @@ Status: accepted (2026-10-20, chosen by the user), implemented 2026-10-20 for se
 
 After Allow and before the push, `request_merge` runs `git fetch origin main` and `git merge --no-edit origin/main`, because the ruleset now merges only up-to-date branches ([ADR 0016](0016-main-ruleset.md)). On a conflict it aborts the merge, pushes nothing and tells the agent to merge `main` itself, check again and retry.
 
+## Amendment 2026-10-20: read_repo and a stricter note
+
+- `MERGE_NOTE` now forbids every other way to merge (`gh pr merge`, the GitHub API, curl, a push to `main`) and points to `read_repo`. The user accepted that this is a rule, not a lock ([#31](https://github.com/MomSesImSpcl/ai-workspace/issues/31) point 1).
+- The workspace MCP server gives every session and task the read-only tool `read_repo` (`app/src/repo-read.ts`): `log` and `show` through git, `prs`, `pr` (checks, and with `logs` the failed lines of failed GitHub Actions jobs), `issues` and `issue` through gh, for any workspace project, at most 30,000 characters per answer, refs checked so git cannot take them as options. The orchestrator runs it without a card (`ORCHESTRATOR_TOOLS`); Claude Code tasks have it allowed. It replaces what Codex lost with its gh login (#31 point 2).
+
 ## Known limits
 
 Tracked in [#31](https://github.com/MomSesImSpcl/ai-workspace/issues/31): the Codex block is not airtight (the GitHub API through `curl` and git's token); Codex loses every `gh` command in a worktree; the empty `GH_CONFIG_DIR` and the workspace server's `gh` login are untested on Windows. Squash merges and the branch cleanup: [#24](https://github.com/MomSesImSpcl/ai-workspace/issues/24).

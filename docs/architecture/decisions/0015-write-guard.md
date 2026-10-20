@@ -20,6 +20,10 @@ Status: accepted (2026-10-19), implemented 2026-10-19 for selfdev-002. Amends [A
 - A workspace permission layer with per-project rules: ADR 0004's reason still holds; one fixed rule covers the need.
 - Running Claude Code in an OS sandbox on Windows: Claude Code has none there.
 
+## Amendment 2026-10-20: detection after the turn
+
+A write the guard cannot see (a path computed at run time, [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18)) is reported instead of prevented: before and after every app-project turn the app takes `git status` of its checkout with modification times (`checkoutSnapshot` in `app/src/worktrees.ts`, called in `oneTurn` in `app/src/turn.ts`), and new changes appear as a chat notice with the files and how to undo them. Changes the user made before the turn are not reported. The storage folder is not covered; the app writes there itself. The user accepted detection as enough: it has not happened so far, and preventing it on Windows needs an OS sandbox or a second user account.
+
 ## Known limits
 
 - A path computed at run time (variables, scripts, a program that writes elsewhere) is not seen by the shell check; for Codex the OS sandbox still catches it, for Claude Code on Windows nothing does. Tracked in [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18).

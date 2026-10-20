@@ -19,7 +19,7 @@ const stateFile = () => join(home(), 'last-good.json');
 const lockFile = () => join(home(), 'last-good.lock');
 
 /** Runs a program and collects its output; never throws (a start failure is exit -1). */
-function run(cmd: string, args: string[], cwd: string, opts: { shell?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<{ code: number | null; out: string }> {
+export function run(cmd: string, args: string[], cwd: string, opts: { shell?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
     let out = '';
     const child = spawn(cmd, args, { cwd, shell: opts.shell, env: opts.env, windowsHide: true });
@@ -161,7 +161,7 @@ export function blocker(s: { branch: string; dirty: boolean; ahead?: number }): 
 }
 
 /** Runs gh in `cwd` (`AI_WORKSPACE_GH` replaces it in tests; a script runs with this Node). */
-async function gh(args: string[], cwd: string): Promise<{ code: number | null; out: string }> {
+export async function gh(args: string[], cwd: string): Promise<{ code: number | null; out: string }> {
   const own = process.env.AI_WORKSPACE_GH;
   if (own) return /\.(m?js|ts)$/.test(own) ? run(process.execPath, [own, ...args], cwd) : run(own, args, cwd);
   return run('gh', args, cwd, { env: { ...process.env, GH_PROMPT_DISABLED: '1' } });

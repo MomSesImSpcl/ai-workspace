@@ -203,15 +203,15 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   }
 });
 
-test('the workspace MCP server offers start_task to a chat session and delegate to a top-level task', async () => {
+test('the workspace MCP server offers start_task to a chat session, delegate to a top-level task and read_repo to both', async () => {
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   const tools = async (id: string) => {
     const client = new Client({ name: 'test', version: '0' });
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
-  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'rename_task', 'reply_task', 'start_task', 'task_status']);
-  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate', 'request_setup']); // a command-line task gets every allowed item
+  assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'read_repo', 'rename_task', 'reply_task', 'start_task', 'task_status']);
+  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate', 'read_repo', 'request_setup']); // a command-line task gets every allowed item
 });
 
 test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
