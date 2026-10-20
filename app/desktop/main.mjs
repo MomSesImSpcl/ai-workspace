@@ -161,9 +161,9 @@ ipcMain.handle('restart', () => {
     const env = { ...process.env };
     delete env.AI_WORKSPACE_FALLBACK;
     delete env.AI_WORKSPACE_REPO;
-    child = spawn(electronIn(target) ?? process.execPath, [target, ...marks], { cwd: target, env, detached: true, stdio: 'ignore' });
+    child = spawn(electronIn(target) ?? process.execPath, [target, ...switches(), ...marks], { cwd: target, env, detached: true, stdio: 'ignore' });
   } else {
-    const args = [...process.argv.slice(1).filter((a) => a !== RELAUNCHED && a !== HANDOVER && !a.startsWith(REPLACES)), ...marks];
+    const args = [...process.argv.slice(1).filter((a) => !ownMark(a)), ...marks];
     child = spawn(process.execPath, args, { cwd: process.cwd(), detached: true, stdio: 'ignore' });
   }
   child.unref();
@@ -213,7 +213,7 @@ async function offerFallback(reason) {
   if (response === 0) {
     app.releaseSingleInstanceLock();
     const copy = join(lg.path, 'app');
-    spawn(lg.electron, [copy, RELAUNCHED], { cwd: copy, detached: true, stdio: 'ignore', env: { ...process.env, AI_WORKSPACE_FALLBACK: lg.commit, AI_WORKSPACE_REPO: repoDir } }).unref();
+    spawn(lg.electron, [copy, ...switches(), RELAUNCHED], { cwd: copy, detached: true, stdio: 'ignore', env: { ...process.env, AI_WORKSPACE_FALLBACK: lg.commit, AI_WORKSPACE_REPO: repoDir } }).unref();
     log(`started the last working version ${lg.commit}`);
   }
   app.exit(response === 0 ? 0 : 1);
@@ -246,6 +246,10 @@ function log(line) {
 const RELAUNCHED = '--relaunched';
 const REPLACES = '--replaces='; // the pid of the instance a restart replaces
 const HANDOVER = '--handover'; // that instance waits for this one's startup check and shows a failure itself
+const ownMark = (a) => a === RELAUNCHED || a === HANDOVER || a.startsWith(REPLACES);
+// The switches this instance was started with (`--user-data-dir`, `--remote-debugging-port`, …), without its app path
+// and the restart marks, so a fallback and its restart keep the same data folder and options.
+const switches = () => process.argv.slice(1).filter((a) => a.startsWith('--') && !ownMark(a));
 let mainWindow;
 
 // One window: a second launch focuses the open one. A restarted instance can start before the old one has

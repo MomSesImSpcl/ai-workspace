@@ -129,7 +129,9 @@ export interface UpdateStatus { branch: string; behind: number; ahead: number; d
 export async function updateStatus(repo: string): Promise<UpdateStatus> {
   const s: UpdateStatus = { branch: '', behind: 0, ahead: 0, dirty: false, checkedAt: new Date().toISOString() };
   try {
-    await git(repo, ['fetch', '--quiet', 'origin', 'main']).catch((e: Error) => { s.error = e.message; });
+    // No login prompt: a fetch that needs one fails at once instead of holding the Update check.
+    const r = await run('git', ['fetch', '--quiet', 'origin', 'main'], repo, { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    if (r.code !== 0) s.error = `git fetch failed: ${r.out}`;
     s.branch = await git(repo, ['branch', '--show-current']);
     s.behind = Number(await git(repo, ['rev-list', '--count', 'HEAD..origin/main']));
     s.ahead = Number(await git(repo, ['rev-list', '--count', 'origin/main..HEAD']));

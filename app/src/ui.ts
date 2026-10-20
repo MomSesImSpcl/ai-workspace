@@ -34,13 +34,15 @@ function tail(path: string, bytes = 8192): string {
 }
 
 // The app checkout against origin/main for the Update button (selfdev-005): fetched at most every 5 minutes, in the
-// background, so a request never waits for the network.
+// background; only the first request after a start waits for it.
 let update: { status?: UpdateStatus; at: number; running?: Promise<void> } = { at: 0 };
-function cachedUpdate(repo: string): UpdateStatus | undefined {
+async function cachedUpdate(repo: string): Promise<UpdateStatus | undefined> {
   if (!update.running && Date.now() - update.at > 5 * 60_000) {
     update.at = Date.now();
     update.running = updateStatus(repo).then((s) => { update.status = s; }).finally(() => { update.running = undefined; });
   }
+  // The first check after a start waits for its fetch, so the Update button does not appear a check late.
+  if (!update.status) await update.running;
   return update.status;
 }
 
@@ -271,7 +273,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   // desktop shell restarts. `fallback` names the commit a fallback instance runs (selfdev-006).
   if (req.method === 'GET' && kind === 'app-update') {
     const repo = appRepo();
-    return { status: repo ? cachedUpdate(repo) ?? null : null, fallback: process.env.AI_WORKSPACE_FALLBACK || null, lastGood: lastGood()?.commit ?? null };
+    return { status: repo ? (await cachedUpdate(repo)) ?? null : null, fallback: process.env.AI_WORKSPACE_FALLBACK || null, lastGood: lastGood()?.commit ?? null };
   }
   if (req.method === 'POST' && kind === 'app-update') {
     const repo = appRepo();
