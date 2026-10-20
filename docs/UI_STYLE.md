@@ -20,7 +20,7 @@ The `:root` tokens in `ui.html` are the source of truth; reuse them instead of n
 - **Spacing:** 4, 8, 12, 16, 24 px.
 - **Shape:** 1 px borders in `--hairline`; corners `--radius-sm` (7 px) for controls, `--radius` (10 px) for cards.
 - **Icons:** simple outline SVGs, 11 to 18 px, `stroke="currentColor"`.
-- **Motion:** `--t` (160 ms) for hover and focus; no other animation. Reduced motion sets it to 0.
+- **Motion:** `--t` (160 ms) for hover and focus; no other animation. Reduced motion sets it to 0. One agreed exception (user, 2026-10-20): the toolbar's Check for updates button pulses its border while it is not in its default state; with reduced motion the border stays steady instead.
 
 ## Patterns
 

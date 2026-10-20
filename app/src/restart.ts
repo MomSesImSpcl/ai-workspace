@@ -144,6 +144,82 @@ export async function updateStatus(repo: string): Promise<UpdateStatus> {
   return s;
 }
 
+/** The checkout's own state, read without the network: its branch and whether `app/` has uncommitted changes. */
+export async function localState(repo: string): Promise<{ branch: string; dirty: boolean }> {
+  return {
+    branch: await git(repo, ['branch', '--show-current']).catch(() => ''),
+    dirty: !!(await git(repo, ['status', '--porcelain', '--untracked-files=no', '--', 'app']).catch(() => '')),
+  };
+}
+
+/** Why the checkout cannot be updated, in the button's words, or undefined. */
+export function blocker(s: { branch: string; dirty: boolean; ahead?: number }): string | undefined {
+  if (s.branch !== 'main') return 'Must be on main to update';
+  if (s.dirty) return 'Uncommitted changes in app/';
+  if (s.ahead) return `main has ${s.ahead} local commit${s.ahead === 1 ? '' : 's'} not on GitHub`;
+  return undefined;
+}
+
+/** Runs gh in `cwd` (`AI_WORKSPACE_GH` replaces it in tests; a script runs with this Node). */
+async function gh(args: string[], cwd: string): Promise<{ code: number | null; out: string }> {
+  const own = process.env.AI_WORKSPACE_GH;
+  if (own) return /\.(m?js|ts)$/.test(own) ? run(process.execPath, [own, ...args], cwd) : run(own, args, cwd);
+  return run('gh', args, cwd, { env: { ...process.env, GH_PROMPT_DISABLED: '1' } });
+}
+
+/** Open pull requests into main with auto-merge on: they merge by themselves once their checks pass. [] without gh. */
+async function pendingMerges(repo: string): Promise<number[]> {
+  const r = await gh(['pr', 'list', '--base', 'main', '--state', 'open', '--json', 'number,autoMergeRequest'], repo);
+  if (r.code !== 0) return [];
+  try { return (JSON.parse(r.out) as { number: number; autoMergeRequest: unknown }[]).filter((p) => p.autoMergeRequest).map((p) => p.number); } catch { return []; }
+}
+
+/**
+ * What became of a pull request the check waits for: merged; failed when it was closed, its auto-merge was turned
+ * off or a check failed (it will not merge by itself); otherwise still open. A gh error counts as open, so the wait
+ * goes on until its time limit.
+ */
+async function prOutcome(repo: string, n: number): Promise<'merged' | 'failed' | 'open'> {
+  const r = await gh(['pr', 'view', String(n), '--json', 'state,autoMergeRequest,statusCheckRollup'], repo);
+  if (r.code !== 0) return 'open';
+  try {
+    const p = JSON.parse(r.out) as { state: string; autoMergeRequest: unknown; statusCheckRollup?: { conclusion?: string; state?: string }[] };
+    if (p.state === 'MERGED') return 'merged';
+    if (p.state === 'CLOSED' || !p.autoMergeRequest) return 'failed';
+    const bad = /^(FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|ERROR)$/;
+    return (p.statusCheckRollup ?? []).some((c) => bad.test(c.conclusion ?? '') || bad.test(c.state ?? '')) ? 'failed' : 'open';
+  } catch { return 'open'; }
+}
+
+/** The answer to Check for updates (selfdev-005); see `checkForUpdate`. */
+export type UpdateCheck =
+  | { state: 'update' } | { state: 'up-to-date' } | { state: 'error'; reason: string }
+  | { state: 'blocked'; reason: string } | { state: 'waiting'; prs: number[] } | { state: 'failed'; prs: number[] };
+
+/**
+ * Check for updates, started by the user (selfdev-005; no background checks, user 2026-10-20): fetches `main`, then
+ * `update` when it has commits the checkout lacks, `blocked` when the checkout cannot take them (another branch,
+ * changes in `app/`, local commits), `waiting` while a pull request with auto-merge is still running its checks
+ * (the page asks again every 10 s, passing `waitingFor`), `failed` when every awaited one ended without merging,
+ * else `up-to-date`. Pull requests are read with gh; without it, nothing is awaited.
+ */
+export async function checkForUpdate(repo: string, waitingFor: number[] = []): Promise<UpdateCheck> {
+  const s = await updateStatus(repo);
+  if (s.error && !s.branch) return { state: 'error', reason: s.error };
+  const blocked = blocker(s);
+  if (blocked) return { state: 'blocked', reason: blocked };
+  if (s.behind) return { state: 'update' };
+  if (s.error) return { state: 'error', reason: s.error };
+  if (waitingFor.length) {
+    const outcomes = await Promise.all(waitingFor.map(async (n) => [n, await prOutcome(repo, n)] as const));
+    // A merged one not fetched yet keeps the wait going until the next fetch sees it.
+    const still = outcomes.filter(([, o]) => o !== 'failed').map(([n]) => n);
+    return still.length ? { state: 'waiting', prs: still } : { state: 'failed', prs: waitingFor };
+  }
+  const pending = await pendingMerges(repo);
+  return pending.length ? { state: 'waiting', prs: pending } : { state: 'up-to-date' };
+}
+
 /**
  * Brings the app checkout up to date with `origin/main` before a restart onto the new code (selfdev-005):
  * a fast-forward only, refused on another branch, with uncommitted changes or with local commits, so the user's own
@@ -155,9 +231,8 @@ export async function updateStatus(repo: string): Promise<UpdateStatus> {
 export async function applyUpdate(repo: string): Promise<{ from: string; to: string; dependencies: boolean }> {
   const s = await updateStatus(repo);
   if (s.error && !s.branch) throw new Error(s.error);
-  if (s.branch !== 'main') throw new Error(`The app's checkout is on ${s.branch ? `branch ${s.branch}` : 'a detached HEAD'}, not main. Switch it back with \`git switch main\` first.`);
-  if (s.dirty) throw new Error("The app's checkout has uncommitted changes in app/. Commit or remove them first.");
-  if (s.ahead) throw new Error(`The app's checkout has ${s.ahead} commit(s) that are not on main. Move them to a branch first.`);
+  const blocked = blocker(s);
+  if (blocked) throw new Error(blocked);
   const from = await git(repo, ['rev-parse', 'HEAD']);
   if (!s.behind) return { from, to: from, dependencies: false };
   await git(repo, ['merge', '--ff-only', 'origin/main']);

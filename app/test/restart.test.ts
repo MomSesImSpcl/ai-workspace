@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyUpdate, lastGood, recordLastGood, updateStatus } from '../src/restart.ts';
+import { applyUpdate, checkForUpdate, lastGood, localState, recordLastGood, updateStatus } from '../src/restart.ts';
 
 let dir = '', repo = '', origin = '';
 const git = (cwd: string, ...args: string[]) => {
@@ -126,13 +126,16 @@ test('the update fast-forwards main and installs dependencies only when they cha
 test("the update never touches the user's own work: another branch, uncommitted changes or local commits are refused", async () => {
   pushToMain('d.txt', 'd');
   git(repo, 'switch', '-q', '-c', 'try-agent-branch');
-  await assert.rejects(applyUpdate(repo), /on branch try-agent-branch, not main/);
+  await assert.rejects(applyUpdate(repo), /Must be on main to update/);
+  assert.deepEqual(await checkForUpdate(repo), { state: 'blocked', reason: 'Must be on main to update' });
+  assert.deepEqual(await localState(repo), { branch: 'try-agent-branch', dirty: false });
   git(repo, 'switch', '-q', 'main');
   writeFileSync(join(repo, 'app', 'package-lock.json'), 'edited');
-  await assert.rejects(applyUpdate(repo), /uncommitted changes/);
+  await assert.rejects(applyUpdate(repo), /Uncommitted changes in app\//);
+  assert.deepEqual(await localState(repo), { branch: 'main', dirty: true });
   git(repo, 'checkout', '-q', '--', '.');
   commit(repo, 'local.txt', 'mine');
-  await assert.rejects(applyUpdate(repo), /1 commit\(s\) that are not on main/);
+  await assert.rejects(applyUpdate(repo), /main has 1 local commit not on GitHub/);
   assert.equal(readFileSync(join(repo, 'local.txt'), 'utf8'), 'mine');
   const s = await updateStatus(repo);
   assert.deepEqual([s.behind, s.ahead], [1, 1]);
@@ -144,4 +147,39 @@ test('an unreachable origin is reported, with the counts from the last fetch', a
   assert.match(s.error ?? '', /git fetch failed/);
   assert.equal(s.branch, 'main');
   assert.equal(s.behind, 0);
+});
+
+test('Check for updates: new commits, nothing new, and a pull request with auto-merge that merges or fails (selfdev-005)', async () => {
+  // gh answers from a JSON file the test rewrites: the open pull requests and each one's state.
+  const prs = join(dir, 'prs.json');
+  const fakeGh = join(dir, 'fake-gh.mjs');
+  writeFileSync(fakeGh, `import { readFileSync } from 'node:fs';
+const prs = JSON.parse(readFileSync(${JSON.stringify(prs)}, 'utf8'));
+const [cmd, sub, n] = process.argv.slice(2);
+if (cmd === 'pr' && sub === 'list') console.log(JSON.stringify(prs.filter((p) => p.state === 'OPEN')));
+else if (cmd === 'pr' && sub === 'view') console.log(JSON.stringify(prs.find((p) => p.number === Number(n))));
+else process.exit(1);`);
+  process.env.AI_WORKSPACE_GH = fakeGh;
+  try {
+    const open = (n: number, checks: string[] = []) => ({ number: n, state: 'OPEN', autoMergeRequest: { mergeMethod: 'SQUASH' }, statusCheckRollup: checks.map((c) => ({ conclusion: c })) });
+    writeFileSync(prs, JSON.stringify([{ number: 7, state: 'OPEN', autoMergeRequest: null }]));
+    assert.deepEqual(await checkForUpdate(repo), { state: 'up-to-date' }, 'an open pull request without auto-merge is not awaited');
+    writeFileSync(prs, JSON.stringify([open(8)]));
+    assert.deepEqual(await checkForUpdate(repo), { state: 'waiting', prs: [8] });
+    writeFileSync(prs, JSON.stringify([open(8, ['SUCCESS', ''])]));
+    assert.deepEqual(await checkForUpdate(repo, [8]), { state: 'waiting', prs: [8] }, 'checks still running');
+    writeFileSync(prs, JSON.stringify([{ number: 8, state: 'MERGED' }]));
+    assert.deepEqual(await checkForUpdate(repo, [8]), { state: 'waiting', prs: [8] }, 'merged on GitHub, but main not fetched yet');
+    pushToMain('merged.txt', 'm');
+    assert.deepEqual(await checkForUpdate(repo, [8]), { state: 'update' });
+    await applyUpdate(repo);
+    writeFileSync(prs, JSON.stringify([open(9, ['SUCCESS', 'FAILURE'])]));
+    assert.deepEqual(await checkForUpdate(repo, [9]), { state: 'failed', prs: [9] }, 'a failed check: it will not merge by itself');
+    writeFileSync(prs, JSON.stringify([{ number: 9, state: 'CLOSED', autoMergeRequest: null }]));
+    assert.deepEqual(await checkForUpdate(repo, [9]), { state: 'failed', prs: [9] });
+    process.env.AI_WORKSPACE_GH = join(dir, 'missing-gh');
+    assert.deepEqual(await checkForUpdate(repo), { state: 'up-to-date' }, 'without gh nothing is awaited');
+  } finally {
+    delete process.env.AI_WORKSPACE_GH;
+  }
 });
