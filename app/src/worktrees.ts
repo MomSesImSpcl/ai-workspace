@@ -329,7 +329,20 @@ export function guardedCommand(g: Guard, command: string, cwd = g.allow): string
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */
 export function addWorktree(root: string, wt: Worktree): string {
-  mkdirSync(dirname(wt.path), { recursive: true });
-  git(root, ['worktree', 'add', '-b', wt.branch, wt.path, 'HEAD']);
+  const had = branchExists(root, wt.branch);
+  try {
+    mkdirSync(dirname(wt.path), { recursive: true });
+    // Long paths let Windows Git check out files deeper than 260 characters, when the system allows them.
+    git(root, ['-c', 'core.longpaths=true', 'worktree', 'add', '-b', wt.branch, wt.path, 'HEAD']);
+  } catch (e) {
+    // Git makes the branch before the folder, so a failure leaves the branch behind (#22).
+    try { git(root, ['worktree', 'prune']); } catch { /* nothing to prune */ }
+    if (!had && branchExists(root, wt.branch)) try { git(root, ['branch', '-D', wt.branch]); } catch { /* still in use */ }
+    const message = (e as Error).message;
+    if (/too big|too long|ENAMETOOLONG|could not create leading directories|Invalid path/i.test(message)) {
+      throw new Error(`The new worktree could not be made, most likely because its folder path is too long (${wt.path.length} characters${process.platform === 'win32' ? '; Git on Windows often stops at 260' : ''}): ${wt.path}. Use a shorter branch name, or move the workspace storage to a shorter folder (AI_WORKSPACE_HOME). No branch was left behind. Git said: ${message}`);
+    }
+    throw e;
+  }
   return git(wt.path, ['log', '-1', '--format=%h %s']);
 }
