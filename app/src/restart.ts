@@ -72,8 +72,10 @@ async function removeCopy(repo: string, path: string): Promise<void> {
  * Records `commit` of the app checkout `repo` as the last working version, after the desktop shell saw it pass its
  * startup check (selfdev-006): builds a fresh copy in the free slot (`git worktree add --detach`, then `npm ci` in
  * `app/` and Electron's own `install.js`, since Electron fetches its binary on first use), then switches
- * `last-good.json` to it and removes the older copy. Only a clean `main` at that commit counts, since anything
- * else is not a version `main` can return to; a fallback instance (`AI_WORKSPACE_FALLBACK`) never records. One recorder at a time (`last-good.lock`, taken over after an hour).
+ * `last-good.json` to it and removes the older copy. Only `main` at that commit without changes in `app/` counts,
+ * since anything else is not a version `main` can return to (notes or docs changed elsewhere do not matter); a
+ * fallback instance (`AI_WORKSPACE_FALLBACK`) never records. One recorder at a time (`last-good.lock`, taken over
+ * after an hour).
  * Returns what it did, for `last-good.log`; a failed build throws and leaves the recorded version as it was.
  */
 export async function recordLastGood(repo: string, commit: string): Promise<string> {
@@ -81,7 +83,8 @@ export async function recordLastGood(repo: string, commit: string): Promise<stri
   const branch = await git(repo, ['branch', '--show-current']);
   if (branch !== 'main') return `skipped: the checkout is on ${branch || 'a detached HEAD'}, not main`;
   if ((await git(repo, ['rev-parse', 'HEAD'])) !== commit) return `skipped: the checkout moved on from ${commit}`;
-  if (await git(repo, ['status', '--porcelain', '--untracked-files=no'])) return 'skipped: the checkout has uncommitted changes';
+  // Only changes to the code that runs (app/) make the copy differ from it; notes or docs elsewhere do not.
+  if (await git(repo, ['status', '--porcelain', '--untracked-files=no', '--', 'app'])) return 'skipped: app/ has uncommitted changes';
   const current = lastGood();
   if (current?.commit === commit) return `already recorded: ${commit}`;
   mkdirSync(home(), { recursive: true });
@@ -120,7 +123,7 @@ export async function recordLastGood(repo: string, commit: string): Promise<stri
 
 /**
  * Whether the app checkout can take new commits from `origin/main` (selfdev-005): `behind` and `ahead` count
- * commits against `origin/main` after a fetch; `dirty` means uncommitted changes to tracked files. A failed fetch
+ * commits against `origin/main` after a fetch; `dirty` means uncommitted changes to tracked files in `app/`. A failed fetch
  * (offline) is reported in `error`, with the counts from the last fetch.
  */
 export interface UpdateStatus { branch: string; behind: number; ahead: number; dirty: boolean; error?: string; checkedAt: string }
@@ -135,7 +138,8 @@ export async function updateStatus(repo: string): Promise<UpdateStatus> {
     s.branch = await git(repo, ['branch', '--show-current']);
     s.behind = Number(await git(repo, ['rev-list', '--count', 'HEAD..origin/main']));
     s.ahead = Number(await git(repo, ['rev-list', '--count', 'origin/main..HEAD']));
-    s.dirty = !!(await git(repo, ['status', '--porcelain', '--untracked-files=no']));
+    // Changes outside app/ do not block an update: git's fast-forward refuses to overwrite a changed file itself.
+    s.dirty = !!(await git(repo, ['status', '--porcelain', '--untracked-files=no', '--', 'app']));
   } catch (e) { s.error = (e as Error).message; }
   return s;
 }
@@ -152,7 +156,7 @@ export async function applyUpdate(repo: string): Promise<{ from: string; to: str
   const s = await updateStatus(repo);
   if (s.error && !s.branch) throw new Error(s.error);
   if (s.branch !== 'main') throw new Error(`The app's checkout is on ${s.branch ? `branch ${s.branch}` : 'a detached HEAD'}, not main. Switch it back with \`git switch main\` first.`);
-  if (s.dirty) throw new Error("The app's checkout has uncommitted changes. Commit or remove them first.");
+  if (s.dirty) throw new Error("The app's checkout has uncommitted changes in app/. Commit or remove them first.");
   if (s.ahead) throw new Error(`The app's checkout has ${s.ahead} commit(s) that are not on main. Move them to a branch first.`);
   const from = await git(repo, ['rev-parse', 'HEAD']);
   if (!s.behind) return { from, to: from, dependencies: false };
