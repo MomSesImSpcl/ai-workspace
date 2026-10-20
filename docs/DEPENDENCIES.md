@@ -17,6 +17,7 @@ What is needed today to run the workspace the way it is developed. Details are i
 | Dependency | Needed for | Required version | Last tested | Install / setup | OS notes |
 |---|---|---|---|---|---|
 | Node.js | Everything: CLI, UI server, task runners (runs TypeScript directly via type stripping) | ≥ 24 | 24 on Windows 10 | [nodejs.org](https://nodejs.org/) | Must be on `PATH` for the desktop app ([#13](https://github.com/MomSesImSpcl/ai-workspace/issues/13)) |
+| Windows PowerShell (`Get-Acl`) | Windows only: the start-up check that Codex's sandbox can run the programs of the user's Codex hooks (#21) | 5.1 (ships with Windows) | not yet run (2026-10-20); CI on `windows-latest` | none | Not used on other systems |
 
 ## Agent integrations (optional, user's choice)
 
