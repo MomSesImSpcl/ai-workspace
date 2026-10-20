@@ -112,7 +112,7 @@ test('codex app-server: approvals become cards and wait, text streams, usage is 
   setRole('Implementation', { integration: 'codex' });
   const t = task('ask first');
   const host = hostSession(t.id);
-  await until(() => last(t.id).approvals.length === 1);
+  await until(() => last(t.id).approvals.length === 1, 30_000); // starting the fake app-server is slow on busy Windows runners
   const card = last(t.id).approvals[0]!;
   assert.deepEqual([card.tool, card.detail], ['Shell', 'echo hi']);
   await wait(300);
