@@ -328,7 +328,7 @@ export function guardedCommand(g: Guard, command: string, cwd = g.allow): string
 }
 
 /** How npm is started: `AI_WORKSPACE_NPM` (a script runs with this Node; tests use a fake), else `npm`. */
-function npmCommand(): [string, string[], boolean] {
+export function npmCommand(): [string, string[], boolean] {
   const bin = process.env.AI_WORKSPACE_NPM;
   if (bin) return /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin], false] : [bin, [], false];
   return ['npm', [], process.platform === 'win32']; // npm is a .cmd script on Windows
