@@ -27,7 +27,7 @@
      state (agreed exception to the motion rule, UI_STYLE.md); steady with reduced motion. */
   #update { width: 150px; text-align: center; white-space: nowrap; }
   #update[aria-disabled="true"] { opacity: .45; cursor: default; }
-  #update.pulse { animation: update-pulse 1.6s ease-in-out infinite; border-color: var(--accent); }
+  #update.pulse { animation: update-pulse 1.6s ease-in-out infinite; }
   @keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); } 50% { box-shadow: 0 0 0 4px var(--accent-edge); } }
   @media (prefers-reduced-motion: reduce) { #update.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent-edge); } }
   * { box-sizing: border-box; }
@@ -341,7 +341,7 @@
     </div>
     <div class="right">
       <span class="meta" id="fallback-note" hidden></span>
-      <button class="btn small" id="update" type="button" hidden>Check for updates</button>
+      <button class="btn small primary" id="update" type="button" hidden>Check for updates</button>
       <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
     </div>
@@ -1108,12 +1108,12 @@ $('#restart').onclick = () => window.desktop.restart();
 // A fallback instance (selfdev-006) shows a note; once main has a fix, the same button goes back to it.
 const UPDATE_IDLE = 'Check for updates', UPDATE_POLL_MS = 10_000, UPDATE_WAIT_MS = 10 * 60_000, UPDATE_SHOW_MS = 4000;
 const upd = { mode: 'idle', timer: 0, deadline: 0, waitingFor: [] };
-function showUpdate(text, { title = '', pulse = true, primary = false, blocked = false } = {}) {
+// Always the accent button (the --accent* tokens, so a future accent setting colors it too).
+function showUpdate(text, { title = '', pulse = true, blocked = false } = {}) {
   const b = $('#update');
   b.textContent = text;
   b.title = title;
   b.classList.toggle('pulse', pulse);
-  b.classList.toggle('primary', primary);
   b.setAttribute('aria-disabled', String(blocked));
 }
 function idleUpdate() {
@@ -1145,7 +1145,7 @@ async function checkForUpdate() {
   if (upd.mode === 'idle') showUpdate('Checking…');
   let r;
   try { r = await api('/api/app-update/check', { waitingFor: upd.waitingFor }); } catch (e) { return flashUpdate('Check failed', e.message); }
-  if (r.state === 'update') { clearTimeout(upd.timer); upd.mode = 'update'; return showUpdate('Update and restart', { primary: true, title: "Bring the app's checkout up to date with main and restart onto it" }); }
+  if (r.state === 'update') { clearTimeout(upd.timer); upd.mode = 'update'; return showUpdate('Update and restart', { title: "Bring the app's checkout up to date with main and restart onto it" }); }
   if (r.state === 'waiting') {
     if (!upd.deadline) upd.deadline = Date.now() + UPDATE_WAIT_MS;
     if (Date.now() > upd.deadline) return idleUpdate();
