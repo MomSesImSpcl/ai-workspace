@@ -3,16 +3,16 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addMessage, createSession, loadSession, readEvents, type SessionAgent } from '../src/sessions.ts';
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
 import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
-import { guardedRequest } from '../src/adapters/codex.ts';
+import { guardedRequest, sandboxPath } from '../src/adapters/codex.ts';
 import { sessionEvents } from '../src/adapters/claude-code.ts';
 import { forget, guardServer, guardToken } from '../src/guard.ts';
 
@@ -243,4 +243,16 @@ test('a worktree commit may write only its own git folder, objects and branch re
   const roots = commitRoots(wt).map(real);
   const dotGit = real(join(root, '.git'));
   assert.deepEqual(roots, [`${dotGit}/worktrees/wt`, `${dotGit}/objects`, `${dotGit}/refs/heads`, `${dotGit}/logs/refs/heads`]);
+});
+
+test('Codex gets the real folder of a linked program before its link, so its sandbox can run it (#21)', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ws-links-'));
+  const links = join(dir, 'Links'), pkg = join(dir, 'Packages', 'rtk'), plain = join(dir, 'bin');
+  for (const d of [links, pkg, plain]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(pkg, 'rtk.exe'), '');
+  writeFileSync(join(plain, 'git.exe'), '');
+  try { symlinkSync(join(pkg, 'rtk.exe'), join(links, 'rtk.exe')); } catch { t.skip('no permission to make links here'); return; }
+  const real = realpathSync(pkg);
+  assert.equal(sandboxPath([plain, links, join(dir, 'missing')].join(delimiter)), [plain, real, links, join(dir, 'missing')].join(delimiter));
+  assert.equal(sandboxPath([links, links].join(delimiter)), [real, links].join(delimiter), 'each folder once');
 });

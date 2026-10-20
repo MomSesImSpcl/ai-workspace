@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { commitRoots, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
@@ -24,6 +24,30 @@ function command(): [string, string[]] {
     }
   }
   return ['codex', []];
+}
+
+/**
+ * `path` (a PATH value) with the real folder of each linked program placed before the folder holding its link
+ * (#21). Codex's Windows sandbox cannot run a program through a link, such as WinGet's `Links` folder, so a user
+ * hook calling `rtk` failed there; the real folder lets the same name find the program itself. Only `.exe` links
+ * count, so folders full of other links (Linux `/usr/bin`) are left alone.
+ */
+export function sandboxPath(path: string): string {
+  const out: string[] = [];
+  for (const dir of path.split(delimiter)) {
+    if (!dir) continue;
+    let names: string[] = [];
+    try { names = readdirSync(dir).filter((n) => /\.exe$/i.test(n)); } catch { /* missing folder */ }
+    for (const n of names) {
+      try {
+        if (!lstatSync(join(dir, n)).isSymbolicLink()) continue;
+        const real = dirname(realpathSync(join(dir, n)));
+        if (!out.includes(real)) out.push(real);
+      } catch { /* broken link */ }
+    }
+    if (!out.includes(dir)) out.push(dir);
+  }
+  return out.join(delimiter);
 }
 
 // Codex's own approval presets (its /approvals menu), passed per thread; '' keeps the user's config.
@@ -120,7 +144,10 @@ export class CodexProcess implements AgentProcess {
 
   private start(): void {
     const [bin, pre] = command();
-    const child = spawn(bin, [...pre, 'app-server'], { cwd: this.root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    // Windows spells it `Path`; the key is kept as it is.
+    const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+    const env = { ...process.env, [pathKey]: sandboxPath(process.env[pathKey] ?? '') };
+    const child = spawn(bin, [...pre, 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;
