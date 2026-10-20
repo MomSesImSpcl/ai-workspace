@@ -18,6 +18,10 @@ Status: accepted (2026-10-20, chosen by the user), implemented 2026-10-20 for se
 - An instruction only: selfdev-004 would be unenforced.
 - A required review in the ruleset: GitHub does not let the author approve their own pull request, so it would block the user too.
 
+## Amendment 2026-10-20: up to date first
+
+After Allow and before the push, `request_merge` runs `git fetch origin main` and `git merge --no-edit origin/main`, because the ruleset now merges only up-to-date branches ([ADR 0016](0016-main-ruleset.md)). On a conflict it aborts the merge, pushes nothing and tells the agent to merge `main` itself, check again and retry.
+
 ## Known limits
 
 Tracked in [#31](https://github.com/MomSesImSpcl/ai-workspace/issues/31): the Codex block is not airtight (the GitHub API through `curl` and git's token); Codex loses every `gh` command in a worktree; the empty `GH_CONFIG_DIR` and the workspace server's `gh` login are untested on Windows. Squash merges and the branch cleanup: [#24](https://github.com/MomSesImSpcl/ai-workspace/issues/24).

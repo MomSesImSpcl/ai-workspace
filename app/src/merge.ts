@@ -32,7 +32,8 @@ function findPr(branch: string, cwd: string): Pr | undefined {
 /**
  * Merges the worktree branch `branch` into main after the user's approval. `ask` shows the card and returns the
  * answer (null when the turn was stopped); nothing happens before it. On Allow the app, outside any agent sandbox
- * and with the user's credentials, pushes the branch (Codex cannot from its Windows sandbox), opens the pull request
+ * and with the user's credentials, merges main into the branch (the ruleset merges only up-to-date branches), pushes
+ * it (Codex cannot from its Windows sandbox), opens the pull request
  * if there is none, and turns on auto-merge, so GitHub squash-merges once the required checks pass (ADR 0016).
  * Returns what the agent is told; throws when the request cannot go to the user.
  */
@@ -45,6 +46,14 @@ export async function requestMerge(branch: string, cwd: string, args: MergeArgs,
   const allow = await ask(`Push branch ${branch} and squash-merge ${what} into main once the required checks pass. Checks the agent reports: ${args.checks}`.slice(0, 1000));
   if (allow === null) return 'The user stopped the turn; nothing was pushed or merged.';
   if (!allow) return 'The user did not approve the merge; nothing was pushed or merged. Ask the user what to change.';
+  // main's ruleset merges only branches that are up to date with main (ADR 0016), so main comes in first.
+  const fetched = git(['fetch', 'origin', 'main'], cwd);
+  if (!fetched.ok) return `Fetching main failed; nothing was pushed or merged: ${fetched.out}`;
+  const updated = git(['merge', '--no-edit', 'origin/main'], cwd);
+  if (!updated.ok) {
+    git(['merge', '--abort'], cwd);
+    return `Bringing ${branch} up to date with main failed (a merge conflict, most likely); nothing was pushed or merged. Merge origin/main into the branch yourself, resolve the conflicts, run the checks again, commit, and call request_merge again. Git said: ${updated.out}`;
+  }
   const pushed = git(['push', '-u', 'origin', branch], cwd);
   if (!pushed.ok) return `Pushing branch ${branch} failed; nothing was merged: ${pushed.out}`;
   let pr = open;
