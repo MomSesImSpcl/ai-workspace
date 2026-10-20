@@ -1,15 +1,26 @@
 name: CI
 
+# One run per change: pushes to main, and pull requests to main (no second run for the PR branch's push).
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A newer push to a pull request cancels its older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Draft pull requests test on Ubuntu only; ready ones and main on all three systems, so a merge is
+        # always checked on Windows and macOS too.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:

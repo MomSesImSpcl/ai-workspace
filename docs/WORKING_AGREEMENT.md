@@ -43,3 +43,7 @@ Add one line per ADR to [the index](architecture/decisions/README.md) with numbe
 ## Documentation as the project grows
 
 The current layout is described where it is used: [feature guide](ADDING_FEATURES.md), [history README](history/README.md), [ADR index](architecture/decisions/README.md), [traceability](REQUIREMENTS_TRACEABILITY.md). Add `docs/security/` (threat model, secrets and data policy), `docs/operations/` (upgrades, restore, incidents) or versioned API/schema contracts only when implemented work needs them; no empty placeholder essays.
+
+## CI
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs once per change: on pull requests to `main` and on pushes to `main`. A newer push to a pull request cancels its older run; runs on `main` always finish. Draft pull requests run the tests on Ubuntu; ready ones (marking a draft ready starts this) and `main` run them on Ubuntu, Windows and macOS. The private-data scan runs every time. To make the Windows and macOS checks required before a merge, mark `test (windows-latest)` and `test (macos-latest)` as required status checks for `main` in the repository's branch protection (GitHub settings). Agents run the same checks locally before each push ([AGENTS.md](../AGENTS.md)).
