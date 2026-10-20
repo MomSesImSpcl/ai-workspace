@@ -47,3 +47,8 @@ The current layout is described where it is used: [feature guide](ADDING_FEATURE
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs once per change: on pull requests to `main` and on pushes to `main`. A newer push to a pull request cancels its older run; runs on `main` always finish. Draft pull requests run the tests on Ubuntu; ready ones (marking a draft ready starts this) and `main` run them on Ubuntu, Windows and macOS. The private-data scan runs every time. A test that runs longer than 60 s fails with its name (`--test-timeout`), a test file that leaves something open still ends (`--test-force-exit`), and a test job stops after 10 minutes. A ruleset on `main` requires a pull request and all four checks ([ADR 0016](architecture/decisions/0016-main-ruleset.md)). Checkout fetches 2 commits, enough to see which files changed. Agents run the same checks locally before each push ([AGENTS.md](../AGENTS.md)).
+
+## Testing an agent's branch locally
+
+To try an agent's pull request in the app, switch the main checkout to its branch with `git fetch origin; git checkout -B <branch> origin/<branch>` (PowerShell 5.1: `;`, not `&&`), then restart the app. Do not use `git pull` for this: an agent may restart its branch from `main` after a merge, and `git pull` then merges the old and new history and leaves conflict markers that stop the app from starting. The command sets the local copy to the remote one; only use it on branches you do not commit on yourself. Switch back with `git switch main; git pull`. If a merge was left half done, `git merge --abort` undoes it.
+
