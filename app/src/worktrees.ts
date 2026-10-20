@@ -1,6 +1,6 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -144,6 +144,38 @@ export function worktreeState(root: string, wt: Worktree): { merged: boolean; ah
   } catch { /* no reflog: never merged */ }
   try { dirty = git(wt.path, ['status', '--porcelain']) !== ''; } catch { /* folder gone */ }
   return { merged, ahead, dirty };
+}
+
+/**
+ * The changed and untracked files of a checkout (`git status`) with their modification times: taken before and
+ * after each agent turn in the app project, so a write into the running app's checkout that the write guard missed
+ * (a path computed at run time, #18) is reported in the chat. `undefined` when git cannot read it.
+ */
+export function checkoutSnapshot(root: string): Map<string, number> | undefined {
+  try {
+    // Not through git(): its trim would cut the status column of the first entry (" M a.txt").
+    const r = spawnSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: root, encoding: 'utf8', windowsHide: true });
+    if (r.status !== 0) return undefined;
+    const out = r.stdout;
+    const files = new Map<string, number>();
+    const entries = out.split('\0');
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i]!;
+      if (e.length < 4) continue;
+      const path = e.slice(3);
+      if (/^[RC]/.test(e)) i++; // a rename or copy is followed by its old path
+      let mtime = -1; // deleted
+      try { mtime = statSync(join(root, path)).mtimeMs; } catch { /* gone */ }
+      files.set(path, mtime);
+    }
+    return files;
+  } catch { return undefined; }
+}
+
+/** Files that changed between two `checkoutSnapshot`s: new, changed again, or back to the committed state. */
+export function checkoutChanges(before: Map<string, number>, after: Map<string, number>): string[] {
+  const changed = [...after].filter(([p, t]) => before.get(p) !== t).map(([p]) => p);
+  return [...changed, ...[...before.keys()].filter((p) => !after.has(p))].sort();
 }
 
 /**

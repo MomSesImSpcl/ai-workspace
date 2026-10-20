@@ -2,7 +2,8 @@
 // --permission-prompt-tool: every "ask" becomes an approval card in the chat, and the user's answer goes
 // back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001), a chat
 // session gets `start_task` (sessions-002) and the orchestrator's `reply_task`, `task_status`, `list_agents` (orchestrator-006);
-// an app-project chat or top-level task gets `request_merge` (selfdev-004).
+// an app-project chat or top-level task gets `request_merge` (selfdev-004); every session and task gets the read-only
+// `read_repo` (#31).
 // Usage: node src/approval-server.ts <sessionId>. One server serves all turns of a long-lived agent process.
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -14,6 +15,8 @@ import { decidable, getAgentSetup, itemOn } from './setup.ts';
 import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 import { requestMerge } from './merge.ts';
+import { readRepo } from './repo-read.ts';
+import { getProject, listProjects } from './store.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
 const currentTurn = () => readEvents(sessionId).findLast((e) => e.type === 'user')?.turn ?? 0;
@@ -40,6 +43,30 @@ server.registerTool(
 
 const session = loadSession(sessionId);
 const task = session.task;
+
+// Commit history, pull requests, checks and issues of any project in the workspace, read only (#31): the orchestrator
+// cannot run commands, and Codex's worktree shells have no gh login.
+server.registerTool(
+  'read_repo',
+  {
+    description: "Reads a workspace project's repository, never changes it: log (recent commits; ref, path, limit), show (one commit with its diff; ref), prs and issues (lists; state, limit), pr (one pull request with its checks; number, logs for the failed lines of failed checks), issue (one issue with comments; number). project defaults to this session's project.",
+    inputSchema: {
+      action: z.enum(['log', 'show', 'prs', 'pr', 'issues', 'issue']),
+      project: z.string().optional().describe('A workspace project id; default: this session\'s project'),
+      ref: z.string().optional(), path: z.string().optional(), limit: z.number().int().optional(), number: z.number().int().optional(),
+      state: z.enum(['open', 'closed', 'merged', 'all']).optional(), logs: z.boolean().optional(),
+    },
+  },
+  async (a) => {
+    try {
+      const id = a.project ?? session.projectId;
+      if (!id) throw new Error(`This is a global session: name a project. Projects: ${listProjects().map((p) => p.id).join(', ')}`);
+      return { content: [{ type: 'text' as const, text: await readRepo(getProject(id).root, a) }] };
+    } catch (e) {
+      return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
+    }
+  },
+);
 if (task) {
   // A task that finds an item missing asks for it and continues with it (orchestrator-005).
   const ids = (getAgentSetup().inventory?.[session.integration] ?? []).map((i) => i.id);

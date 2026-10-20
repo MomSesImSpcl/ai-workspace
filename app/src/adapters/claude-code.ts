@@ -291,7 +291,7 @@ export class ClaudeProcess implements AgentProcess {
     settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
-      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : `mcp__aiws__delegate,mcp__aiws__request_setup${merges ? ',mcp__aiws__request_merge' : ''}`);
+      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup,mcp__aiws__read_repo' : `mcp__aiws__delegate,mcp__aiws__request_setup,mcp__aiws__read_repo${merges ? ',mcp__aiws__request_merge' : ''}`);
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: '*', hooks: [hook] }] };
     } else if (session.role === ORCHESTRATION) {

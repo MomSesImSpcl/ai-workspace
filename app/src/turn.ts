@@ -6,7 +6,7 @@ import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
 import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
-import { addWorktree, installDependencies } from './worktrees.ts';
+import { addWorktree, appRepo, checkoutChanges, checkoutSnapshot, installDependencies } from './worktrees.ts';
 
 /**
  * The folder a session's agent runs in (selfdev-001): its worktree, made at the first turn with a notice in the
@@ -111,7 +111,14 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
       say({ type: 'stopped', reason: stopped });
       return {};
     }
+    // An app-project turn must leave the running app's checkout alone (selfdev-002); the guard cannot see paths
+    // computed at run time, so the checkout is compared before and after (#18).
+    const checkout = session.worktree ? appRepo() : undefined;
+    const before = checkout ? checkoutSnapshot(checkout) : undefined;
     const r = await proc.turn({ prompt: turnPrompt(ts), history: transcript(ts.slice(0, -1)), emit: say, signal: stop.signal, live, repeats: task ? repeatsFor(ts) : undefined });
+    const after = checkout && before ? checkoutSnapshot(checkout) : undefined;
+    const changed = before && after ? checkoutChanges(before, after) : [];
+    if (changed.length) say({ type: 'notice', text: `⚠ Files in the running app's checkout changed during this turn: ${changed.slice(0, 10).join(', ')}${changed.length > 10 ? ` and ${changed.length - 10} more` : ''}. Agents work in their own worktree; if the agent made these changes, undo them in ${checkout} (git checkout or git clean).` });
     if (r.staleHint) return r;
     if (existsSync(sessionFile(id, '.json'))) {
       const s = loadSession(id); // the user may have renamed it meanwhile
