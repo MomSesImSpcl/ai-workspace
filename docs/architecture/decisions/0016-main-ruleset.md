@@ -8,7 +8,7 @@ CI runs Ubuntu only for draft pull requests and all three systems for ready ones
 
 ## Decision
 
-- A GitHub ruleset on the default branch requires `test (windows-latest)` and `test (macos-latest)`. No bypass.
+- A GitHub ruleset on the default branch requires a pull request (no approvals) and the checks `test (ubuntu-latest)`, `test (windows-latest)`, `test (macos-latest)` and `private-data`. No bypass. (Ubuntu and `private-data` added 2026-10-20 by the user.)
 - Changes reach `main` through pull requests: `gh pr merge --squash`, or a fast-forward to a commit that passed the checks. A local merge commit pushed to `main` is rejected.
 - A change to only `*.md` and `*.txt` files passes the required checks without tests (`.github/workflows/ci.yml`), so docs pull requests merge with auto-merge (`gh pr merge --auto --squash`) within seconds.
 - M1's merge step (agent merges after the user's approval) goes through a pull request.
