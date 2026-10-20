@@ -5,6 +5,8 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { GUARD_MARK, guardFor } from '../worktrees.ts';
+import { forget, guardServer, guardToken } from '../guard.ts';
 import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -37,6 +39,7 @@ export function parseResult(line: string): { text?: string; error?: string; usag
 
 const workspaceServer = fileURLToPath(new URL('../approval-server.ts', import.meta.url));
 const repeatHook = fileURLToPath(new URL('../repeat-hook.ts', import.meta.url));
+const guardHook = fileURLToPath(new URL('../guard-hook.ts', import.meta.url));
 
 const outsideRoot = (root: string, p: string) => {
   const r = relative(root, resolve(root, p));
@@ -80,7 +83,7 @@ interface StreamLine {
   mcp_servers?: { name: string; status: string }[];
   skills?: unknown[];
   event?: { type: string; delta?: { type: string; text?: string } };
-  message?: { id?: string; usage?: ClaudeUsage; content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean }[] };
+  message?: { id?: string; usage?: ClaudeUsage; content?: { type: string; id?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; is_error?: boolean; content?: string | { type: string; text?: string }[] }[] };
 }
 
 // Maps one stream-json line to contract events; text arrives as deltas (--include-partial-messages).
@@ -105,7 +108,15 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
     return { events, usage: e.message?.id && e.message.usage ? { id: e.message.id, usage: tokens(e.message.usage) } : undefined };
   }
   if (e.type === 'user') {
-    return { events: (e.message?.content ?? []).filter((b) => b.type === 'tool_result' && b.tool_use_id).map((b) => ({ type: 'activity-done' as const, id: b.tool_use_id!, error: b.is_error || undefined })) };
+    const results = (e.message?.content ?? []).filter((b) => b.type === 'tool_result' && b.tool_use_id);
+    const events: Body[] = results.map((b) => ({ type: 'activity-done' as const, id: b.tool_use_id!, error: b.is_error || undefined }));
+    // A write the guard hook denied is also shown to the user (selfdev-002): the first paragraph of its reason.
+    for (const b of results.filter((r) => r.is_error)) {
+      const text = typeof b.content === 'string' ? b.content : (b.content ?? []).map((c) => c.text ?? '').join('');
+      const at = text.indexOf(GUARD_MARK);
+      if (at >= 0) events.push({ type: 'notice', text: text.slice(at).split('\n\n')[0]! });
+    }
+    return { events };
   }
   if (e.type === 'result') return { events: [], result: parseResult(line), sessionId: e.session_id };
   return { events: [] };
@@ -218,6 +229,8 @@ export class ClaudeProcess implements AgentProcess {
 
   private session: Session;
   private root: string;
+  private guardUrl?: string | false; // this process's guard server; false: it could not start (command hook)
+  private guardTok?: string; // the latest run's token
 
   constructor(session: Session, root: string) {
     this.session = session;
@@ -265,6 +278,14 @@ export class ClaudeProcess implements AgentProcess {
         else if (i.kind === 'hooks') delete settings.hooks; // shortcut: with global rules on, the user's hooks cannot be switched off for one run and stay on
       }
     }
+    // The running app's checkout and storage stay untouched (selfdev-002): a hook, so no permission mode lifts it.
+    // Asked over HTTP from this process, so no process starts per tool call; an unreachable server would let the
+    // call through, so it runs here, where the agent's output is read, and ends with it.
+    const g = guardFor(this.root);
+    this.guardTok = this.guardUrl ? guardToken(g) : undefined;
+    const guard = this.guardUrl ? { type: 'http', url: this.guardUrl, headers: { 'x-aiws-token': this.guardTok }, timeout: 30 }
+      : { type: 'command', command: [process.execPath, guardHook, g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
+    settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
       args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : 'mcp__aiws__delegate,mcp__aiws__request_setup');
@@ -299,7 +320,8 @@ export class ClaudeProcess implements AgentProcess {
     });
     child.stderr.on('data', (d) => (this.err = (this.err + d).slice(-4000)));
     child.on('error', (e) => (this.err += e.message));
-    child.on('close', (code) => this.onExit?.(code));
+    const tok = this.guardTok; // this run's guard ends with its process
+    child.on('close', (code) => { forget(tok); this.onExit?.(code); });
     this.child = child;
   }
 
@@ -326,6 +348,7 @@ export class ClaudeProcess implements AgentProcess {
   // Runs one turn. Stop sends Claude Code's own interrupt; if it does not end the turn soon, the process is
   // ended. A 'kill' abort (task cancel, budget) ends the process tree at once (runtime-005).
   turn(input: TurnInput): Promise<TurnEnd> {
+    if (!this.alive && this.guardUrl === undefined) return guardServer().then((url) => { this.guardUrl = url ?? false; return this.turn(input); });
     if (!this.alive) this.start(this.session.vendorSessionId);
     const { emit, signal } = input;
     const resumed = !this.fresh;

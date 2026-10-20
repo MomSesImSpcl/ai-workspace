@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { commitRoots, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -57,6 +58,27 @@ function approvalCard(method: string, p: Record<string, unknown>): { tool: strin
   if (method === 'item/commandExecution/requestApproval') return { tool: 'Shell', detail: String(p.command ?? p.reason ?? 'a command') };
   if (method === 'item/fileChange/requestApproval') return { tool: 'Edit', detail: String(p.reason ?? (p.grantRoot ? `write access under ${p.grantRoot}` : 'file changes')) };
   return { tool: 'Permissions', detail: String(p.reason ?? JSON.stringify(p.permissions)).slice(0, 400) };
+}
+
+type WriteEntry = { access: string; path: { type: string; path?: string; pattern?: string; kind?: string } };
+
+/**
+ * The guarded folder an approval request would let the agent write to (selfdev-002), or `undefined`: a command
+ * naming it, a file change in it (`edits`: the paths of each file-change item), or write access to a folder
+ * holding it.
+ */
+export function guardedRequest(g: Guard, method: string, p: Record<string, unknown>, edits: Map<string, string[]>): string | undefined {
+  const cwd = typeof p.cwd === 'string' ? p.cwd : g.allow;
+  if (method === 'item/commandExecution/requestApproval') return typeof p.command === 'string' ? guardedCommand(g, p.command, cwd) : undefined;
+  if (method === 'item/fileChange/requestApproval') {
+    return (edits.get(String(p.itemId)) ?? []).map((f) => guardedPath(g, f, cwd)).find(Boolean) ?? (typeof p.grantRoot === 'string' ? guardedTree(g, p.grantRoot, cwd) : undefined);
+  }
+  const fs = (p.permissions as { fileSystem?: { write?: string[] | null; entries?: WriteEntry[] | null } | null } | undefined)?.fileSystem;
+  const writes = (fs?.entries ?? []).filter((e) => e.access === 'write');
+  if (writes.some((e) => e.path.type === 'special' && e.path.kind === 'root')) return g.deny[0];
+  // A glob counts from its folder part (before the first wildcard).
+  const dirs = [...(fs?.write ?? []), ...writes.map((e) => e.path.path ?? e.path.pattern?.replace(/[*?[{].*$/, '') ?? '')].filter(Boolean);
+  return dirs.map((d) => guardedTree(g, d, cwd)).find(Boolean);
 }
 
 // Codex built-in parts that can be switched off for one run (codex-cli 0.163.0, measured on a task call).
@@ -207,6 +229,22 @@ export class CodexProcess implements AgentProcess {
       }
       if (setup.workspaceRules) params.developerInstructions = `${params.developerInstructions ?? ''}\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}`;
     }
+    if (this.session.worktree && !params.sandbox) {
+      const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { sandbox_mode?: string } };
+      if (config?.sandbox_mode === 'danger-full-access') params.sandbox = 'danger-full-access';
+    }
+    if (this.session.worktree) {
+      // A worktree session keeps its writes in its folder, so the running app's checkout and storage stay untouched
+      // (selfdev-002, ADR 0015). Git's folder of a worktree lies in the checkout, so the parts a commit writes to are
+      // added to the sandbox. Full access becomes workspace-write with network, and anything beyond it fails
+      // instead of asking (user, 2026-10-19).
+      const config = (params.config ??= {}) as Record<string, unknown>;
+      try { config['sandbox_workspace_write.writable_roots'] = commitRoots(this.root); } catch { /* not a git folder: commits fail */ }
+      if (params.sandbox === 'danger-full-access') {
+        Object.assign(params, { sandbox: 'workspace-write', approvalPolicy: 'never' });
+        config['sandbox_workspace_write.network_access'] = true;
+      }
+    }
     let r: Record<string, unknown> | undefined;
     if (this.session.vendorSessionId) {
       try { r = await this.request('thread/resume', { threadId: this.session.vendorSessionId, excludeTurns: true, ...params }); } catch { /* gone: start fresh from the workspace history */ }
@@ -250,6 +288,8 @@ export class CodexProcess implements AgentProcess {
     let usage: Usage = { inputTokens: 0, outputTokens: 0 };
     let error: string | undefined;
     const streamed = new Set<string>();
+    const guard = guardFor(this.root);
+    const edits = new Map<string, string[]>(); // file-change item -> its paths, for the write guard (selfdev-002)
     const flush = () => {
       if (text) emit({ type: 'text', text });
       text = '';
@@ -281,6 +321,13 @@ export class CodexProcess implements AgentProcess {
       };
       const reply = (id: number | string, result: unknown) => this.send({ id, result });
       const ask = async (m: Message) => {
+        // A request to write into the running app's checkout or storage is declined without a card (selfdev-002).
+        const hit = guardedRequest(guard, m.method!, m.params ?? {}, edits);
+        if (hit) {
+          const p = m.params ?? {};
+          emit({ type: 'notice', text: guardNotice(hit, typeof p.command === 'string' ? { command: p.command } : { file: (edits.get(String(p.itemId)) ?? [])[0] ?? `the folders it asked for (${hit})` }) });
+          return reply(m.id!, m.method === 'item/permissions/requestApproval' ? { permissions: {}, scope: 'turn' } : { decision: 'decline' });
+        }
         const card = approvalCard(m.method!, m.params ?? {});
         const id = `codex-${String(m.params?.itemId ?? m.id)}-${String(m.id)}`;
         emit({ type: 'approval', id, ...card });
@@ -307,6 +354,7 @@ export class CodexProcess implements AgentProcess {
           streamed.add(String(p.itemId));
         } else if (m.method === 'item/started' || m.method === 'item/completed') {
           const item = p.item as Item;
+          if (item.type === 'fileChange') edits.set(item.id, (item.changes ?? []).map((c) => c.path));
           if (item.type === 'agentMessage' && m.method === 'item/completed' && !streamed.has(item.id) && item.text) text += (text ? '\n\n' : '') + item.text;
           const a = codexActivity(item);
           if (!a) return;

@@ -1,6 +1,7 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home, listProjects, registerProject, type Project } from './store.ts';
@@ -148,6 +149,182 @@ export function worktreeState(root: string, wt: Worktree): { merged: boolean; ah
 export function deleteWorktree(root: string, wt: Worktree, force = false): void {
   git(root, ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path]);
   git(root, ['branch', force ? '-D' : '-d', wt.branch]);
+}
+
+/**
+ * The folders an agent must not write to (selfdev-002, ADR 0015): the checkout the running app starts from and
+ * the workspace's storage. The session's own folder (`allow`) stays writable, also inside them, as a worktree in
+ * storage is. Checked by `app/src/guard-hook.ts` for Claude Code and by the approval relay for Codex.
+ */
+export interface Guard { allow: string; deny: string[] }
+
+/** The guard for an agent working in `root`. */
+export function guardFor(root: string): Guard {
+  return { allow: resolve(root), deny: [appRepo(), home()].filter((d): d is string => !!d).map((d) => resolve(d)) };
+}
+
+/** Whether `p` is the folder `dir` or inside it, case-insensitively since Windows paths are. */
+const inside = (dir: string, p: string) => {
+  const d = dir.toLowerCase(), q = p.toLowerCase();
+  return q === d || q.startsWith(d.endsWith(sep) ? d : d + sep);
+};
+
+/** Git Bash spells `C:\x` as `/c/x`. */
+const fromMsys = (p: string) => (sep === '\\' ? p.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : p);
+
+/**
+ * The guarded folder a write to `path` (relative to `cwd`) would land in, or `undefined`. The deepest folder
+ * containing it decides: the session's own folder wins inside storage, the checkout wins inside a project
+ * folder that contains it, and a tie is guarded.
+ */
+export function guardedPath(g: Guard, path: string, cwd = g.allow): string | undefined {
+  const p = resolve(cwd, fromMsys(path));
+  const hit = g.deny.filter((d) => inside(d, p)).sort((a, b) => b.length - a.length)[0];
+  return hit && !(inside(g.allow, p) && g.allow.length > hit.length) ? hit : undefined;
+}
+
+/** Like `guardedPath`, for write access to a whole folder: also guarded when a guarded folder lies inside it. */
+export function guardedTree(g: Guard, dir: string, cwd = g.allow): string | undefined {
+  const d = resolve(cwd, fromMsys(dir));
+  return guardedPath(g, d) ?? g.deny.find((x) => inside(d, x));
+}
+
+/** A shell command's words, with quotes removed and operators (`;&|<>()`) as separators; `\ ` is an escaped space. */
+function words(command: string): string[] {
+  const out: string[] = [];
+  let word = '', quote = '', any = false;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) { if (c === quote) quote = ''; else word += c; continue; }
+    if (c === '"' || c === "'") { quote = c; any = true; continue; }
+    if (c === '\\' && command[i + 1] === ' ') { word += ' '; i++; continue; }
+    if (/[\s;&|<>()]/.test(c)) { if (word || any) out.push(word); word = ''; any = false; continue; }
+    word += c;
+  }
+  if (word || any) out.push(word);
+  return out;
+}
+
+/** A path as it may be written in a command: lower case, forward slashes, no doubled ones. */
+const spelled = (s: string) => s.toLowerCase().replaceAll('\\ ', ' ').replaceAll('\\', '/').replace(/\/{2,}/g, '/');
+
+/** The ways a folder is written in a command: as is and, for Git Bash, `/c/...`. */
+const spellings = (dir: string) => {
+  const d = spelled(dir).replace(/\/$/, '');
+  return /^[a-z]:/.test(d) ? [d, `/${d[0]}${d.slice(2)}`] : [d];
+};
+
+/** Matches a folder's spelling where a path to it or into it can stand (not a longer folder name). */
+const spellingRe = (s: string) => new RegExp(`${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g');
+
+/**
+ * The folders in the checkout's `.git` that a commit in the worktree at `path` writes to (selfdev-002, ADR 0015): the
+ * worktree's own git folder, the object store, and the branch refs and their logs. Not `hooks` or `config`, so an
+ * agent cannot leave code that runs in the checkout. Given to Codex's sandbox as writable, so commits need no approval.
+ */
+export function commitRoots(path: string): string[] {
+  const own = resolve(path, git(path, ['rev-parse', '--git-dir']));
+  const common = resolve(path, git(path, ['rev-parse', '--git-common-dir']));
+  return [own, join(common, 'objects'), join(common, 'refs', 'heads'), join(common, 'logs', 'refs', 'heads')].filter((d) => existsSync(d));
+}
+
+/** Starts every notice of a blocked write, so the Claude Code adapter finds it in the hook's deny reason. */
+export const GUARD_MARK = 'Blocked by the write guard (selfdev-002)';
+
+/**
+ * The chat notice for a blocked write (selfdev-002): what was blocked and, for a command, how a reading one is let
+ * through, so the user can check it and extend the read list.
+ */
+export function guardNotice(hit: string, what: { command?: string; file?: string }): string {
+  if (what.file) return `${GUARD_MARK}: writing ${what.file} would change ${hit}.`;
+  return `${GUARD_MARK}: the command \`${what.command}\` would run in or name ${hit}. If it only reads, add its program to the read list (\`READERS\` or \`GIT_READERS\` in app/src/worktrees.ts).`;
+}
+
+/** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */
+const READERS = new Set(['cd', 'pushd', 'popd', 'pwd', 'ls', 'dir', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'find', 'stat', 'du', 'diff', 'cmp', 'echo', 'realpath', 'readlink', 'basename', 'dirname', 'md5sum', 'sha1sum', 'sha256sum', 'which', 'where', 'true', 'test', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'select-string', 'sls', 'test-path', 'resolve-path', 'get-location', 'set-location', 'measure-object', 'select-object', 'git']);
+/** Git subcommands that only read; `branch` and `remote` only when they list. */
+const GIT_READERS = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'ls-tree', 'blame', 'grep', 'cat-file', 'describe', 'shortlog', 'merge-base', 'rev-list', 'branch', 'remote']);
+/** Options that make a reader write or run something: find's actions, ripgrep's preprocessor, git's output file or pager. */
+const WRITING_OPTION = /^(-delete|-exec|-execdir|-ok|-okdir|-fprint|-fprint0|-fprintf|-fls|--pre|--output|-O|--open-files-in-pager)(=|$)/;
+
+/**
+ * A command's parts split at `;`, `&`, `|`, newlines and parentheses, or `undefined` when it substitutes a command
+ * (`$(...)`, backticks) or redirects output to a file (a redirect to null or to another stream is fine).
+ */
+function parts(command: string): string[][] | undefined {
+  const out: string[][] = [];
+  let part: string[] = [], word = '', quote = '', any = false;
+  const end = () => { if (word || any) part.push(word); word = ''; any = false; };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]!;
+    if (quote) {
+      if (c === quote) quote = '';
+      else if (quote === '"' && (c === '`' || (c === '$' && command[i + 1] === '('))) return undefined;
+      else word += c;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; any = true; continue; }
+    if (c === '`' || (c === '$' && command[i + 1] === '(')) return undefined;
+    if (c === '>') {
+      const sink = /^>?\s*(&\d|\/dev\/null(?![\w./-])|nul(?![\w./-])|\$null(?![\w./-]))/i.exec(command.slice(i + 1));
+      if (!sink) return undefined;
+      if (/^\d$/.test(word)) word = ''; // the `2` of `2>`
+      end();
+      i += sink[0].length;
+      continue;
+    }
+    if (/[;&|()\n]/.test(c)) { end(); if (part.length) out.push(part); part = []; continue; }
+    if (/\s/.test(c) || c === '<') { end(); continue; }
+    word += c;
+  }
+  end();
+  if (part.length) out.push(part);
+  return out;
+}
+
+/** Whether every part of a shell command only reads (Bash, Git Bash, PowerShell or cmd spelling). */
+export function readOnlyCommand(command: string): boolean {
+  const all = parts(command);
+  return !!all?.every((p) => {
+    const w = p.filter((x, i) => !p.slice(0, i + 1).every((y) => /^\w+=/.test(y))); // without leading `VAR=value`
+    if (!w.length) return true;
+    const prog = basename(w[0]!.replaceAll('\\', '/')).toLowerCase().replace(/\.exe$/, '');
+    if (!READERS.has(prog) || w.some((x) => WRITING_OPTION.test(x))) return false;
+    if (prog !== 'git') return true;
+    // Git's own options before the subcommand; `-c` can set a command to run, so it does not count as reading.
+    let i = 1;
+    while (w[i] === '-C' || w[i] === '--no-pager' || w[i]?.startsWith('--git-dir=') || w[i]?.startsWith('--work-tree=')) i += w[i] === '-C' ? 2 : 1;
+    const sub = w[i], rest = w.slice(i + 1);
+    if (!sub || !GIT_READERS.has(sub)) return false;
+    if (sub === 'branch') return rest.every((x) => /^(-a|-r|-v|-vv|--all|--remotes|--list|--show-current|--merged|--no-merged|--contains)$/.test(x));
+    if (sub === 'remote') return rest.every((x) => x === '-v');
+    return true;
+  });
+}
+
+/**
+ * The guarded folder a shell command names or runs in, or `undefined` (selfdev-002). A command that only reads
+ * (`readOnlyCommand`) passes. Path-like words are resolved
+ * against `cwd`, with `~` and `$HOME` expanded, so `../..` out of the session's folder counts; paths inside quoted
+ * code (`node -e "..."`) are found by their spelling. Best effort: a path computed at run time (variables,
+ * scripts) is not seen; Codex's sandbox is the hard limit there, Claude Code has none on Windows.
+ */
+export function guardedCommand(g: Guard, command: string, cwd = g.allow): string | undefined {
+  if (readOnlyCommand(command)) return undefined;
+  const atCwd = guardedPath(g, cwd);
+  if (atCwd) return atCwd;
+  const user = homedir();
+  for (const word of words(command)) {
+    for (const part of word.split('=')) {
+      const w = part.replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[\\/]|$)/i, user);
+      if (!/[\\/]/.test(w) && w !== '..') continue;
+      const hit = guardedPath(g, w, cwd);
+      if (hit) return hit;
+    }
+  }
+  let text = spelled(command);
+  for (const s of spellings(g.allow)) text = text.replace(spellingRe(s), '\0');
+  return g.deny.find((d) => spellings(d).some((s) => spellingRe(s).test(text)));
 }
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */

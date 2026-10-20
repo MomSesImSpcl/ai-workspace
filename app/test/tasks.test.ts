@@ -232,6 +232,13 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   await runTurn(t.id);
   const targs = JSON.parse(last(t.id).text) as string[];
   assert.doesNotMatch(targs[targs.indexOf('--disallowedTools') + 1] ?? '', /Bash/);
+  // Every run gets the write guard for the running app's checkout and storage (selfdev-002).
+  // Asked over HTTP from the process that runs the agent, with the run's own token (no process per tool call).
+  const pre = JSON.parse(targs[targs.indexOf('--settings') + 1]!).hooks.PreToolUse as { matcher: string; hooks: { type: string; url: string; headers: Record<string, string> }[] }[];
+  const guard = pre.find((h) => h.matcher.includes('Bash'))!.hooks[0]!;
+  assert.equal(guard.type, 'http');
+  assert.match(guard.url, /^http:\/\/127\.0\.0\.1:\d+\/guard$/);
+  assert.match(guard.headers['x-aiws-token']!, /^[0-9a-f]{48}$/);
   const codex = createSession('P', 'Orchestration', { integration: 'codex' });
   addMessage(codex.id, 'hi');
   await runTurn(codex.id);
@@ -325,7 +332,9 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(chat.id, 'args');
   args = await argsOf(chat.id);
-  assert.equal(flag(args, '--settings'), undefined);
+  // Its settings hold only the write guard (selfdev-002); Claude Code adds hooks from every source, so the user's stay.
+  assert.deepEqual(Object.keys(JSON.parse(flag(args, '--settings')!)), ['hooks']);
+  assert.match(JSON.stringify(JSON.parse(flag(args, '--settings')!).hooks), /127\.0\.0\.1:\d+\/guard/);
   assert.equal(flag(args, '--setting-sources'), undefined);
 });
 

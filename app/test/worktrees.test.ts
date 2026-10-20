@@ -3,7 +3,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,10 @@ import { addMessage, createSession, loadSession, readEvents, type SessionAgent }
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, appRepo, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { addAppProject, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { guardedRequest } from '../src/adapters/codex.ts';
+import { sessionEvents } from '../src/adapters/claude-code.ts';
+import { forget, guardServer, guardToken } from '../src/guard.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -136,4 +139,95 @@ test('the cleanup removes merged branches only, archives their chats, and leaves
   assert.equal(loadSession(open.id).archived, true);
   assert.deepEqual(branchInfo(getProject('P')).map((b) => b.branch).sort(), ['fresh', 'unsaved']);
   rmSync(root, { recursive: true, force: true });
+});
+
+test('the write guard keeps agents out of the live checkout and storage, except their own worktree (selfdev-002)', () => {
+  const store = process.env.AI_WORKSPACE_HOME!;
+  const wt = join(store, 'worktrees', 'P', 'fix');
+  const g = guardFor(wt);
+  assert.deepEqual(g.deny, [root, store]);
+  // Files: the deepest folder decides, so the own worktree is free and everything around it is not.
+  assert.equal(guardedPath(g, join(wt, 'src', 'a.ts')), undefined);
+  assert.equal(guardedPath(g, join(root, 'a.txt')), root);
+  assert.equal(guardedPath(g, join(store, 'sessions', 'x.json')), store);
+  assert.equal(guardedPath(g, '../other/a.txt'), store);
+  assert.equal(guardedPath(g, join(tmpdir(), 'elsewhere.txt')), undefined);
+  // A project folder holding the checkout does not free it.
+  assert.equal(guardedPath({ ...g, allow: dirname(root) }, join(root, 'a.txt')), root);
+  // Commands: path words, relative climbs, home spellings and paths inside quoted code.
+  const live = root.replaceAll('\\', '/');
+  assert.equal(guardedCommand(g, 'npm ci && npm test'), undefined);
+  assert.equal(guardedCommand(g, `cd "${wt}" && git commit -m "x"`), undefined);
+  assert.equal(guardedCommand(g, 'git log main..HEAD -- src/a.ts'), undefined);
+  assert.equal(guardedCommand(g, `cp a.txt "${live}/a.txt"`), root);
+  assert.equal(guardedCommand(g, `echo x > ${root}\\a.txt`), root);
+  assert.equal(guardedCommand(g, 'rm -rf ../../..'), store);
+  assert.equal(guardedCommand(g, `node -e "require('fs').writeFileSync('${live}/b', '')"`), root);
+  assert.equal(guardedCommand(g, 'npm test', root), root, 'a command run in the checkout');
+  // Commands that only read may name the checkout or run in it (user, 2026-10-19).
+  for (const c of [`git -C "${live}" log --oneline -5`, `cd "${live}" && git status && git diff main -- app/src | head -50`, `cat ${root}/AGENTS.md 2>&1`, `grep -rn guard "${live}/app/src" > /dev/null`, `Get-Content '${root}\\a.txt' | Select-String x`, `git -C ${live} branch -a`, `find ${live} -name '*.ts'`]) {
+    assert.equal(guardedCommand(g, c), undefined, c);
+  }
+  assert.equal(guardedCommand(g, 'git log -5', root), undefined, 'reading in the checkout');
+  for (const c of [`cat a > ${live}/b`, `cd ${live} && git checkout -b x`, `git -C ${live} branch x`, `find ${live} -name x -delete`, `cat $(echo ${live}/a) | sh`, `git -c core.pager=sh -C ${live} log`, `git -C ${live} diff --output=x`, `ls ${live}; rm ${live}/a`, `cat a | tee ${live}/b`]) {
+    assert.equal(guardedCommand(g, c), root, c);
+  }
+  if (process.platform === 'win32') assert.equal(guardedCommand(g, `touch /${live[0]}${live.slice(2)}/a.txt`), root, 'Git Bash spelling');
+  // Write access to a folder that holds a guarded one.
+  assert.equal(guardedTree(g, dirname(root)), root);
+  assert.equal(guardedTree(g, wt), undefined);
+});
+
+test('Codex approval requests that would write into guarded folders are declined (selfdev-002)', () => {
+  const store = process.env.AI_WORKSPACE_HOME!;
+  const g = guardFor(join(store, 'worktrees', 'P', 'fix'));
+  const edits = new Map([['e1', [join(root, 'a.txt')]], ['e2', [join(g.allow, 'a.txt')]]]);
+  assert.equal(guardedRequest(g, 'item/commandExecution/requestApproval', { command: 'git commit -m x', cwd: g.allow }, edits), undefined);
+  assert.equal(guardedRequest(g, 'item/commandExecution/requestApproval', { command: 'npm install', cwd: root }, edits), root);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'e1' }, edits), root);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'e2' }, edits), undefined);
+  assert.equal(guardedRequest(g, 'item/fileChange/requestApproval', { itemId: 'x', grantRoot: dirname(root) }, edits), root);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { fileSystem: { entries: [{ access: 'write', path: { type: 'special', kind: 'root' } }] } } }, edits), root);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { fileSystem: { write: [store] } } }, edits), store);
+  assert.equal(guardedRequest(g, 'item/permissions/requestApproval', { permissions: { network: { enabled: true } } }, edits), undefined);
+});
+
+test('the Claude Code hook denies a guarded write and lets the own worktree through', () => {
+  const hook = fileURLToPath(new URL('../src/guard-hook.ts', import.meta.url));
+  const g = guardFor(join(process.env.AI_WORKSPACE_HOME!, 'worktrees', 'P', 'fix'));
+  const run = (tool_name: string, tool_input: object) => spawnSync(process.execPath, [hook, g.allow, ...g.deny], { input: JSON.stringify({ tool_name, tool_input, cwd: g.allow }), encoding: 'utf8' }).stdout;
+  const out = JSON.parse(run('Write', { file_path: join(root, 'a.txt'), content: 'x' }));
+  assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(run('Edit', { file_path: join(g.allow, 'a.txt') }), '');
+  const denied = JSON.parse(run('Bash', { command: `rm "${root}/a.txt"` })).hookSpecificOutput;
+  assert.equal(denied.permissionDecision, 'deny');
+  // The chat shows the reason's first paragraph as a notice, with the command, so a reading one can be listed.
+  const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: `PreToolUse:Bash hook error: ${denied.permissionDecisionReason}` }] } });
+  const notice = sessionEvents(line, g.allow).events.find((e) => e.type === 'notice');
+  assert.ok(notice?.type === 'notice' && notice.text.startsWith(GUARD_MARK) && notice.text.includes(`rm "${root}/a.txt"`) && notice.text.includes('READERS') && !notice.text.includes('\n'));
+});
+
+test('the guard server answers only its runs, by token, with the same decision as the hook (selfdev-002)', async () => {
+  const url = (await guardServer())!;
+  const g = guardFor(join(process.env.AI_WORKSPACE_HOME!, 'worktrees', 'P', 'fix'));
+  const token = guardToken(g);
+  const ask = (tool_input: object, t = token) => fetch(url, { method: 'POST', headers: { 'x-aiws-token': t }, body: JSON.stringify({ tool_name: 'Write', tool_input, cwd: g.allow }) });
+  const denied = await (await ask({ file_path: join(root, 'a.txt') })).json() as { hookSpecificOutput?: { permissionDecision: string; permissionDecisionReason: string } };
+  assert.equal(denied.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(denied.hookSpecificOutput.permissionDecisionReason.startsWith(GUARD_MARK));
+  assert.deepEqual(await (await ask({ file_path: join(g.allow, 'a.txt') })).json(), {});
+  assert.equal((await ask({ file_path: join(root, 'a.txt') }, 'wrong')).status, 403);
+  forget(token);
+  assert.equal((await ask({ file_path: join(root, 'a.txt') })).status, 403, 'a finished run is gone');
+  assert.equal(await guardServer(), url, 'one server per process');
+});
+
+test('a worktree commit may write only its own git folder, objects and branch refs in the checkout (Codex sandbox)', () => {
+  const wt = join(dirname(root), 'wt');
+  git('worktree', 'add', '-q', '-b', 'fix', wt);
+  // Real paths, since git reports them (macOS /private/var, Windows long names).
+  const real = (d: string) => realpathSync.native(d).replaceAll('\\', '/').toLowerCase();
+  const roots = commitRoots(wt).map(real);
+  const dotGit = real(join(root, '.git'));
+  assert.deepEqual(roots, [`${dotGit}/worktrees/wt`, `${dotGit}/objects`, `${dotGit}/refs/heads`, `${dotGit}/logs/refs/heads`]);
 });

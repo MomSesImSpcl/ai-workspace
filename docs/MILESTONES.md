@@ -27,6 +27,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - Lean orchestrator and tasks (added 2026-10-18 by the user, to cut token use, also while testing; built 2026-10-18, [history](history/2026-10-18-10-lean-orchestrator-and-tasks/SUMMARY.md)): onboarding-010, orchestrator-005; closes [#16](https://github.com/MomSesImSpcl/ai-workspace/issues/16)
 - Codex in sessions through `codex app-server` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)), so Codex supports the same flow as Claude Code (built)
 - [ai-orchestrator](features/ai-orchestrator/SPEC.md) orchestrator-004, effort part (added 2026-10-19 by the user): the orchestrator chooses an effort level for every task it starts, never leaving it to the agent's default, and the task card shows the level it runs with
+- Write guard limits (added 2026-10-19 by the user): [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18) (shell paths computed at run time; no OS sandbox for Claude Code on Windows) and [#20](https://github.com/MomSesImSpcl/ai-workspace/issues/20) (Codex commits with the checkout's `.git` parts writable) are fixed, or closed by a decision of the user, before M1 is reached
 - Already built and reused: sessions-001–008, 010, 018, 019 (session, live activity, Stop, approvals)
 
 **Helps:**
