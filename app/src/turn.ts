@@ -6,15 +6,15 @@ import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
 import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
-import { addWorktree } from './worktrees.ts';
+import { addWorktree, installDependencies } from './worktrees.ts';
 
 /**
  * The folder a session's agent runs in (selfdev-001): its worktree, made at the first turn with a notice in the
  * chat, else the project folder (`sessionRoot`). A worktree that is gone after that (the agent cleaned it up
  * after merging, or the user removed it) throws, so the turn shows the error instead of the agent silently
- * working in the live checkout.
+ * working in the live checkout. A new worktree gets its dependencies installed before the agent starts (#26).
  */
-function workRoot(s: Session): string {
+async function workRoot(s: Session): Promise<string> {
   const wt = s.worktree;
   if (!wt) return sessionRoot(s);
   if (wt.ready) {
@@ -23,7 +23,9 @@ function workRoot(s: Session): string {
   }
   const from = addWorktree(sessionRoot({ projectId: s.projectId }), wt);
   saveSession({ ...loadSession(s.id), worktree: { ...wt, ready: true } });
-  emit(s.id, turns(readEvents(s.id), true).at(-1)?.n ?? 0, { type: 'notice', text: `Working in a new worktree on branch ${wt.branch}, from ${from}: ${wt.path}` });
+  const n = turns(readEvents(s.id), true).at(-1)?.n ?? 0;
+  emit(s.id, n, { type: 'notice', text: `Working in a new worktree on branch ${wt.branch}, from ${from}: ${wt.path}` });
+  await installDependencies(wt.path, (text) => emit(s.id, n, { type: 'notice', text }));
   return wt.path;
 }
 
@@ -173,7 +175,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
         }
         try {
           running = session.integration;
-          const root = workRoot(session); // every turn, so a removed worktree stops the session here
+          const root = await workRoot(session); // every turn, so a removed worktree stops the session here
           proc ??= sessionAgent(session.integration, agents).open(session, root);
         } catch (e) {
           emit(id, turns(readEvents(id), true).at(-1)!.n, { type: 'error', message: (e as Error).message });
@@ -185,7 +187,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
           const s = loadSession(id);
           s.vendorSessionId = undefined;
           saveSession(s);
-          proc = sessionAgent(s.integration, agents).open(s, workRoot(s));
+          proc = sessionAgent(s.integration, agents).open(s, await workRoot(s));
           await oneTurn(id, proc);
         }
         idleSince = Date.now();

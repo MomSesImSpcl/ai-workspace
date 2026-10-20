@@ -1,5 +1,5 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -325,6 +325,39 @@ export function guardedCommand(g: Guard, command: string, cwd = g.allow): string
   let text = spelled(command);
   for (const s of spellings(g.allow)) text = text.replace(spellingRe(s), '\0');
   return g.deny.find((d) => spellings(d).some((s) => spellingRe(s).test(text)));
+}
+
+/** How npm is started: `AI_WORKSPACE_NPM` (a script runs with this Node; tests use a fake), else `npm`. */
+function npmCommand(): [string, string[], boolean] {
+  const bin = process.env.AI_WORKSPACE_NPM;
+  if (bin) return /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin], false] : [bin, [], false];
+  return ['npm', [], process.platform === 'win32']; // npm is a .cmd script on Windows
+}
+
+/**
+ * Installs a new worktree's npm dependencies (#26): `npm ci` in its root and in `app/` where a `package-lock.json`
+ * is, run by the app outside any agent sandbox with the user's normal npm cache, so the agent can run typecheck and
+ * tests at once. Electron's binary is skipped as in CI, since nothing starts the desktop app from a worktree yet.
+ * `notice` tells the chat; a failure is reported with npm's last lines and does not stop the session.
+ */
+export async function installDependencies(path: string, notice: (text: string) => void): Promise<void> {
+  for (const dir of [path, join(path, 'app')].filter((d) => existsSync(join(d, 'package-lock.json')))) {
+    const where = dir === path ? 'the worktree' : 'app/';
+    notice(`Installing dependencies in ${where} (npm ci)…`);
+    const started = Date.now();
+    const [cmd, pre, shell] = npmCommand();
+    const { code, output } = await new Promise<{ code: number | null; output: string }>((done) => {
+      let output = '';
+      const child = spawn(cmd, [...pre, 'ci', '--no-audit', '--no-fund'], { cwd: dir, shell, windowsHide: true, env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1' } });
+      child.stdout.on('data', (d) => (output += d));
+      child.stderr.on('data', (d) => (output += d));
+      child.on('error', (e) => done({ code: -1, output: e.message }));
+      child.on('close', (c) => done({ code: c, output }));
+    });
+    const lines = output.trim().split(/\r?\n/).slice(-5).join('\n');
+    notice(code === 0 ? `Dependencies installed in ${where} (${Math.round((Date.now() - started) / 1000)} s).`
+      : `Installing dependencies in ${where} failed (npm ci, exit ${code}); the agent can run \`npm ci\` itself. npm said:\n${lines}`);
+  }
 }
 
 /** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */

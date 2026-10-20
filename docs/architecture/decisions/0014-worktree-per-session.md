@@ -15,6 +15,8 @@ Agents developing the workspace must never edit the checkout the running app is 
 - **Chosen per chat (amended 2026-10-19, user):** a new chat in such a project starts only after the user picks "New worktree" or an existing workspace-made worktree of the project (branch and the title of the session that made it), with no preselection. Continuing one lets work go on from an empty chat, for example after a session's prompt cache went cold. Tasks and command-line sessions keep getting a new one or their chat's.
 - **Named worktrees (amended 2026-10-19, user):** a new worktree is named by the user in the Send row (the name is its branch and folder), instead of `aiws/<session id>`; tasks and command-line sessions keep `aiws/<session id>`. The sessions list groups the app project's chats by worktree.
 
+- **Dependencies (amended 2026-10-20, user):** a new worktree gets `npm ci` from the app before its first turn ([#26](https://github.com/MomSesImSpcl/ai-workspace/issues/26)); linking `node_modules` from the checkout was rejected, since a dependency change in the worktree would then change the running app (selfdev-002).
+
 ## Alternatives
 
 - Inside the repository (`<repo>/.worktrees/`, as some agent apps do): easier to find, but needs an ignore entry and is covered by any path rule for the checkout.

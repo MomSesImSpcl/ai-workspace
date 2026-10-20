@@ -15,7 +15,7 @@
   "scripts": {
     "ws": "node src/cli.ts",
     "desktop": "electron .",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test --test-timeout=60000 --test-force-exit \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },
   "dependencies": {

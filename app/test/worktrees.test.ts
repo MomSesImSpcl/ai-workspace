@@ -3,7 +3,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,6 +88,40 @@ test('a session works in its own worktree from the first turn; its tasks share i
   assert.equal(roots.length, 2); // no agent started in the live checkout
   assert.ok(readEvents(chat.id).some((e) => e.type === 'error' && /worktree is gone/.test(e.message)));
   rmSync(root, { recursive: true, force: true });
+});
+
+test('a new worktree gets its npm dependencies before the agent starts; a failed install is reported, not fatal (#26)', async () => {
+  // The test repository gets a lockfile in app/, and a fake npm records where it ran and whether Electron is skipped.
+  mkdirSync(join(root, 'app'));
+  writeFileSync(join(root, 'app', 'package-lock.json'), '{}');
+  git('add', '.');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'lockfile');
+  const fake = join(dirname(root), 'fake-npm.mjs');
+  writeFileSync(fake, `import { writeFileSync } from 'node:fs';
+if (process.env.FAKE_NPM_FAIL) { console.error('npm error code E404'); process.exit(1); }
+writeFileSync('installed.txt', process.argv.slice(2).join(' ') + ' ' + process.env.ELECTRON_SKIP_BINARY_DOWNLOAD);
+console.log('added 3 packages');`);
+  process.env.AI_WORKSPACE_NPM = fake;
+  try {
+    const chat = createSession('P', 'Chat', { integration: 'claude-code' });
+    const wt = loadSession(chat.id).worktree!;
+    const roots: string[] = [];
+    addMessage(chat.id, 'start');
+    await runTurn(chat.id, recording(roots));
+    assert.equal(readFileSync(join(wt.path, 'app', 'installed.txt'), 'utf8'), 'ci --no-audit --no-fund 1');
+    const notices = readEvents(chat.id).filter((e) => e.type === 'notice').map((e) => e.type === 'notice' ? e.text : '');
+    assert.ok(notices.some((t) => /Installing dependencies in app\//.test(t)) && notices.some((t) => /Dependencies installed in app\//.test(t)), notices.join(' | '));
+    assert.deepEqual(roots, [wt.path], 'the agent started after the install');
+    process.env.FAKE_NPM_FAIL = '1';
+    const other = createSession('P', 'Chat', { integration: 'claude-code' });
+    addMessage(other.id, 'start');
+    await runTurn(other.id, recording(roots));
+    assert.equal(roots.length, 2, 'the session still starts');
+    assert.ok(readEvents(other.id).some((e) => e.type === 'notice' && /failed \(npm ci, exit 1\)[\s\S]*E404/.test(e.text)));
+  } finally {
+    delete process.env.AI_WORKSPACE_NPM;
+    delete process.env.FAKE_NPM_FAIL;
+  }
 });
 
 test('a worktree that cannot be made on a too long path leaves no branch behind and says why (#22)', () => {

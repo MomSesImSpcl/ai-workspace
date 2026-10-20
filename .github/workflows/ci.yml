@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   test:
+    timeout-minutes: 10 # a hanging test fails the job instead of running for hours
     strategy:
       fail-fast: false
       matrix:
