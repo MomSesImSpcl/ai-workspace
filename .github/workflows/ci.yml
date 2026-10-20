@@ -1,17 +1,16 @@
 name: CI
 
-# One run per change: pushes to main, and pull requests to main (no second run for the PR branch's push).
+# One run per pull request change. main's ruleset (ADR 0016) requires a pull request that is up to date with main
+# and passed all four checks, so the squash commit on main holds exactly the tested code: no second run on main.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
 
-# A newer push to a pull request cancels its older run; runs on main always finish.
+# A newer push to a pull request cancels its older run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -19,9 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Draft pull requests test on Ubuntu only; ready ones and main on all three systems, so a merge is
-        # always checked on Windows and macOS too.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+        # Draft pull requests test on Ubuntu only; ready ones on all three systems, so a merge is always checked on
+        # Windows and macOS too.
+        os: ${{ fromJSON(github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -29,15 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # enough to compare: a pull request's merge commit with its base, or a squash commit on main
+          fetch-depth: 2 # enough to compare the pull request's merge commit with its base
       # main's ruleset requires a pull request and all four checks (test on each system, private-data). A change to only docs and text files (*.md, *.txt) passes these checks without testing, so a
       # docs pull request with auto-merge (gh pr merge --auto --squash) lands within seconds. Any other file runs it all.
       - id: changes
         shell: bash
         run: |
-          # A missing base (e.g. a multi-commit push) fails the check below, so everything runs.
-          base=${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
-          if git cat-file -e "$base^{commit}" 2>/dev/null && ! git diff --name-only "$base" HEAD | grep -qvE '\.(md|txt)$'; then
+          # The merge commit's first parent is main; a missing one fails the check below, so everything runs.
+          if git cat-file -e "HEAD^1^{commit}" 2>/dev/null && ! git diff --name-only HEAD^1 HEAD | grep -qvE '\.(md|txt)$'; then
             echo "docs-only change: tests skipped"; echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.docs != 'true'
