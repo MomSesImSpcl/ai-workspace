@@ -6,4 +6,4 @@ Index symbols, relationships, tests and Git changes, through per-language adapte
 
 [Full requirements](SPEC.md).
 
-**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [knowledge-retrieval](../knowledge-retrieval/SUMMARY.md).
+**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [knowledge-retrieval](../knowledge-retrieval/SUMMARY.md), [localization](../localization/SUMMARY.md) (text-key references).

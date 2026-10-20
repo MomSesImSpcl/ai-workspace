@@ -6,4 +6,4 @@ Search authorized project sources and assemble small, relevant context packages 
 
 [Full requirements](SPEC.md).
 
-**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [code-index](../code-index/SUMMARY.md), [documentation](../documentation/SUMMARY.md).
+**Dependencies / related features:** [identity-projects](../identity-projects/SUMMARY.md), [code-index](../code-index/SUMMARY.md), [documentation](../documentation/SUMMARY.md), [localization](../localization/SUMMARY.md) (text registry search).
