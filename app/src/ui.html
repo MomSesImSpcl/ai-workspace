@@ -333,6 +333,8 @@
       <button data-page="tasks">Tasks</button>
     </div>
     <div class="right">
+      <span class="meta" id="fallback-note" hidden></span>
+      <button class="btn small primary" id="update" type="button" hidden>Update and restart</button>
       <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
     </div>
@@ -1091,6 +1093,27 @@ $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().ro
 $('#new-session').onclick = newSession;
 $('#restart').hidden = !window.desktop?.restart;
 $('#restart').onclick = () => window.desktop.restart();
+// Update and restart (selfdev-005): shown when main has commits the app's checkout lacks; a fallback instance
+// (selfdev-006) says so; once main has a fix, the same button goes back to it.
+async function checkUpdate() {
+  const u = await api('/api/app-update');
+  const behind = u.status?.behind ?? 0;
+  $('#update').hidden = !window.desktop?.restart || !behind;
+  $('#update').title = `main has ${behind} new commit${behind === 1 ? '' : 's'}: bring the app's checkout up to date and restart onto it`;
+  $('#fallback-note').hidden = !u.fallback;
+  $('#fallback-note').textContent = u.fallback ? `⚠ Last working version (${u.fallback.slice(0, 7)})` : '';
+  $('#fallback-note').title = 'The new version failed its startup check, so the app runs its last working version. Fix main, then update and restart.';
+}
+$('#update').onclick = async () => {
+  $('#update').disabled = true;
+  try {
+    await api('/api/app-update', {});
+    await window.desktop.restart();
+  } catch (e) {
+    alert(`Update failed: ${e.message}`);
+    $('#update').disabled = false;
+  }
+};
 $('#open-storage').onclick = () => state.storage && window.desktop?.openFolder(state.storage);
 // Export and import between computers (workspace-transfer part 1); sign-ins never leave this computer.
 $('#export-storage').onclick = async () => {
@@ -1586,7 +1609,11 @@ $('#resizer').onkeydown = (e) => {
   setInterval(() => { if (polling) return; polling = true; poll().catch(() => {}).finally(() => (polling = false)); }, 1000);
   // The open session refreshes faster while its agent works, so the reply streams in.
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
-})();
+  // The startup check (selfdev-006): the page loaded and read projects, tasks and sessions.
+  await poll();
+  checkUpdate().catch(() => {});
+  setInterval(() => checkUpdate().catch(() => {}), 30_000);
+})().then(() => window.desktop?.ready?.(), (e) => window.desktop?.failed?.(e?.message ?? String(e)));
 </script>
 </body>
 </html>

@@ -9,4 +9,7 @@ contextBridge.exposeInMainWorld('desktop', {
   attention: (on) => ipcRenderer.send('attention', !!on),
   saveExport: () => ipcRenderer.invoke('save-export'),
   openExport: () => ipcRenderer.invoke('open-export'),
+  // The startup check (selfdev-006): the page reports that it loaded its data, or why it could not.
+  ready: () => ipcRenderer.send('ready'),
+  failed: (message) => ipcRenderer.send('startup-failed', String(message)),
 });

@@ -12,7 +12,8 @@ import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
-import { isAppProject, listWorktrees } from './worktrees.ts';
+import { appRepo, isAppProject, listWorktrees } from './worktrees.ts';
+import { applyUpdate, lastGood, updateStatus, type UpdateStatus } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch } from './branches.ts';
 
 
@@ -30,6 +31,19 @@ function tail(path: string, bytes = 8192): string {
   readSync(fd, buf, 0, buf.length, size - buf.length);
   closeSync(fd);
   return buf.toString('utf8');
+}
+
+// The app checkout against origin/main for the Update button (selfdev-005): fetched at most every 5 minutes, in the
+// background; only the first request after a start waits for it.
+let update: { status?: UpdateStatus; at: number; running?: Promise<void> } = { at: 0 };
+async function cachedUpdate(repo: string): Promise<UpdateStatus | undefined> {
+  if (!update.running && Date.now() - update.at > 5 * 60_000) {
+    update.at = Date.now();
+    update.running = updateStatus(repo).then((s) => { update.status = s; }).finally(() => { update.running = undefined; });
+  }
+  // The first check after a start waits for its fetch, so the Update button does not appear a check late.
+  if (!update.status) await update.running;
+  return update.status;
 }
 
 class HttpError extends Error {
@@ -254,6 +268,18 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (permissionMode !== undefined && !modes.some((m) => m.id === permissionMode)) throw new HttpError(400, `permissionMode must be one of ${modes.map((m) => m.id || "'' (the agent's settings)").join(', ')}`);
     setRole(b.role, { integration: b.integration, model, effort, ...(permissionMode !== undefined ? { permissionMode } : {}) });
     return getRoles();
+  }
+  // Update and restart (selfdev-005): what main has that the app's checkout lacks, and the fast-forward before the
+  // desktop shell restarts. `fallback` names the commit a fallback instance runs (selfdev-006).
+  if (req.method === 'GET' && kind === 'app-update') {
+    const repo = appRepo();
+    return { status: repo ? (await cachedUpdate(repo)) ?? null : null, fallback: process.env.AI_WORKSPACE_FALLBACK || null, lastGood: lastGood()?.commit ?? null };
+  }
+  if (req.method === 'POST' && kind === 'app-update') {
+    const repo = appRepo();
+    if (!repo) throw new HttpError(400, 'The app does not run from a checkout.');
+    await body(req); // JSON only, so a web page cannot start an update with a plain form post
+    try { const r = await applyUpdate(repo); update = { at: 0 }; return r; } catch (e) { update = { at: 0 }; throw new HttpError(409, (e as Error).message); }
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});
