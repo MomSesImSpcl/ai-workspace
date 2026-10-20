@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { GUARD_MARK, guardFor } from '../worktrees.ts';
 import { forget, guardServer, guardToken } from '../guard.ts';
+import { MERGE_NOTE } from '../merge.ts';
 import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -281,14 +282,16 @@ export class ClaudeProcess implements AgentProcess {
     // The running app's checkout and storage stay untouched (selfdev-002): a hook, so no permission mode lifts it.
     // Asked over HTTP from this process, so no process starts per tool call; an unreachable server would let the
     // call through, so it runs here, where the agent's output is read, and ends with it.
-    const g = guardFor(this.root);
+    const g = { ...guardFor(this.root), merge: !!session.worktree };
+    // App-project chats and top-level tasks merge through the workspace's request_merge (selfdev-004).
+    const merges = !!session.worktree && session.role !== ORCHESTRATION && !session.task?.parentId;
     this.guardTok = this.guardUrl ? guardToken(g) : undefined;
     const guard = this.guardUrl ? { type: 'http', url: this.guardUrl, headers: { 'x-aiws-token': this.guardTok }, timeout: 30 }
-      : { type: 'command', command: [process.execPath, guardHook, g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
+      : { type: 'command', command: [process.execPath, guardHook, ...(g.merge ? ['--merge'] : []), g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
     settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
-      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : 'mcp__aiws__delegate,mcp__aiws__request_setup');
+      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup' : `mcp__aiws__delegate,mcp__aiws__request_setup${merges ? ',mcp__aiws__request_merge' : ''}`);
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: '*', hooks: [hook] }] };
     } else if (session.role === ORCHESTRATION) {
@@ -296,14 +299,14 @@ export class ClaudeProcess implements AgentProcess {
       // built-in tools cost about 24k prompt tokens per call, so it gets only the reading ones (`tools`).
       args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','));
       disallowed.push('Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit');
-    } else args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
+    } else args.push('--allowedTools', [...ORCHESTRATOR_TOOLS, ...(merges ? ['request_merge'] : [])].map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
     if (setup) args.push('--tools', [...new Set(tools)].join(',')); // '' leaves the agent no built-in tool
     args.push('--mcp-config', JSON.stringify({ mcpServers }));
     if (disallowed.length) args.push('--disallowedTools', disallowed.join(','));
     if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') + ownInstructions('implementationInstructions') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.' + ownInstructions('chatInstructions')}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
+    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') + ownInstructions('implementationInstructions') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ' To run self-contained work in the background as a task, use the mcp__aiws__start_task tool.' + ownInstructions('chatInstructions')}${merges ? ` ${MERGE_NOTE}` : ''}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;

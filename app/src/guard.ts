@@ -3,7 +3,8 @@
 // command hook, the fallback when the server cannot start.
 import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { guardedCommand, guardedPath, guardNotice, type Guard } from './worktrees.ts';
+import { GUARD_MARK, guardedCommand, guardedPath, guardNotice, type Guard } from './worktrees.ts';
+import { mergeCommand } from './merge.ts';
 
 /** What Claude Code sends a PreToolUse hook. */
 export interface HookInput { tool_name?: string; tool_input?: Record<string, unknown>; cwd?: string }
@@ -13,6 +14,11 @@ export function guardDecision(g: Guard, input: HookInput): object {
   const args = input.tool_input ?? {};
   const cwd = input.cwd || g.allow;
   const path = args.file_path ?? args.notebook_path;
+  if (g.merge && typeof args.command === 'string' && mergeCommand(args.command)) {
+    // An app-project session merges only through the workspace, after the user's approval (selfdev-004).
+    const reason = `${GUARD_MARK}: \`${args.command}\` would merge without the user's approval.\n\nMerging goes through the workspace: report your typecheck and test results, then call the workspace tool request_merge.`;
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
+  }
   const hit = typeof args.command === 'string' ? guardedCommand(g, args.command, cwd) : typeof path === 'string' ? guardedPath(g, path, cwd) : undefined;
   if (!hit) return {};
   // The first paragraph is shown in the chat as a notice; the rest tells the agent what to do instead.

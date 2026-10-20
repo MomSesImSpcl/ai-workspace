@@ -290,3 +290,22 @@ test('Codex gets the real folder of a linked program before its link, so its san
   assert.equal(sandboxPath([plain, links, join(dir, 'missing')].join(delimiter)), [plain, real, links, join(dir, 'missing')].join(delimiter));
   assert.equal(sandboxPath([links, links].join(delimiter)), [real, links].join(delimiter), 'each folder once');
 });
+
+test('app-project chats and top-level tasks get request_merge; orchestrator chats and other projects do not (selfdev-004)', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+  const tools = async (id: string) => {
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), id], env: { ...process.env } as Record<string, string> }));
+    try { return (await client.listTools()).tools.map((x) => x.name); } finally { await client.close(); }
+  };
+  const chat = createSession('P', 'Chat', { integration: 'claude-code' });
+  assert.ok((await tools(chat.id)).includes('request_merge'));
+  const t = createTask({ projectId: 'P', goal: 'edit', role: 'Implementation', sessionId: chat.id, setup: ['tool:Read'] });
+  assert.ok((await tools(t.id)).includes('request_merge'), 'a task of the chat');
+  const orch = createSession('P', 'Orchestration', { integration: 'claude-code' });
+  assert.ok(!(await tools(orch.id)).includes('request_merge'));
+  registerProject(mkdtempSync(join(tmpdir(), 'ws-plain-')), 'Plain');
+  const plain = createSession('Plain', 'Chat', { integration: 'claude-code' });
+  assert.ok(!(await tools(plain.id)).includes('request_merge'));
+});

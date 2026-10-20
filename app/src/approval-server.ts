@@ -1,17 +1,19 @@
 // Stdio MCP server of the workspace for one session or task. `approve` is Claude Code's
 // --permission-prompt-tool: every "ask" becomes an approval card in the chat, and the user's answer goes
 // back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001), a chat
-// session gets `start_task` (sessions-002) and the orchestrator's `reply_task`, `task_status`, `list_agents` (orchestrator-006).
+// session gets `start_task` (sessions-002) and the orchestrator's `reply_task`, `task_status`, `list_agents` (orchestrator-006);
+// an app-project chat or top-level task gets `request_merge` (selfdev-004).
 // Usage: node src/approval-server.ts <sessionId>. One server serves all turns of a long-lived agent process.
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { awaitAnswer, emit, fingerprint, loadSession, readEvents, repeatsFor, turns } from './sessions.ts';
+import { awaitAnswer, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
 import { decidable, getAgentSetup, itemOn } from './setup.ts';
 import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
+import { requestMerge } from './merge.ts';
 
 const [sessionId = ''] = process.argv.slice(2);
 const currentTurn = () => readEvents(sessionId).findLast((e) => e.type === 'user')?.turn ?? 0;
@@ -121,6 +123,35 @@ if (!task) {
     'list_agents',
     { description: "The agents a task can use, with their models and effort levels, each workspace role's assigned agent, and per agent the setup items (plugins, MCP servers, skills, hooks) a task may add with start_task's setup.", inputSchema: {} },
     tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])) })),
+  );
+}
+
+// An app-project chat or top-level task merges its branch into main only through the workspace, after the user's
+// approval (selfdev-004, ADR 0017); the app runs gh itself, outside any agent sandbox.
+const wt = session.worktree;
+if (wt && session.role !== ORCHESTRATION && !task?.parentId) {
+  server.registerTool(
+    'request_merge',
+    {
+      description: "Squash-merges this session's branch into main through its pull request, after the user approves a card in the chat. Push the branch first. Opens the pull request when there is none (then title, and optionally body, are needed). Blocks until the user answers.",
+      inputSchema: {
+        checks: z.string().describe('Your typecheck and test results, in one or two lines (for example: typecheck clean; npm test 70/70)'),
+        title: z.string().optional().describe('Pull request title, if the branch has none yet'),
+        body: z.string().optional().describe('Pull request description, if the branch has none yet'),
+      },
+    },
+    async (a) => {
+      try {
+        const text = await requestMerge(wt.branch, wt.path, a, async (detail) => {
+          const id = randomUUID();
+          emit(sessionId, currentTurn(), { type: 'approval', id, tool: 'Merge pull request', detail });
+          return awaitAnswer(sessionId, id);
+        });
+        return { content: [{ type: 'text' as const, text }] };
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
+      }
+    },
   );
 }
 

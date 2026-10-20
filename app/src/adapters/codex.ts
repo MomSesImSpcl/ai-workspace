@@ -5,7 +5,8 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { codexHookNotices } from '../sandbox-check.ts';
-import { commitRoots, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
+import { ghBlockArgs, MERGE_NOTE, mergeCommand } from '../merge.ts';
+import { commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -166,7 +167,7 @@ export class CodexProcess implements AgentProcess {
     let userConfig = '';
     try { userConfig = readFileSync(join(userCodexHome(), 'config.toml'), 'utf8'); } catch { /* no config */ }
     const shell = shellEnvArgs(process.platform, process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), userConfig);
-    const child = spawn(bin, [...pre, ...shell, 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(bin, [...pre, ...shell, ...ghBlockArgs(!!this.session.worktree), 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;
@@ -241,7 +242,10 @@ export class CodexProcess implements AgentProcess {
     await this.init();
     const { task } = this.session;
     const params: Record<string, unknown> = { cwd: this.root, ...(this.model ? { model: this.model } : {}), ...(MODES[this.permissionMode ?? ''] ?? {}) };
-    const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
+    // The workspace server runs gh for request_merge with the user's own login, so it gets what gh needs to find it.
+    const wanted = ['PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SYSTEMROOT', 'GH_CONFIG_DIR', 'AI_WORKSPACE_GH'];
+    const own = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v && wanted.includes(k.toUpperCase())) as [string, string][]); // keys as spelled (Windows: Path)
+    const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { ...own, AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
       params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}${ownInstructions('implementationInstructions')}`;
@@ -252,6 +256,8 @@ export class CodexProcess implements AgentProcess {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
       params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool.' + ownInstructions('chatInstructions');
     }
+    // App-project chats and top-level tasks merge through the workspace's request_merge (selfdev-004).
+    if (this.session.worktree && this.session.role !== ORCHESTRATION && !task?.parentId) params.developerInstructions = `${params.developerInstructions ?? ''} ${MERGE_NOTE}`;
     if (!task && this.session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
       Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${orchestratorNote()}` });
@@ -372,6 +378,11 @@ export class CodexProcess implements AgentProcess {
       const reply = (id: number | string, result: unknown) => this.send({ id, result });
       const ask = async (m: Message) => {
         // A request to write into the running app's checkout or storage is declined without a card (selfdev-002).
+        if (this.session.worktree && m.method === 'item/commandExecution/requestApproval' && typeof m.params?.command === 'string' && mergeCommand(m.params.command)) {
+          // Merging goes through the workspace's request_merge, after the user's approval (selfdev-004).
+          emit({ type: 'notice', text: `${GUARD_MARK}: \`${m.params.command}\` would merge without the user's approval; merging goes through request_merge.` });
+          return reply(m.id!, { decision: 'decline' });
+        }
         const hit = guardedRequest(guard, m.method!, m.params ?? {}, edits);
         if (hit) {
           const p = m.params ?? {};
