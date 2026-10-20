@@ -3,16 +3,16 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addMessage, createSession, loadSession, readEvents, type SessionAgent } from '../src/sessions.ts';
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
-import { guardedRequest } from '../src/adapters/codex.ts';
+import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { guardedRequest, sandboxPath } from '../src/adapters/codex.ts';
 import { sessionEvents } from '../src/adapters/claude-code.ts';
 import { forget, guardServer, guardToken } from '../src/guard.ts';
 
@@ -88,6 +88,19 @@ test('a session works in its own worktree from the first turn; its tasks share i
   assert.equal(roots.length, 2); // no agent started in the live checkout
   assert.ok(readEvents(chat.id).some((e) => e.type === 'error' && /worktree is gone/.test(e.message)));
   rmSync(root, { recursive: true, force: true });
+});
+
+test('a worktree that cannot be made on a too long path leaves no branch behind and says why (#22)', () => {
+  // A worktree folder just under the system's path limit: it can be made, but Git's own folder in the checkout
+  // for it cannot, so Git fails after it made the branch, as on the user's Windows storage path.
+  const limit = process.platform === 'win32' ? 260 : process.platform === 'darwin' ? 1024 : 4096;
+  const parts: string[] = [];
+  while (join(dirname(root), ...parts).length < limit - 150) parts.push(`${parts.length}`.padEnd(100, 'x'));
+  const base = join(dirname(root), ...parts);
+  const deep = join(base, 'w'.padEnd(limit - 12 - base.length - 1, 'w'));
+  assert.throws(() => addWorktree(root, { path: deep, branch: 'deep' }), /folder path is too long \(\d+ characters[^)]*\)[\s\S]*No branch was left behind/);
+  assert.equal(git('branch', '--list', 'deep'), '');
+  assert.equal(git('worktree', 'list').split('\n').length, 1);
 });
 
 test('a new worktree takes the name the user gives it; empty, invalid and taken names are refused', async () => {
@@ -230,4 +243,16 @@ test('a worktree commit may write only its own git folder, objects and branch re
   const roots = commitRoots(wt).map(real);
   const dotGit = real(join(root, '.git'));
   assert.deepEqual(roots, [`${dotGit}/worktrees/wt`, `${dotGit}/objects`, `${dotGit}/refs/heads`, `${dotGit}/logs/refs/heads`]);
+});
+
+test('Codex gets the real folder of a linked program before its link, so its sandbox can run it (#21)', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ws-links-'));
+  const links = join(dir, 'Links'), pkg = join(dir, 'Packages', 'rtk'), plain = join(dir, 'bin');
+  for (const d of [links, pkg, plain]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(pkg, 'rtk.exe'), '');
+  writeFileSync(join(plain, 'git.exe'), '');
+  try { symlinkSync(join(pkg, 'rtk.exe'), join(links, 'rtk.exe')); } catch { t.skip('no permission to make links here'); return; }
+  const real = realpathSync(pkg);
+  assert.equal(sandboxPath([plain, links, join(dir, 'missing')].join(delimiter)), [plain, real, links, join(dir, 'missing')].join(delimiter));
+  assert.equal(sandboxPath([links, links].join(delimiter)), [real, links].join(delimiter), 'each folder once');
 });

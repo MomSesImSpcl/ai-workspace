@@ -11,4 +11,6 @@ This is the AI Workspace repository. Start here when opening or resuming work.
 
 This repository is public. Never commit private data: local absolute paths, usernames, emails, credentials, tokens or machine-specific output. Use placeholders such as `<project-path>` in docs, and check the staged diff for such data before every commit.
 
+Before every push, run `npm run typecheck` and `npm test` in `app/` and the private-data scan from `.github/workflows/ci.yml`; push only when they pass. Group a change into logical commits and push it once it is complete and verified, not as intermediate fix-ups. Keep pull requests as drafts while working and mark them ready when done: that starts the full Windows/macOS/Ubuntu checks ([CI](docs/WORKING_AGREEMENT.md#ci)).
+
 Preserve user changes and shared security boundaries. Requirements belong in their owning specs; summaries and this file should link to details rather than duplicate them.

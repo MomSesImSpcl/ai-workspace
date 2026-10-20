@@ -1,9 +1,10 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
+import { codexHookNotices } from '../sandbox-check.ts';
 import { commitRoots, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
@@ -24,6 +25,42 @@ function command(): [string, string[]] {
     }
   }
   return ['codex', []];
+}
+
+/**
+ * `path` (a PATH value) with the real folder of each linked program placed before the folder holding its link
+ * (#21). Codex's Windows sandbox cannot run a program through a link, such as WinGet's `Links` folder, so a user
+ * hook calling `rtk` failed there; the real folder lets the same name find the program itself. Only `.exe` links
+ * count, so folders full of other links (Linux `/usr/bin`) are left alone.
+ */
+export function sandboxPath(path: string): string {
+  const out: string[] = [];
+  for (const dir of path.split(delimiter)) {
+    if (!dir) continue;
+    let names: string[] = [];
+    try { names = readdirSync(dir).filter((n) => /\.exe$/i.test(n)); } catch { /* missing folder */ }
+    for (const n of names) {
+      try {
+        if (!lstatSync(join(dir, n)).isSymbolicLink()) continue;
+        const real = dirname(realpathSync(join(dir, n)));
+        if (!out.includes(real)) out.push(real);
+      } catch { /* broken link */ }
+    }
+    if (!out.includes(dir)) out.push(dir);
+  }
+  return out.join(delimiter);
+}
+
+/**
+ * Codex settings for its shell on Windows (#21): the Windows sandbox drops `HOME`, so a program a hook runs there
+ * (`rtk`) cannot find Claude Code's folder; `CLAUDE_CONFIG_DIR` is passed instead, as Claude Code's own default
+ * (`claudeDir`), unless the user's Codex `config.toml` sets it already. Empty on other systems, whose sandboxes
+ * keep `HOME`. The value matches the default, so it changes nothing where no sandbox runs.
+ */
+export function shellEnvArgs(platform: string, claudeDir: string, userConfig: string): string[] {
+  // Set as a table key, dotted key or inline table entry; a commented-out line does not count.
+  if (platform !== 'win32' || /^[^#\n]*\bCLAUDE_CONFIG_DIR\s*=/m.test(userConfig)) return [];
+  return ['-c', `shell_environment_policy.set.CLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)}`]; // a TOML string
 }
 
 // Codex's own approval presets (its /approvals menu), passed per thread; '' keeps the user's config.
@@ -99,6 +136,8 @@ export class CodexProcess implements AgentProcess {
   private threadId?: string;
   private fresh = true;
   private info?: Body;
+  private path = ''; // the PATH Codex runs with
+  private notes: string[] = []; // start-up notices for the first turn after a start
   private mcp = new Map<string, string>();
   private disabledPluginIds?: string[]; // plugins switched off for this run (orchestrator-005)
   readonly model?: string;
@@ -120,7 +159,14 @@ export class CodexProcess implements AgentProcess {
 
   private start(): void {
     const [bin, pre] = command();
-    const child = spawn(bin, [...pre, 'app-server'], { cwd: this.root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    // Windows spells it `Path`; the key is kept as it is.
+    const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+    this.path = sandboxPath(process.env[pathKey] ?? '');
+    const env = { ...process.env, [pathKey]: this.path };
+    let userConfig = '';
+    try { userConfig = readFileSync(join(userCodexHome(), 'config.toml'), 'utf8'); } catch { /* no config */ }
+    const shell = shellEnvArgs(process.platform, process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), userConfig);
+    const child = spawn(bin, [...pre, ...shell, 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;
@@ -253,6 +299,9 @@ export class CodexProcess implements AgentProcess {
     r ??= await this.request('thread/start', params);
     this.threadId = (r.thread as { id: string }).id;
     const sandbox = (r.sandbox as { type?: string } | undefined)?.type;
+    // Programs the user's hooks call must run inside the sandbox, or the commands they change fail there (#21).
+    const hooksOff = (params.config as Record<string, unknown> | undefined)?.['features.codex_hooks'] === false;
+    this.notes = sandbox && !/danger/i.test(sandbox) && !hooksOff ? codexHookNotices(userCodexHome(), this.path) : [];
     this.info = { type: 'init', model: r.model as string | undefined, permissionMode: `approval ${String(r.approvalPolicy)}${sandbox ? ` · sandbox ${sandbox}` : ''}`, ruleFiles: r.instructionSources as string[] | undefined };
   }
 
@@ -280,6 +329,7 @@ export class CodexProcess implements AgentProcess {
     }
     const threadId = this.threadId!;
     emit({ ...this.info!, mcp: [...this.mcp].map(([name, status]) => ({ name, status })) } as Body);
+    for (const text of this.notes.splice(0)) emit({ type: 'notice', text });
     const prompt = this.fresh && input.history ? `Earlier in this conversation:\n\n${input.history}\n\nUser: ${input.prompt}` : input.prompt;
     this.fresh = false;
     let text = '';

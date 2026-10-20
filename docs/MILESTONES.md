@@ -15,7 +15,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 1. Start a session for this repository with Claude Code, and once more with Codex; the workspace starts it in its own new worktree and branch from current `main`.
 2. Chat with the agent through the change with live activity, Stop and approval cards; the running app and its storage stay untouched.
 3. The agent runs `npm run typecheck` and `npm test` in the worktree and reports the results in the chat.
-4. On the user's approval in the chat, the agent commits, merges into `main` and pushes.
+4. On the user's approval in the chat, the agent commits, pushes its branch and merges it into `main` through a pull request once the required checks pass ([ADR 0016](architecture/decisions/0016-main-ruleset.md)).
 5. Restart the app onto the new code; sessions survive and the requesting session continues. If the new code fails to start, start the previous version.
 6. The agent cleans up merged worktrees and branches; the workspace notices a removed worktree in its session.
 7. The agent resolves a merge conflict itself; the workspace needs no own conflict view.
@@ -28,6 +28,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - Codex in sessions through `codex app-server` ([#14](https://github.com/MomSesImSpcl/ai-workspace/issues/14)), so Codex supports the same flow as Claude Code (built)
 - [ai-orchestrator](features/ai-orchestrator/SPEC.md) orchestrator-004, effort part (added 2026-10-19 by the user): the orchestrator chooses an effort level for every task it starts, never leaving it to the agent's default, and the task card shows the level it runs with
 - Write guard limits (added 2026-10-19 by the user): [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18) (shell paths computed at run time; no OS sandbox for Claude Code on Windows) and [#21](https://github.com/MomSesImSpcl/ai-workspace/issues/21) (command-wrapping hooks fail inside Codex's sandbox, so Codex worktree chats cannot run git; added 2026-10-20 by the user) are fixed, or closed by a decision of the user, before M1 is reached
+- Worktree checks under Codex (added 2026-10-20 by the user): [#25](https://github.com/MomSesImSpcl/ai-workspace/issues/25) (`npm test` stalls inside Codex's Windows sandbox) and [#26](https://github.com/MomSesImSpcl/ai-workspace/issues/26) (a new worktree has no dependencies installed) are fixed before M1 is reached, since exit criterion 3 needs both
 - Already built and reused: sessions-001–008, 010, 018, 019 (session, live activity, Stop, approvals)
 
 **Helps:**
