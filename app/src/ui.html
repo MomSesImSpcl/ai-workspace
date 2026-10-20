@@ -1003,7 +1003,7 @@ function renderBranches(tab) {
   const total = state.branches.reduce((n, b) => n + b.size, 0);
   const html = state.branches.length ? state.branches.map((b) => `<div class="branch-row"><code title="${esc(b.path)}">${esc(b.branch)}</code>
       <span class="meta">${esc(branchState(b))} · ${sizeText(b.size)}</span>
-      <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" type="button" data-open-folder="${esc(b.path)}" ${window.desktop ? '' : 'disabled'} title="Open the folder">Open</button><button class="btn small" type="button" data-remove-branch="${esc(b.path)}" ${b.busy ? 'disabled title="Stop its agent first"' : ''}>Remove…</button></span></div>`).join('')
+      <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" type="button" data-open-folder="${esc(b.path)}" ${window.desktop ? '' : 'disabled'} title="Open the folder">Open</button><button class="btn small" type="button" data-remove-branch="${esc(b.path)}" ${b.busy ? 'disabled title="Stop its agent first"' : state.branchRemoving ? 'disabled title="Another branch is being removed"' : ''}>${state.branchRemoving === b.path ? 'Removing…' : 'Remove…'}</button></span></div>`).join('')
       + `<p class="meta" style="margin:4px 0 0">${state.branches.length} branch${state.branches.length === 1 ? '' : 'es'}, ${sizeText(total)} in total.</p>`
     : '<p class="meta" style="margin:0">No branches yet.</p>';
   if ($('#branch-list').__html !== html) $('#branch-list').innerHTML = $('#branch-list').__html = html;
@@ -1013,9 +1013,14 @@ async function removeBranch(path) {
   if (!b) return;
   const safe = b.merged && !b.dirty;
   const lost = [b.ahead && `${b.ahead} commit${b.ahead === 1 ? '' : 's'} not in main`, b.dirty && 'uncommitted changes'].filter(Boolean).join(' and ');
-  if (!(await ask(`Remove branch ${b.branch}?`, `Its folder (${sizeText(b.size)}) and the branch are deleted and its chats archived.${safe ? ' Its work is merged into main.' : ` ${lost ? `Its ${lost} will be lost.` : 'It has no commits yet.'}`}`, 'Remove', !safe))) return;
+  if (state.branchRemoving || !(await ask(`Remove branch ${b.branch}?`, `Its folder (${sizeText(b.size)}) and the branch are deleted and its chats archived.${safe ? ' Its work is merged into main.' : ` ${lost ? `Its ${lost} will be lost.` : 'It has no commits yet.'}`}`, 'Remove', !safe))) return;
+  // One removal at a time: the server removes a branch in one blocking step, so a second click would only queue up.
+  state.branchRemoving = path;
+  renderBranches(pref.get('settingsTab', 'general'));
+  $('#branch-status').textContent = `Removing ${b.branch}…`;
   try { await api('/api/branches/remove', { path, force: !safe }); flash($('#branch-status'), `Removed ${b.branch}.`); }
   catch (err) { fail($('#branch-status'), err.message); }
+  state.branchRemoving = undefined;
   state.branches = undefined;
   await loadSessions();
   render();
