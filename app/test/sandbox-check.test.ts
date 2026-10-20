@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { shellEnvArgs } from '../src/adapters/codex.ts';
 import { aclAllowsSandbox, codexHookNotices, hookPrograms, parseAcls, problemNotice, readAcls, resolveProgram, runAclScript, sandboxProblems, type Ace } from '../src/sandbox-check.ts';
 
 const RX = 0x200a9; // ReadAndExecute
@@ -74,4 +75,15 @@ test('on Windows the access list of a real file is read as SIDs and numbers, in 
   assert.deepEqual(readAcls([process.execPath])[process.execPath], aces);
   assert.ok(aces.every((a) => typeof a.rights === 'number' && typeof a.allow === 'boolean'));
   assert.ok(aces.some((a) => /^S-1-/.test(a.sid)), 'SIDs, not only translated names');
+});
+
+test('Codex on Windows gets CLAUDE_CONFIG_DIR for its shell, unless the user sets it; nothing elsewhere (#21)', () => {
+  const dir = 'C:\\tools\\.claude';
+  assert.deepEqual(shellEnvArgs('win32', dir, ''), ['-c', 'shell_environment_policy.set.CLAUDE_CONFIG_DIR="C:\\\\tools\\\\.claude"'], 'a TOML string, backslashes escaped');
+  assert.deepEqual(shellEnvArgs('linux', dir, ''), []);
+  assert.deepEqual(shellEnvArgs('darwin', dir, ''), []);
+  for (const own of ['[shell_environment_policy.set]\nCLAUDE_CONFIG_DIR = "x"', 'shell_environment_policy.set.CLAUDE_CONFIG_DIR = "x"', '[shell_environment_policy]\nset = { CLAUDE_CONFIG_DIR = "x" }']) {
+    assert.deepEqual(shellEnvArgs('win32', dir, own), [], own);
+  }
+  assert.equal(shellEnvArgs('win32', dir, '# CLAUDE_CONFIG_DIR = "x"\nmodel = "y"').length, 2, 'a comment does not count');
 });

@@ -51,6 +51,18 @@ export function sandboxPath(path: string): string {
   return out.join(delimiter);
 }
 
+/**
+ * Codex settings for its shell on Windows (#21): the Windows sandbox drops `HOME`, so a program a hook runs there
+ * (`rtk`) cannot find Claude Code's folder; `CLAUDE_CONFIG_DIR` is passed instead, as Claude Code's own default
+ * (`claudeDir`), unless the user's Codex `config.toml` sets it already. Empty on other systems, whose sandboxes
+ * keep `HOME`. The value matches the default, so it changes nothing where no sandbox runs.
+ */
+export function shellEnvArgs(platform: string, claudeDir: string, userConfig: string): string[] {
+  // Set as a table key, dotted key or inline table entry; a commented-out line does not count.
+  if (platform !== 'win32' || /^[^#\n]*\bCLAUDE_CONFIG_DIR\s*=/m.test(userConfig)) return [];
+  return ['-c', `shell_environment_policy.set.CLAUDE_CONFIG_DIR=${JSON.stringify(claudeDir)}`]; // a TOML string
+}
+
 // Codex's own approval presets (its /approvals menu), passed per thread; '' keeps the user's config.
 const MODES: Record<string, { approvalPolicy: string; sandbox: string }> = {
   'read-only': { approvalPolicy: 'on-request', sandbox: 'read-only' },
@@ -151,7 +163,10 @@ export class CodexProcess implements AgentProcess {
     const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
     this.path = sandboxPath(process.env[pathKey] ?? '');
     const env = { ...process.env, [pathKey]: this.path };
-    const child = spawn(bin, [...pre, 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let userConfig = '';
+    try { userConfig = readFileSync(join(userCodexHome(), 'config.toml'), 'utf8'); } catch { /* no config */ }
+    const shell = shellEnvArgs(process.platform, process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), userConfig);
+    const child = spawn(bin, [...pre, ...shell, 'app-server'], { cwd: this.root, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;
