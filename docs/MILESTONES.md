@@ -15,7 +15,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 1. Start a session for this repository with Claude Code, and once more with Codex; the workspace starts it in its own new worktree and branch from current `main`.
 2. Chat with the agent through the change with live activity, Stop and approval cards; the running app and its storage stay untouched.
 3. The agent runs `npm run typecheck` and `npm test` in the worktree and reports the results in the chat.
-4. On the user's approval in the chat, the agent commits, merges into `main` and pushes.
+4. On the user's approval in the chat, the agent commits, pushes its branch and merges it into `main` through a pull request once the required checks pass ([ADR 0016](architecture/decisions/0016-main-ruleset.md)).
 5. Restart the app onto the new code; sessions survive and the requesting session continues. If the new code fails to start, start the previous version.
 6. The agent cleans up merged worktrees and branches; the workspace notices a removed worktree in its session.
 7. The agent resolves a merge conflict itself; the workspace needs no own conflict view.
