@@ -8,7 +8,7 @@ import { codexHookNotices } from '../sandbox-check.ts';
 import { ghBlockArgs, MERGE_NOTE, mergeCommand } from '../merge.ts';
 import { commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, TASK_NOTE } from '../sessions.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, READ_REPO_NOTE, TASK_NOTE } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -248,13 +248,13 @@ export class CodexProcess implements AgentProcess {
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { ...own, AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
     if (task && !task.parentId) {
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}${ownInstructions('implementationInstructions')}`;
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} ${READ_REPO_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}${ownInstructions('implementationInstructions')}`;
     } else if (task) {
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE}${ownInstructions('implementationInstructions')}`;
+      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} ${READ_REPO_NOTE}${ownInstructions('implementationInstructions')}`;
     } else if (!task) {
       // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
       params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = 'AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool.' + ownInstructions('chatInstructions');
+      params.developerInstructions = `AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool. ${READ_REPO_NOTE}` + ownInstructions('chatInstructions');
     }
     // App-project chats and top-level tasks merge through the workspace's request_merge (selfdev-004).
     if (this.session.worktree && this.session.role !== ORCHESTRATION && !task?.parentId) params.developerInstructions = `${params.developerInstructions ?? ''} ${MERGE_NOTE}`;

@@ -38,6 +38,8 @@ export function addUsage(a: Usage, b: Usage): Usage {
 }
 
 // Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
+// Plain chats and tasks see read_repo only in their tool list; this sentence makes them try it (#31).
+export const READ_REPO_NOTE = 'For commit history, pull requests, checks and issues of a workspace project, use the workspace tool read_repo.';
 export const TASK_NOTE = 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.';
 
 // A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
