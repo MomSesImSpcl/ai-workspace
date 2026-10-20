@@ -26,3 +26,7 @@ Scope: [selfdev-005, selfdev-006](../../features/self-development/SPEC.md#requir
 5. "Update and restart" appears on its own after the next merge into `main` (checked every 5 minutes).
 
 Branch `claude/great-ride-93ynxs`; commit in the pull request.
+
+## Follow-up (2026-10-20): only changes in `app/` count
+
+On the user's first start from `main`, `last-good.log` said `skipped: the checkout has uncommitted changes`: the only change was the user's own notes file at the repository root. Only uncommitted changes in `app/`, the code that runs, now keep a version from being recorded or block Update and restart; git's fast-forward still refuses to overwrite a changed file elsewhere. Test: `app/test/restart.test.ts`.

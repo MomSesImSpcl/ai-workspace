@@ -82,7 +82,7 @@ test('only a clean main at the checked commit is recorded, never from a fallback
   const head = git(repo, 'rev-parse', 'HEAD');
   assert.match(await recordLastGood(repo, 'f'.repeat(40)), /moved on/);
   writeFileSync(join(repo, 'app', 'package-lock.json'), '{"changed":true}');
-  assert.match(await recordLastGood(repo, head), /uncommitted changes/);
+  assert.match(await recordLastGood(repo, head), /app\/ has uncommitted changes/);
   git(repo, 'checkout', '-q', '--', '.');
   git(repo, 'switch', '-q', '-c', 'feature');
   assert.match(await recordLastGood(repo, head), /on feature, not main/);
@@ -91,13 +91,22 @@ test('only a clean main at the checked commit is recorded, never from a fallback
   assert.match(await recordLastGood(repo, head), /fallback/);
   delete process.env.AI_WORKSPACE_FALLBACK;
   assert.equal(lastGood(), undefined);
+  // A changed notes file outside app/ does not count: the copy still matches the code that runs.
+  commit(repo, 'notes.txt', 'todo');
+  git(repo, 'push', '-q', 'origin', 'main');
+  writeFileSync(join(repo, 'notes.txt'), 'todo, edited');
+  assert.match(await recordLastGood(repo, git(repo, 'rev-parse', 'HEAD')), /^recorded /);
+  pushToMain('c0.txt', 'c');
+  assert.equal((await applyUpdate(repo)).dependencies, false, 'and does not block an update');
+  writeFileSync(join(repo, 'notes.txt'), 'todo');
+  const head2 = git(repo, 'rev-parse', 'HEAD');
 
-  await recordLastGood(repo, head);
+  await recordLastGood(repo, head2);
   pushToMain('c.txt', 'c');
   await applyUpdate(repo);
   process.env.FAKE_NPM_FAIL = '1';
   await assert.rejects(recordLastGood(repo, git(repo, 'rev-parse', 'HEAD')), /npm ci failed in the copy \(exit 1\)[\s\S]*E404/);
-  assert.equal(lastGood()?.commit, head, 'the recorded version stays');
+  assert.equal(lastGood()?.commit, head2, 'the recorded version stays');
   assert.ok(!existsSync(join(process.env.AI_WORKSPACE_HOME!, 'last-good.lock')), 'the lock is released');
 });
 
