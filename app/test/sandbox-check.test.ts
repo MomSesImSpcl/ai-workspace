@@ -18,12 +18,12 @@ test('the programs of a Codex hooks.json: first words, PowerShell call paths and
   const hooks = { hooks: {
     PreToolUse: [
       { matcher: 'Bash', hooks: [{ type: 'command', command: 'rtk hook codex' }] },
-      { hooks: [{ type: 'command', command: "& 'C:/Users/me/.caveman/bin/caveman-proxy.exe' native-hook codex --adapter 'C:/x/hook.js' --node 'C:/Program Files/nodejs/node.EXE'" }] },
+      { hooks: [{ type: 'command', command: "& 'C:/tools/.caveman/bin/caveman-proxy.exe' native-hook codex --adapter 'C:/x/hook.js' --node 'C:/Program Files/nodejs/node.EXE'" }] },
     ],
-    SessionStart: [{ hooks: [{ type: 'command', command: "powershell -NoProfile -File 'C:/me/sync.ps1'", timeout: 30 }] }],
+    SessionStart: [{ hooks: [{ type: 'command', command: "powershell -NoProfile -File 'C:/tools/sync.ps1'", timeout: 30 }] }],
     Stop: [{ hooks: [{ type: 'prompt', command: 'ignored' }] }],
   } };
-  assert.deepEqual(hookPrograms(hooks), ['rtk', 'C:/Users/me/.caveman/bin/caveman-proxy.exe', 'C:/Program Files/nodejs/node.EXE', 'powershell']);
+  assert.deepEqual(hookPrograms(hooks), ['rtk', 'C:/tools/.caveman/bin/caveman-proxy.exe', 'C:/Program Files/nodejs/node.EXE', 'powershell']);
   assert.deepEqual(hookPrograms(undefined), []);
 });
 
