@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { aclAllowsSandbox, codexHookNotices, hookPrograms, problemNotice, readAcls, resolveProgram, sandboxProblems, type Ace } from '../src/sandbox-check.ts';
+import { aclAllowsSandbox, codexHookNotices, hookPrograms, parseAcls, problemNotice, readAcls, resolveProgram, runAclScript, sandboxProblems, type Ace } from '../src/sandbox-check.ts';
 
 const RX = 0x200a9; // ReadAndExecute
 const FULL = 0x1f01ff; // FullControl
@@ -55,6 +55,12 @@ test('linked programs and programs without permission are reported with their fi
   assert.match(problemNotice(linked[0]!), /is a link to .*Change the hook to call/);
 });
 
+test('the access-list output is read past a byte-order mark; broken output reads as nothing', () => {
+  assert.deepEqual(parseAcls('\uFEFF{"C:\\\\a.exe":[{"name":"B\\\\Users","sid":"S-1-5-32-545","rights":131241,"allow":true}]}'), { 'C:\\a.exe': [{ name: 'B\\Users', sid: 'S-1-5-32-545', rights: 131241, allow: true }] });
+  assert.deepEqual(parseAcls(''), {});
+  assert.deepEqual(parseAcls('error {'), {});
+});
+
 test('no check outside Windows', () => {
   if (process.platform === 'win32') return;
   assert.deepEqual(codexHookNotices(mkdtempSync(join(tmpdir(), 'ws-codex-')), ''), []);
@@ -62,8 +68,10 @@ test('no check outside Windows', () => {
 
 test('on Windows the access list of a real file is read as SIDs and numbers, in any system language', () => {
   if (process.platform !== 'win32') return;
-  const aces = readAcls([process.execPath])[process.execPath];
-  assert.ok(aces && aces.length, 'node.exe has an access list');
+  const raw = runAclScript([process.execPath]);
+  const aces = parseAcls(raw.stdout)[process.execPath];
+  assert.ok(aces && aces.length, `node.exe has an access list; PowerShell said: ${JSON.stringify(raw)}`);
+  assert.deepEqual(readAcls([process.execPath])[process.execPath], aces);
   assert.ok(aces.every((a) => typeof a.rights === 'number' && typeof a.allow === 'boolean'));
   assert.ok(aces.some((a) => /^S-1-/.test(a.sid)), 'SIDs, not only translated names');
 });

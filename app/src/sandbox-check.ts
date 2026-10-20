@@ -36,8 +36,9 @@ export function hookPrograms(hooksJson: unknown): string[] {
 
 /** The file a program name runs: a path as is, a bare name searched in `path` with the `pathext` endings. */
 export function resolveProgram(name: string, path: string, pathext = '.COM;.EXE;.BAT;.CMD'): string | undefined {
-  // PATHEXT spells endings in capitals; Windows matches them in any case, other systems need both spellings.
-  const exts = ['', ...new Set(pathext.split(';').filter(Boolean).flatMap((e) => [e, e.toLowerCase()]))];
+  // PATHEXT spells endings in capitals. Lower case first: files are named so, and a system that ignores case
+  // (Windows, macOS) then reports the name as it is.
+  const exts = ['', ...new Set(pathext.split(';').filter(Boolean).flatMap((e) => [e.toLowerCase(), e]))];
   const isFile = (f: string) => { try { return statSync(f).isFile(); } catch { return false; } };
   const candidates = isAbsolute(name) || /[\\/]/.test(name) ? exts.map((e) => name + e) : path.split(delimiter).filter(Boolean).flatMap((d) => exts.map((e) => join(d, name + e)));
   return candidates.find((f) => existsSync(f) && isFile(f));
@@ -67,10 +68,24 @@ export function aclAllowsSandbox(aces: Ace[]): boolean {
  * nothing depends on the system's language. A file that cannot be read is left out.
  */
 export function readAcls(files: string[]): Record<string, Ace[]> {
-  if (!files.length) return {};
-  const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $o=@{}; foreach($f in (ConvertFrom-Json $env:AIWS_FILES)){ try { $o[$f]=@((Get-Acl -LiteralPath $f).Access | ForEach-Object { $s=''; try { $s=$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch {}; @{ name=[string]$_.IdentityReference.Value; sid=$s; rights=[int64]$_.FileSystemRights; allow=($_.AccessControlType -eq 'Allow') } }) } catch {} }; $o | ConvertTo-Json -Depth 4 -Compress`;
-  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, AIWS_FILES: JSON.stringify(files) }, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
-  try { return JSON.parse(r.stdout || '{}') as Record<string, Ace[]>; } catch { return {}; }
+  return files.length ? parseAcls(runAclScript(files).stdout) : {};
+}
+
+// UTF-8 without a byte-order mark, so the output is plain JSON.
+const ACL_SCRIPT = `[Console]::OutputEncoding=New-Object Text.UTF8Encoding $false; $o=@{}; foreach($f in (ConvertFrom-Json $env:AIWS_FILES)){ try { $o[$f]=@((Get-Acl -LiteralPath $f).Access | ForEach-Object { $s=''; try { $s=$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch {}; @{ name=[string]$_.IdentityReference.Value; sid=$s; rights=[int64]$_.FileSystemRights; allow=($_.AccessControlType -eq 'Allow') } }) } catch { [Console]::Error.WriteLine("$f : $_") } }; $o | ConvertTo-Json -Depth 4 -Compress`;
+
+/** Runs the access-list script for `files` with Windows PowerShell; its errors go to stderr. */
+export function runAclScript(files: string[]): { stdout: string; stderr: string } {
+  // Started from PowerShell 7, Windows PowerShell inherits its module path and cannot load Get-Acl.
+  const { PSModulePath: _, ...env } = process.env;
+  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ACL_SCRIPT], { env: { ...env, AIWS_FILES: JSON.stringify(files) }, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
+  return { stdout: r.stdout ?? '', stderr: `${r.stderr ?? ''}${r.error ? r.error.message : ''}` };
+}
+
+/** The script's output as access lists; anything before the JSON (a byte-order mark) is skipped. */
+export function parseAcls(stdout: string): Record<string, Ace[]> {
+  const at = stdout.indexOf('{');
+  try { return at < 0 ? {} : JSON.parse(stdout.slice(at)) as Record<string, Ace[]>; } catch { return {}; }
 }
 
 /** The problems of the programs `programs` (from `hookPrograms`), found with `path`; `acls` reads access lists. */
