@@ -28,44 +28,55 @@ test('the guard denies gh merges in app-project sessions only, with the way to m
   assert.deepEqual(guardDecision(g, input), {}, 'other projects keep gh');
 });
 
-/** A fake gh that keeps pull requests and the calls it got in a JSON file. */
-function fakeGh(prs: Record<string, object>, failMerge = false) {
-  const state = join(dir, 'gh-state.json');
+/** A fake gh and git that keep pull requests and every call (in order) in a JSON file. */
+function fakeTools(prs: Record<string, object>, fail: { push?: boolean; merge?: boolean } = {}) {
+  const state = join(dir, 'tools-state.json');
   writeFileSync(state, JSON.stringify({ prs, calls: [] }));
-  const script = join(dir, 'fake-gh.mjs');
-  writeFileSync(script, `import { readFileSync, writeFileSync } from 'node:fs';
+  const head = `import { readFileSync, writeFileSync } from 'node:fs';
 const s = JSON.parse(readFileSync(${JSON.stringify(state)}, 'utf8'));
 const a = process.argv.slice(2);
-s.calls.push(a.join(' '));
-const save = () => writeFileSync(${JSON.stringify(state)}, JSON.stringify(s));
+const save = () => writeFileSync(${JSON.stringify(state)}, JSON.stringify(s));`;
+  const gh = join(dir, 'fake-gh.mjs');
+  writeFileSync(gh, `${head}
+s.calls.push('gh ' + a.join(' '));
 if (a[0] === 'pr' && a[1] === 'view') { save(); const pr = s.prs[a[2]]; if (!pr) { console.error('no pull requests found'); process.exit(1); } console.log(JSON.stringify(pr)); process.exit(0); }
 if (a[0] === 'pr' && a[1] === 'create') { const b = a[a.indexOf('--head') + 1]; s.prs[b] = { number: 9, url: 'https://x/pull/9', title: a[a.indexOf('--title') + 1], state: 'OPEN' }; save(); process.exit(0); }
-if (a[0] === 'pr' && a[1] === 'merge') { save(); if (${failMerge}) { console.error('required status checks have not succeeded'); process.exit(1); } process.exit(0); }
+if (a[0] === 'pr' && a[1] === 'merge') { save(); if (${!!fail.merge}) { console.error('auto-merge is not allowed'); process.exit(1); } process.exit(0); }
 save(); process.exit(2);`);
-  process.env.AI_WORKSPACE_GH = script;
-  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls;
+  const git = join(dir, 'fake-git.mjs');
+  writeFileSync(git, `${head}
+s.calls.push('git ' + a.join(' ')); save();
+if (${!!fail.push}) { console.error('fatal: could not read Username'); process.exit(128); }`);
+  process.env.AI_WORKSPACE_GH = gh;
+  process.env.AI_WORKSPACE_GIT = git;
+  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls.filter((c) => !c.startsWith('gh pr view'));
 }
 
-test('request_merge asks once and merges only after Allow; it opens a missing pull request', async () => {
+test('request_merge asks first; on Allow the app pushes, opens the pull request if needed and turns on auto-merge', async () => {
   try {
-    let calls = fakeGh({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } });
     const asked: string[] = [];
     const ask = (answer: boolean | null) => async (detail: string) => { asked.push(detail); return answer; };
-    assert.match(await requestMerge('fix', dir, { checks: 'typecheck clean; npm test 70/70' }, ask(false)), /did not approve/);
-    assert.ok(!calls().some((c) => c.startsWith('pr merge')), 'Deny merges nothing');
-    assert.match(asked[0]!, /#4 "Fix it".*typecheck clean; npm test 70\/70/);
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /Merged #4/);
-    assert.ok(calls().includes('pr merge 4 --squash'));
-    calls = fakeGh({});
+    let calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } });
+    assert.match(await requestMerge('fix', dir, { checks: 'typecheck clean; npm test 75/75' }, ask(false)), /did not approve the merge; nothing was pushed or merged/);
+    assert.match(await requestMerge('fix', dir, { checks: 'x' }, ask(null)), /stopped/);
+    assert.deepEqual(calls(), [], 'Deny or a stop runs nothing');
+    assert.match(asked[0]!, /Push branch fix and squash-merge pull request #4 "Fix it".*typecheck clean; npm test 75\/75/);
+    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /auto-merge is on for #4/);
+    assert.deepEqual(calls(), ['git push -u origin fix', 'gh pr merge 4 --squash --auto']);
+    calls = fakeTools({});
     await assert.rejects(requestMerge('new', dir, { checks: 'ok' }, ask(true)), /no open pull request.*title/);
-    assert.match(await requestMerge('new', dir, { checks: 'ok', title: 'New thing', body: 'Why' }, ask(true)), /Merged #9/);
-    assert.ok(calls().some((c) => c.startsWith('pr create --base main --head new --title New thing')));
-    fakeGh({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } }, true);
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /failed: required status checks[\s\S]*call request_merge again/);
-    fakeGh({ fix: { number: 4, url: 'u', title: 't', state: 'MERGED' } });
+    assert.match(await requestMerge('new', dir, { checks: 'ok', title: 'New thing', body: 'Why' }, ask(true)), /auto-merge is on for #9/);
+    assert.deepEqual(calls(), ['git push -u origin new', 'gh pr create --base main --head new --title New thing --body Why', 'gh pr merge 9 --squash --auto'], 'push before the pull request');
+    calls = fakeTools({}, { push: true });
+    assert.match(await requestMerge('new', dir, { checks: 'ok', title: 'T' }, ask(true)), /Pushing branch new failed; nothing was merged: fatal/);
+    assert.deepEqual(calls(), ['git push -u origin new'], 'no pull request after a failed push');
+    fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } }, { merge: true });
+    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /auto-merge for #4 failed: auto-merge is not allowed/);
+    fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'MERGED' } });
     await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /already merged/);
   } finally {
     delete process.env.AI_WORKSPACE_GH;
+    delete process.env.AI_WORKSPACE_GIT;
   }
 });
 

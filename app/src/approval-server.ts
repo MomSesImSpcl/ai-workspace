@@ -133,7 +133,7 @@ if (wt && session.role !== ORCHESTRATION && !task?.parentId) {
   server.registerTool(
     'request_merge',
     {
-      description: "Squash-merges this session's branch into main through its pull request, after the user approves a card in the chat. Push the branch first. Opens the pull request when there is none (then title, and optionally body, are needed). Blocks until the user answers.",
+      description: "Merges this session's branch into main after the user approves a card in the chat: pushes the branch, opens its pull request if there is none (then title, and optionally body, are needed), and squash-merges it once the required checks pass. Commit first; no need to push. Blocks until the user answers.",
       inputSchema: {
         checks: z.string().describe('Your typecheck and test results, in one or two lines (for example: typecheck clean; npm test 70/70)'),
         title: z.string().optional().describe('Pull request title, if the branch has none yet'),
