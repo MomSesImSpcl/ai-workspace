@@ -15,7 +15,7 @@ const owner: Ace[] = [
   { name: 'NT-AUTORITÄT\\SYSTEM', sid: 'S-1-5-18', rights: FULL, allow: true },
 ];
 
-test('the programs of a Codex hooks.json: first words, PowerShell call paths and .exe arguments', () => {
+test('the programs of a Codex hooks.json that can rewrite shell commands: PreToolUse hooks on the shell only', () => {
   const hooks = { hooks: {
     PreToolUse: [
       { matcher: 'Bash', hooks: [{ type: 'command', command: 'rtk hook codex' }] },
@@ -24,7 +24,14 @@ test('the programs of a Codex hooks.json: first words, PowerShell call paths and
     SessionStart: [{ hooks: [{ type: 'command', command: "powershell -NoProfile -File 'C:/tools/sync.ps1'", timeout: 30 }] }],
     Stop: [{ hooks: [{ type: 'prompt', command: 'ignored' }] }],
   } };
-  assert.deepEqual(hookPrograms(hooks), ['rtk', 'C:/tools/.caveman/bin/caveman-proxy.exe', 'C:/Program Files/nodejs/node.EXE', 'powershell']);
+  // Only shell-rewriting hooks count (user, 2026-10-20): caveman's hook has no matcher, sync runs at SessionStart.
+  assert.deepEqual(hookPrograms(hooks), ['rtk']);
+  const shell = { hooks: { PreToolUse: [
+    { matcher: 'Edit|shell', hooks: [{ type: 'command', command: "& 'C:/tools/wrap.exe' run --with 'C:/tools/helper.exe'" }] },
+    { matcher: 'Bashful', hooks: [{ type: 'command', command: 'not-a-shell-matcher' }] },
+    { matcher: 'apply_patch', hooks: [{ type: 'command', command: 'patcher' }] },
+  ] } };
+  assert.deepEqual(hookPrograms(shell), ['C:/tools/wrap.exe', 'C:/tools/helper.exe'], 'a shell in a list, its .exe arguments; whole words only');
   assert.deepEqual(hookPrograms(undefined), []);
 });
 
