@@ -27,16 +27,32 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+        with:
+          fetch-depth: 0 # the base commit, to see which files changed
+      # main's ruleset requires test (windows-latest) and test (macos-latest), so every change reaches main through
+      # a pull request. A change to only docs and text files (*.md, *.txt) passes these checks without testing, so a
+      # docs pull request with auto-merge (gh pr merge --auto --squash) lands within seconds. Any other file runs it all.
+      - id: changes
+        shell: bash
+        run: |
+          base=${{ github.event.pull_request.base.sha || github.event.before }}
+          if git cat-file -e "$base^{commit}" 2>/dev/null && ! git diff --name-only "$base" HEAD | grep -qvE '\.(md|txt)$'; then
+            echo "docs-only change: tests skipped"; echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.docs != 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - run: npm ci
+      - if: steps.changes.outputs.docs != 'true'
+        run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1 # tests do not start the desktop app
-      - run: npm run typecheck
-      - run: npm test
+      - if: steps.changes.outputs.docs != 'true'
+        run: npm run typecheck
+      - if: steps.changes.outputs.docs != 'true'
+        run: npm test
 
   private-data:
     # The repository is public: fail on local absolute user paths or personal emails.
