@@ -19,12 +19,20 @@ function words(command: string): string[] {
   return out[0] === '&' ? out.slice(1) : out;
 }
 
-/** The programs the hooks in a Codex `hooks.json` call: each command's first word and any `.exe` among its arguments. */
+/** A hook matcher that targets Codex's shell tool, alone or in a `|` list. */
+const SHELL_MATCHER = /(^|\|)\s*(bash|shell|local_shell|exec)\s*($|\|)/i;
+
+/**
+ * The programs of the hooks in a Codex `hooks.json` that can change shell commands: `PreToolUse` hooks whose matcher
+ * targets the shell (user, 2026-10-20). Hooks run outside the sandbox; only the commands they rewrite run inside it,
+ * so a program like `rtk` (which turns `git` into `rtk git`) must run there, while other hooks' programs need not.
+ * Each command's first word and any `.exe` among its arguments count.
+ */
 export function hookPrograms(hooksJson: unknown): string[] {
   const out = new Set<string>();
-  const events = (hooksJson as { hooks?: Record<string, { hooks?: { type?: string; command?: string }[] }[]> } | undefined)?.hooks ?? {};
-  for (const groups of Object.values(events)) {
-    for (const h of (groups ?? []).flatMap((g) => g.hooks ?? [])) {
+  const pre = (hooksJson as { hooks?: { PreToolUse?: { matcher?: string; hooks?: { type?: string; command?: string }[] }[] } } | undefined)?.hooks?.PreToolUse ?? [];
+  for (const group of pre.filter((g) => typeof g.matcher === 'string' && SHELL_MATCHER.test(g.matcher))) {
+    for (const h of group.hooks ?? []) {
       if (h.type !== 'command' || typeof h.command !== 'string') continue;
       const [first, ...rest] = words(h.command);
       if (first) out.add(first);
