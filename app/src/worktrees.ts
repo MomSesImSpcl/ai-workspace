@@ -127,10 +127,11 @@ export interface WorktreeChoice { name?: string; path?: string }
 
 /**
  * A worktree's state against the project checkout's HEAD (normally `main`), read from git: `merged` when the
- * branch has commits of its own and all of them are in HEAD (a fresh branch without commits is not merged, so
- * the cleanup never takes it); `ahead` counts commits not in HEAD; `dirty` when the folder has uncommitted
- * changes. The branch's start comes from its reflog; without one it never counts as merged. A squash-merged
- * branch stays "ahead" and is left to the user.
+ * branch has commits of its own and nothing in it is missing from HEAD: all its commits are in HEAD, or, after a
+ * squash merge (the only way into `main`, ADR 0016), merging it into HEAD would change nothing (`mergesIntoHead`,
+ * #24). A fresh branch without commits is not merged, so the cleanup never takes it. `ahead` counts commits not
+ * in HEAD (a squash-merged branch keeps them); `dirty` when the folder has uncommitted changes. The branch's
+ * start comes from its reflog; without one it never counts as merged.
  */
 export function worktreeState(root: string, wt: Worktree): { merged: boolean; ahead: number; dirty: boolean } {
   const ref = `refs/heads/${wt.branch}`;
@@ -139,16 +140,30 @@ export function worktreeState(root: string, wt: Worktree): { merged: boolean; ah
   try {
     const created = git(root, ['reflog', 'show', '--format=%H', ref]).split('\n').at(-1);
     const tip = git(root, ['rev-parse', ref]);
-    merged = !!created && tip !== created && ahead === 0;
+    merged = !!created && tip !== created && (ahead === 0 || mergesIntoHead(root, ref));
   } catch { /* no reflog: never merged */ }
   try { dirty = git(wt.path, ['status', '--porcelain']) !== ''; } catch { /* folder gone */ }
   return { merged, ahead, dirty };
 }
 
-/** Removes a worktree folder and its branch. Without `force`, git refuses uncommitted changes or unmerged commits. */
+/**
+ * Whether merging branch `ref` into the checkout's HEAD would leave HEAD's files as they are, so nothing of the
+ * branch is missing from it: true after a squash merge, false while any change of the branch (a later commit, or
+ * one reverted in HEAD since) would still arrive. A test merge in git's object store (`git merge-tree
+ * --write-tree`, git 2.38 or newer); no files change. A conflict, or an older git, counts as not merged.
+ */
+function mergesIntoHead(root: string, ref: string): boolean {
+  try { return git(root, ['merge-tree', '--write-tree', 'HEAD', ref]).split('\n')[0] === git(root, ['rev-parse', 'HEAD^{tree}']); } catch { return false; }
+}
+
+/**
+ * Removes a worktree folder and its branch. Without `force`, git refuses uncommitted changes. The branch itself is
+ * always deleted with `-D`: git's own merged check misses squash merges, so callers decide by `worktreeState`
+ * (`cleanupBranches` and `removeBranch` in app/src/branches.ts).
+ */
 export function deleteWorktree(root: string, wt: Worktree, force = false): void {
   git(root, ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path]);
-  git(root, ['branch', force ? '-D' : '-d', wt.branch]);
+  git(root, ['branch', '-D', wt.branch]);
 }
 
 /**
@@ -327,11 +342,16 @@ export function guardedCommand(g: Guard, command: string, cwd = g.allow): string
   return g.deny.find((d) => spellings(d).some((s) => spellingRe(s).test(text)));
 }
 
-/** How npm is started: `AI_WORKSPACE_NPM` (a script runs with this Node; tests use a fake), else `npm`. */
-export function npmCommand(): [string, string[], boolean] {
+/**
+ * How npm is started with `args`, as `[command, arguments, shell]` for `spawn`: `AI_WORKSPACE_NPM` (a script runs
+ * with this Node; tests use a fake), else `npm`. On Windows npm is a .cmd script that needs the shell; there the
+ * whole command is one string, since Node deprecates arguments next to `shell: true` (DEP0190). The arguments are
+ * the app's own fixed words, never user input.
+ */
+export function npmCommand(args: string[], platform: NodeJS.Platform = process.platform): [string, string[], boolean] {
   const bin = process.env.AI_WORKSPACE_NPM;
-  if (bin) return /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin], false] : [bin, [], false];
-  return ['npm', [], process.platform === 'win32']; // npm is a .cmd script on Windows
+  if (bin) return /\.(m?js|ts)$/.test(bin) ? [process.execPath, [bin, ...args], false] : [bin, args, false];
+  return platform === 'win32' ? [['npm', ...args].join(' '), [], true] : ['npm', args, false];
 }
 
 /**
@@ -345,10 +365,10 @@ export async function installDependencies(path: string, notice: (text: string) =
     const where = dir === path ? 'the worktree' : 'app/';
     notice(`Installing dependencies in ${where} (npm ci)…`);
     const started = Date.now();
-    const [cmd, pre, shell] = npmCommand();
+    const [cmd, argv, shell] = npmCommand(['ci', '--no-audit', '--no-fund']);
     const { code, output } = await new Promise<{ code: number | null; output: string }>((done) => {
       let output = '';
-      const child = spawn(cmd, [...pre, 'ci', '--no-audit', '--no-fund'], { cwd: dir, shell, windowsHide: true, env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1' } });
+      const child = spawn(cmd, argv, { cwd: dir, shell, windowsHide: true, env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1' } });
       child.stdout.on('data', (d) => (output += d));
       child.stderr.on('data', (d) => (output += d));
       child.on('error', (e) => done({ code: -1, output: e.message }));

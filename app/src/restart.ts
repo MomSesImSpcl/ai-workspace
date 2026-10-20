@@ -39,8 +39,8 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 /** Runs npm (`npmCommand` in `app/src/worktrees.ts`) in `cwd`; `{ code, out }` with the last lines of its output. */
 async function npm(args: string[], cwd: string): Promise<{ code: number | null; out: string }> {
-  const [cmd, pre, shell] = npmCommand();
-  const r = await run(cmd, [...pre, ...args], cwd, { shell });
+  const [cmd, argv, shell] = npmCommand(args);
+  const r = await run(cmd, argv, cwd, { shell });
   return { code: r.code, out: r.out.split(/\r?\n/).slice(-5).join('\n') };
 }
 

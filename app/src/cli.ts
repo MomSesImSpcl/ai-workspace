@@ -88,11 +88,10 @@ try {
     if (!getWorkspaceRoot() && existsSync(join(repo, '.git'))) setWorkspaceRoot(resolve(repo));
     // Run from a checkout, the workspace develops itself: its repository is a project, worked on in worktrees (selfdev-001).
     (await import('./worktrees.ts')).addAppProject();
-    // Merged branches are removed at start and once a day, so forgotten ones cannot pile up.
+    // Merged branches are removed at start: merges reach the checkout through Update and restart (or a pull and ⟳), which ends in a start.
     const { cleanupBranches } = await import('./branches.ts');
     const cleanup = () => { try { const gone = cleanupBranches(); if (gone.length) console.log(`Removed merged branches: ${gone.join(', ')}`); } catch (e) { console.error(`Branch cleanup failed: ${(e as Error).message}`); } };
     cleanup();
-    setInterval(cleanup, 24 * 60 * 60 * 1000).unref();
     const server = serve(Number(values.port));
     server.on('listening', () => console.log(`Workspace UI: http://127.0.0.1:${(server.address() as { port: number }).port}/ (Ctrl+C stops the UI; tasks keep running)`));
   } else if (cmd === 'last-good' && rest[0]) {

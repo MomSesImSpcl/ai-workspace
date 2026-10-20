@@ -65,8 +65,8 @@ export function removeBranch(path: string, force = false): void {
 }
 
 /**
- * The automatic cleanup, at app start and once a day (`ui` in `app/src/cli.ts`): removes merged branches
- * without uncommitted changes and without a running agent, and archives the chats of any branch that is gone
+ * The automatic cleanup, at app start (`ui` in `app/src/cli.ts`), which follows right after new merges arrive
+ * through Update and restart (#24): removes merged branches, squash-merged ones included, without uncommitted changes and without a running agent, and archives the chats of any branch that is gone
  * (also one the agent removed itself). Unmerged work is never touched. Returns the removed branch names.
  */
 export function cleanupBranches(): string[] {

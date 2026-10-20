@@ -11,7 +11,7 @@ import { addMessage, createSession, loadSession, readEvents, type SessionAgent }
 import { createTask } from '../src/tasks.ts';
 import { runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
+import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, npmCommand, planWorktree } from '../src/worktrees.ts';
 import { guardedRequest, sandboxPath } from '../src/adapters/codex.ts';
 import { sessionEvents } from '../src/adapters/claude-code.ts';
 import { forget, guardServer, guardToken } from '../src/guard.ts';
@@ -186,6 +186,49 @@ test('the cleanup removes merged branches only, archives their chats, and leaves
   assert.equal(loadSession(open.id).archived, true);
   assert.deepEqual(branchInfo(getProject('P')).map((b) => b.branch).sort(), ['fresh', 'unsaved']);
   rmSync(root, { recursive: true, force: true });
+});
+
+test('a squash-merged branch counts as merged and is cleaned up; one with anything not in main stays (#24)', async () => {
+  const { branchInfo, cleanupBranches, removeBranch } = await import('../src/branches.ts');
+  const start = async (name: string) => {
+    const s = createSession('P', 'Chat', { integration: 'claude-code' }, { name });
+    addMessage(s.id, 'go');
+    await runTurn(s.id, recording([]));
+    return loadSession(s.id);
+  };
+  const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com'];
+  const commit = (dir: string, file: string, text = file) => {
+    writeFileSync(join(dir, file), text);
+    for (const args of [['add', '.'], [...id, 'commit', '-qm', file]]) spawnSync('git', args, { cwd: dir });
+  };
+  // As GitHub's squash merge: one new commit on main with the branch's changes, not its commits.
+  const squash = (branch: string) => { git('merge', '-q', '--squash', branch); git(...id, 'commit', '-qm', `${branch} (#1)`); };
+  const done = await start('done'); // two commits, squash-merged
+  commit(done.worktree!.path, 'a.txt');
+  commit(done.worktree!.path, 'b.txt');
+  squash('done');
+  const later = await start('later'); // squash-merged, then one more commit
+  commit(later.worktree!.path, 'c.txt');
+  squash('later');
+  commit(later.worktree!.path, 'd.txt');
+  const reverted = await start('reverted'); // squash-merged, then reverted on main
+  commit(reverted.worktree!.path, 'e.txt');
+  squash('reverted');
+  git(...id, 'revert', '--no-edit', 'HEAD');
+  commit(root, 'main.txt'); // main moves on after the merges
+  const state = Object.fromEntries(branchInfo(getProject('P')).map((b) => [b.branch, [b.merged, b.ahead]]));
+  assert.deepEqual(state, { done: [true, 2], later: [false, 2], reverted: [false, 1] }, 'commits stay "ahead" after a squash; only the content counts');
+  assert.deepEqual(cleanupBranches(), ['done']);
+  assert.equal(git('branch', '--list', 'done'), '', 'git branch -d would refuse a squash-merged branch');
+  assert.equal(loadSession(done.id).archived, true);
+  assert.throws(() => removeBranch(later.worktree!.path), /2 unmerged commits; removing it loses that work/);
+  assert.equal(existsSync(reverted.worktree!.path), true);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('npm runs as one shell command on Windows (no DEP0190) and with an argument list elsewhere', () => {
+  assert.deepEqual(npmCommand(['ci', '--no-audit'], 'win32'), ['npm ci --no-audit', [], true]);
+  assert.deepEqual(npmCommand(['ci', '--no-audit'], 'linux'), ['npm', ['ci', '--no-audit'], false]);
 });
 
 test('the write guard keeps agents out of the live checkout and storage, except their own worktree (selfdev-002)', () => {
