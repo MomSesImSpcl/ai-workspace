@@ -156,7 +156,7 @@ export function deleteWorktree(root: string, wt: Worktree, force = false): void 
  * the workspace's storage. The session's own folder (`allow`) stays writable, also inside them, as a worktree in
  * storage is. Checked by `app/src/guard-hook.ts` for Claude Code and by the approval relay for Codex.
  */
-export interface Guard { allow: string; deny: string[] }
+export interface Guard { allow: string; deny: string[]; merge?: boolean } // merge: also block `gh pr merge` (selfdev-004)
 
 /** The guard for an agent working in `root`. */
 export function guardFor(root: string): Guard {
