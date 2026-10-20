@@ -25,9 +25,16 @@ Scope: [selfdev-002](../../features/self-development/SPEC.md#requirements), [ADR
 - Global chats stay read-only in the checkout: the app is developed through worktrees only.
 - Tests 59/59.
 
+## Follow-up 2026-10-20 (user): HTTP hook
+
+- `app/src/guard.ts` (new): `guardDecision` (shared by both hook kinds), `guardServer` (one server per process on `127.0.0.1`, free port, does not keep the process alive), `guardToken`/`forget` (one token per agent run). `guard-hook.ts` is now only the fallback.
+- `app/src/adapters/claude-code.ts`: the first turn waits for the server; each run gets an `http` hook with its token, and the token ends with that run's process.
+- Real Claude Code 2.1.303 in `bypassPermissions`: http-hook deny works for Write and Bash, and an allowed write passes. With the hook server unreachable, the call went through (fail-open), which is why the server lives in the agent's host process. Measured about 3 ms per guard answer, against about 105 ms for the command hook.
+- Tests 60/60 (new: the server answers only by token, and a finished run is refused).
+
 ## Limits
 
 - [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18): paths computed at run time are not seen by the shell check; Claude Code has no OS sandbox on Windows.
 - Commands that only read may name or run in a guarded folder (user, 2026-10-19; `readOnlyCommand`, tests for allowed and denied spellings).
-- About 105 ms per guarded Claude Code tool call for the hook's Node process (measured on Linux, Node 22; Windows not measured).
+- The command-hook fallback costs about 105 ms per tool call (Linux); the HTTP hook about 3 ms.
 - If the workspace folder is the app checkout itself, global chats cannot write anywhere in it (tie guarded).

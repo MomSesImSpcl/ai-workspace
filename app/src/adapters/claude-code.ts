@@ -6,6 +6,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { GUARD_MARK, guardFor } from '../worktrees.ts';
+import { forget, guardServer, guardToken } from '../guard.ts';
 import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, TASK_NOTE } from '../sessions.ts';
 
@@ -228,6 +229,8 @@ export class ClaudeProcess implements AgentProcess {
 
   private session: Session;
   private root: string;
+  private guardUrl?: string | false; // this process's guard server; false: it could not start (command hook)
+  private guardTok?: string; // the latest run's token
 
   constructor(session: Session, root: string) {
     this.session = session;
@@ -276,8 +279,12 @@ export class ClaudeProcess implements AgentProcess {
       }
     }
     // The running app's checkout and storage stay untouched (selfdev-002): a hook, so no permission mode lifts it.
+    // Asked over HTTP from this process, so no process starts per tool call; an unreachable server would let the
+    // call through, so it runs here, where the agent's output is read, and ends with it.
     const g = guardFor(this.root);
-    const guard = { type: 'command', command: [process.execPath, guardHook, g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
+    this.guardTok = this.guardUrl ? guardToken(g) : undefined;
+    const guard = this.guardUrl ? { type: 'http', url: this.guardUrl, headers: { 'x-aiws-token': this.guardTok }, timeout: 30 }
+      : { type: 'command', command: [process.execPath, guardHook, g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
     settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
       // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
@@ -313,7 +320,8 @@ export class ClaudeProcess implements AgentProcess {
     });
     child.stderr.on('data', (d) => (this.err = (this.err + d).slice(-4000)));
     child.on('error', (e) => (this.err += e.message));
-    child.on('close', (code) => this.onExit?.(code));
+    const tok = this.guardTok; // this run's guard ends with its process
+    child.on('close', (code) => { forget(tok); this.onExit?.(code); });
     this.child = child;
   }
 
@@ -340,6 +348,7 @@ export class ClaudeProcess implements AgentProcess {
   // Runs one turn. Stop sends Claude Code's own interrupt; if it does not end the turn soon, the process is
   // ended. A 'kill' abort (task cancel, budget) ends the process tree at once (runtime-005).
   turn(input: TurnInput): Promise<TurnEnd> {
+    if (!this.alive && this.guardUrl === undefined) return guardServer().then((url) => { this.guardUrl = url ?? false; return this.turn(input); });
     if (!this.alive) this.start(this.session.vendorSessionId);
     const { emit, signal } = input;
     const resumed = !this.fresh;

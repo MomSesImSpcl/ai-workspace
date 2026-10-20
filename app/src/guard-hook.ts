@@ -1,19 +1,9 @@
-// Claude Code PreToolUse hook for every session (selfdev-002, ADR 0015): denies file edits and shell commands
-// that would change the running app's checkout or the workspace's storage outside the session's own folder.
+// Claude Code PreToolUse command hook (selfdev-002, ADR 0015): the write guard's fallback when the adapter's
+// HTTP guard server (`guard.ts`) cannot start. Same answer, but one process per tool call (about 105 ms).
 // Usage (set by the adapter): node src/guard-hook.ts <session folder> <guarded folder>..., with the hook input on stdin.
 import { text } from 'node:stream/consumers';
-import { guardedCommand, guardedPath, guardNotice } from './worktrees.ts';
+import { guardDecision, type HookInput } from './guard.ts';
 
 const [allow = '', ...deny] = process.argv.slice(2);
-const input = JSON.parse(await text(process.stdin)) as { tool_name?: string; tool_input?: Record<string, unknown>; cwd?: string };
-const args = input.tool_input ?? {};
-const g = { allow, deny };
-const cwd = input.cwd || allow;
-const path = args.file_path ?? args.notebook_path;
-const hit = typeof args.command === 'string' ? guardedCommand(g, args.command, cwd) : typeof path === 'string' ? guardedPath(g, path, cwd) : undefined;
-if (hit) {
-  // The first paragraph is shown in the chat as a notice; the rest tells the agent what to do instead.
-  const notice = guardNotice(hit, typeof args.command === 'string' ? { command: args.command } : { file: String(path) });
-  const reason = `${notice}\n\nThe running app's checkout and the workspace's storage must stay untouched. Work in ${allow}; to only read there, use the Read tool or a command that only reads (such as ls, cat, grep, git log or git diff, without writing output to a file).`;
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
-}
+const answer = guardDecision({ allow, deny }, JSON.parse(await text(process.stdin)) as HookInput);
+if ('hookSpecificOutput' in answer) process.stdout.write(JSON.stringify(answer));

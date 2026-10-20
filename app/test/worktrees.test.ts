@@ -14,6 +14,7 @@ import { getProject, listProjects, registerProject } from '../src/store.ts';
 import { addAppProject, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, planWorktree } from '../src/worktrees.ts';
 import { guardedRequest } from '../src/adapters/codex.ts';
 import { sessionEvents } from '../src/adapters/claude-code.ts';
+import { forget, guardServer, guardToken } from '../src/guard.ts';
 
 let root = '';
 const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout.trim();
@@ -204,6 +205,21 @@ test('the Claude Code hook denies a guarded write and lets the own worktree thro
   const line = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: `PreToolUse:Bash hook error: ${denied.permissionDecisionReason}` }] } });
   const notice = sessionEvents(line, g.allow).events.find((e) => e.type === 'notice');
   assert.ok(notice?.type === 'notice' && notice.text.startsWith(GUARD_MARK) && notice.text.includes(`rm "${root}/a.txt"`) && notice.text.includes('READERS') && !notice.text.includes('\n'));
+});
+
+test('the guard server answers only its runs, by token, with the same decision as the hook (selfdev-002)', async () => {
+  const url = (await guardServer())!;
+  const g = guardFor(join(process.env.AI_WORKSPACE_HOME!, 'worktrees', 'P', 'fix'));
+  const token = guardToken(g);
+  const ask = (tool_input: object, t = token) => fetch(url, { method: 'POST', headers: { 'x-aiws-token': t }, body: JSON.stringify({ tool_name: 'Write', tool_input, cwd: g.allow }) });
+  const denied = await (await ask({ file_path: join(root, 'a.txt') })).json() as { hookSpecificOutput?: { permissionDecision: string; permissionDecisionReason: string } };
+  assert.equal(denied.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.ok(denied.hookSpecificOutput.permissionDecisionReason.startsWith(GUARD_MARK));
+  assert.deepEqual(await (await ask({ file_path: join(g.allow, 'a.txt') })).json(), {});
+  assert.equal((await ask({ file_path: join(root, 'a.txt') }, 'wrong')).status, 403);
+  forget(token);
+  assert.equal((await ask({ file_path: join(root, 'a.txt') })).status, 403, 'a finished run is gone');
+  assert.equal(await guardServer(), url, 'one server per process');
 });
 
 test('a worktree commit may write only its own git folder, objects and branch refs in the checkout (Codex sandbox)', () => {
