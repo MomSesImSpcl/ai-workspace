@@ -15,6 +15,6 @@ Scope: [localization](../../features/localization/SPEC.md), from the user's file
 
 ## Points left to the user
 
-- localization-009 names the field "classification", while both examples use `category`. Left as written.
+- localization-009 named the field "classification", while both examples use `category`; on the user's OK it now says "classification (for example a `category` field: …)".
 - The first example uses `default` for the English text, the record shape `sourceText`. Both are marked illustrative.
 - The new open decisions (where metadata is stored, static-analysis hooks per language, an optional "Find UI text" panel, stored or derived review status) remain open.
