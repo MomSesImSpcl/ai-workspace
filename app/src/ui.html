@@ -23,6 +23,13 @@
     --sidebar-w: 380px; --sessions-w: 230px; --drawer-w: 900px;
   }
   @media (prefers-reduced-motion: reduce) { :root { --t: 0ms; } }
+  /* Check for updates (selfdev-005): one fixed width for every state; a pulsing border while it is not in its default
+     state (agreed exception to the motion rule, UI_STYLE.md); steady with reduced motion. */
+  #update { width: 150px; text-align: center; white-space: nowrap; }
+  #update[aria-disabled="true"] { opacity: .45; cursor: default; }
+  #update.pulse { animation: update-pulse 1.6s ease-in-out infinite; border-color: var(--accent); }
+  @keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); } 50% { box-shadow: 0 0 0 4px var(--accent-edge); } }
+  @media (prefers-reduced-motion: reduce) { #update.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent-edge); } }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--font-body); overflow: hidden; }
@@ -334,7 +341,7 @@
     </div>
     <div class="right">
       <span class="meta" id="fallback-note" hidden></span>
-      <button class="btn small primary" id="update" type="button" hidden>Update and restart</button>
+      <button class="btn small" id="update" type="button" hidden>Check for updates</button>
       <button class="icon-btn" id="restart" type="button" hidden aria-label="Restart the app" title="Restart the app">⟳</button>
       <span class="pill" id="running-pill"><span class="dot s-running"></span>0 running</span>
     </div>
@@ -1093,25 +1100,79 @@ $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().ro
 $('#new-session').onclick = newSession;
 $('#restart').hidden = !window.desktop?.restart;
 $('#restart').onclick = () => window.desktop.restart();
-// Update and restart (selfdev-005): shown when main has commits the app's checkout lacks; a fallback instance
-// (selfdev-006) says so; once main has a fix, the same button goes back to it.
-async function checkUpdate() {
+// Check for updates (selfdev-005): only in the desktop app run from a checkout, and only when the user clicks; no
+// background checks (user, 2026-10-20). States: the default "Check for updates"; "Checking…"; "Update and restart"
+// until clicked; "Waiting for merge" while a pull request with auto-merge runs its checks (asked again every 10 s, for
+// at most 10 minutes); "Up to date", "Merge failed", "Can't update" and "Check failed" for a few seconds. Every state
+// but the default pulses. Not on main or with changes in app/, the button does nothing and its tooltip says why.
+// A fallback instance (selfdev-006) shows a note; once main has a fix, the same button goes back to it.
+const UPDATE_IDLE = 'Check for updates', UPDATE_POLL_MS = 10_000, UPDATE_WAIT_MS = 10 * 60_000, UPDATE_SHOW_MS = 4000;
+const upd = { mode: 'idle', timer: 0, deadline: 0, waitingFor: [] };
+function showUpdate(text, { title = '', pulse = true, primary = false, blocked = false } = {}) {
+  const b = $('#update');
+  b.textContent = text;
+  b.title = title;
+  b.classList.toggle('pulse', pulse);
+  b.classList.toggle('primary', primary);
+  b.setAttribute('aria-disabled', String(blocked));
+}
+function idleUpdate() {
+  clearTimeout(upd.timer);
+  Object.assign(upd, { mode: 'idle', deadline: 0, waitingFor: [] });
+  showUpdate(UPDATE_IDLE, { pulse: false, title: "Fetch main from GitHub and see whether the app's checkout can be updated" });
+  refreshUpdate().catch(() => {});
+}
+// A message that goes back to the default after a few seconds.
+function flashUpdate(text, title) {
+  upd.mode = 'message';
+  showUpdate(text, { title });
+  clearTimeout(upd.timer);
+  upd.timer = setTimeout(idleUpdate, UPDATE_SHOW_MS);
+}
+// The checkout's branch and changes, read without the network: at start, and when the pointer comes to the button.
+async function refreshUpdate() {
   const u = await api('/api/app-update');
-  const behind = u.status?.behind ?? 0;
-  $('#update').hidden = !window.desktop?.restart || !behind;
-  $('#update').title = `main has ${behind} new commit${behind === 1 ? '' : 's'}: bring the app's checkout up to date and restart onto it`;
+  $('#update').hidden = !window.desktop?.restart || !u.local;
   $('#fallback-note').hidden = !u.fallback;
   $('#fallback-note').textContent = u.fallback ? `⚠ Last working version (${u.fallback.slice(0, 7)})` : '';
-  $('#fallback-note').title = 'The new version failed its startup check, so the app runs its last working version. Fix main, then update and restart.';
+  $('#fallback-note').title = 'The new version failed its startup check, so the app runs its last working version. Fix main, then check for updates.';
+  if (upd.mode !== 'idle' || !u.local) return;
+  const reason = u.local.branch !== 'main' ? 'Must be on main to update' : u.local.dirty ? 'Uncommitted changes in app/' : '';
+  if (reason) showUpdate(UPDATE_IDLE, { pulse: false, blocked: true, title: reason });
+  else showUpdate(UPDATE_IDLE, { pulse: false, title: "Fetch main from GitHub and see whether the app's checkout can be updated" });
 }
+async function checkForUpdate() {
+  if (upd.mode === 'idle') showUpdate('Checking…');
+  let r;
+  try { r = await api('/api/app-update/check', { waitingFor: upd.waitingFor }); } catch (e) { return flashUpdate('Check failed', e.message); }
+  if (r.state === 'update') { clearTimeout(upd.timer); upd.mode = 'update'; return showUpdate('Update and restart', { primary: true, title: "Bring the app's checkout up to date with main and restart onto it" }); }
+  if (r.state === 'waiting') {
+    if (!upd.deadline) upd.deadline = Date.now() + UPDATE_WAIT_MS;
+    if (Date.now() > upd.deadline) return idleUpdate();
+    Object.assign(upd, { mode: 'waiting', waitingFor: r.prs });
+    showUpdate('Waiting for merge', { title: `Waiting for ${r.prs.map((n) => `#${n}`).join(', ')} to pass its checks and merge` });
+    clearTimeout(upd.timer);
+    upd.timer = setTimeout(() => checkForUpdate().catch(() => idleUpdate()), UPDATE_POLL_MS);
+    return;
+  }
+  if (r.state === 'failed') return flashUpdate('Merge failed', `${r.prs.map((n) => `#${n}`).join(', ')} did not merge: a check failed, auto-merge was turned off or it was closed`);
+  if (r.state === 'blocked') return flashUpdate("Can't update", r.reason);
+  if (r.state === 'error') return flashUpdate('Check failed', r.reason);
+  flashUpdate('Up to date', 'main has nothing new for the app\'s checkout');
+}
+$('#update').onmouseenter = () => upd.mode === 'idle' && refreshUpdate().catch(() => {});
 $('#update').onclick = async () => {
-  $('#update').disabled = true;
+  if ($('#update').getAttribute('aria-disabled') === 'true') return;
+  if (upd.mode === 'idle') return checkForUpdate().catch(() => idleUpdate());
+  if (upd.mode !== 'update') return;
+  upd.mode = 'applying';
+  showUpdate('Updating…');
   try {
     await api('/api/app-update', {});
     await window.desktop.restart();
   } catch (e) {
     alert(`Update failed: ${e.message}`);
-    $('#update').disabled = false;
+    idleUpdate();
   }
 };
 $('#open-storage').onclick = () => state.storage && window.desktop?.openFolder(state.storage);
@@ -1611,8 +1672,7 @@ $('#resizer').onkeydown = (e) => {
   setInterval(() => state.sessionData?.session.working && loadSessions().then(renderChat).catch(() => {}), 500);
   // The startup check (selfdev-006): the page loaded and read projects, tasks and sessions.
   await poll();
-  checkUpdate().catch(() => {});
-  setInterval(() => checkUpdate().catch(() => {}), 30_000);
+  idleUpdate();
 })().then(() => window.desktop?.ready?.(), (e) => window.desktop?.failed?.(e?.message ?? String(e)));
 </script>
 </body>
