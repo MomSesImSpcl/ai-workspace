@@ -13,6 +13,8 @@ Features so far were specified against the event contract (sessions-020) but imp
 - **Conformance check per agent:** one shared test suite per capability runs against each adapter's event mapping with recorded real CLI output as fixtures, plus a checklist of real runs recorded in history. A new agent or a new CLI version is accepted when the suite passes and the checklist is done.
 - **First capability added under this rule:** "check a tool call before it runs and ask the user" (repeat detection, [ADR 0007](0007-tasks-agent-native.md)): Claude Code `PreToolUse` hook answering "ask"; Codex via its hooks or `app-server` approval requests (verify); fallback: detect the repeat from events, stop the process, pause with the repeated step named.
 
+- **Write guard (added 2026-10-20, user):** keeping writes out of the running app's checkout and storage ([ADR 0015](0015-write-guard.md)) is a required capability. Each agent needs its own mechanism: Claude Code a pre-call hook, Codex its OS sandbox plus declined approval requests. An agent with neither is not offered for the app project.
+
 ## Consequences
 
 - Features cost more per agent up front; in exchange no feature is silently single-agent.
