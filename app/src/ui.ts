@@ -298,7 +298,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   }
   if (req.method === 'POST' && kind === 'branches' && rawId === 'remove') {
     const b = await body(req);
-    try { removeBranch(text(b.path, 'path'), b.force === true); } catch (e) { throw new HttpError(400, (e as Error).message); }
+    try { await removeBranch(text(b.path, 'path'), b.force === true); } catch (e) { throw new HttpError(400, (e as Error).message); }
     return { removed: b.path };
   }
   // The worktrees a new session can continue in, each with the title of its most recently active chat.

@@ -369,6 +369,17 @@ export const requestStop = (id: string) => writeJson(stopPath(id), true);
 export const stopRequested = (id: string) => existsSync(stopPath(id));
 export const clearStop = (id: string) => rmSync(stopPath(id), { force: true });
 
+// Ends a session's idle host (Stop while idle ends it), so its worktree can be removed: Windows keeps a running
+// process's folder in use. False while the agent works, or when the host has not ended within `ms`.
+export async function endIdleHost(id: string, ms = 10_000): Promise<boolean> {
+  if (!turnRunning(id)) return true;
+  if (sessionWorking(id)) return false;
+  requestStop(id);
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (!turnRunning(id)) return true;
+  clearStop(id); // so a later turn is not stopped by it
+  return false;
+}
+
 // The user's answer to an approval card; null when the turn was stopped first. No time limit (runtime-002).
 export async function awaitAnswer(id: string, approvalId: string): Promise<boolean | null> {
   for (;;) {
