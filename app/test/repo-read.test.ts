@@ -127,9 +127,11 @@ test('status accepts Windows 8.3 worktree paths', { skip: process.platform !== '
   const wt = join(parent, 'worktree with a long name');
   git('worktree', 'add', '-q', '-b', 'short-test', wt);
   try {
-    const result = spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${wt}") do @echo %~sI`], { encoding: 'utf8' });
+    // cmd.exe parses this command itself; Node's C-runtime quote escaping would leave literal quotes in the path.
+    const result = spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${wt}") do @echo %~sI`], { encoding: 'utf8', windowsVerbatimArguments: true });
     assert.equal(result.status, 0, result.stderr);
     const short = result.stdout.trim();
+    assert.ok(existsSync(short), `Short-path command returned a nonexistent path: ${short}`);
     if (!short.includes('~')) { t.skip('8.3 names are disabled on this volume'); return; }
     assert.equal(realpathSync.native(short), realpathSync.native(wt));
     writeFileSync(join(wt, 'short.txt'), 'new');
