@@ -1,13 +1,14 @@
 // The read-only repository tool `read_repo` of the workspace MCP server (`app/src/approval-server.ts`, #31): commit
-// history and commits through git, pull requests, checks and issues through gh. For the orchestrator, which cannot
+// history, commits, branches and status through git, pull requests, checks and issues through gh. For the orchestrator, which cannot
 // run commands, and for Codex in a worktree, whose shells have no gh login (ADR 0017). It never writes or merges.
+import { realpath, stat } from 'node:fs/promises';
 import { gh, run } from './restart.ts';
 
 /** One question to `read_repo`; `action` picks it, the other fields are its options. */
 export interface RepoQuery {
-  action: 'log' | 'show' | 'prs' | 'pr' | 'issues' | 'issue';
+  action: 'log' | 'show' | 'branches' | 'status' | 'prs' | 'pr' | 'issues' | 'issue';
   ref?: string; // log: branch or commit to start from; show: the commit
-  path?: string; // log: only commits that touch this path
+  path?: string; // log: only commits that touch this path; status: a worktree of the project (default: its checkout)
   limit?: number; // log, prs, issues: how many (1–100, default 20)
   number?: number; // pr, issue
   state?: 'open' | 'closed' | 'merged' | 'all'; // prs, issues (default open)
@@ -32,12 +33,79 @@ async function ghJson<T>(root: string, args: string[]): Promise<T> {
   return JSON.parse(r.out) as T;
 }
 
+/** The checked-out worktrees of the repository at `root`: absolute path and branch (undefined when detached). */
+async function worktrees(root: string): Promise<{ path: string; branch?: string }[]> {
+  const r = await run('git', ['worktree', 'list', '--porcelain', '-z'], root);
+  if (r.code !== 0) throw new Error(`git worktree failed: ${r.out}`);
+  return r.out.split('\0\0').map((block) => {
+    const fields = block.split('\0');
+    return {
+      path: fields.find((f) => f.startsWith('worktree '))?.slice('worktree '.length) ?? '',
+      branch: fields.find((f) => f.startsWith('branch refs/heads/'))?.slice('branch refs/heads/'.length),
+    };
+  }).filter((w) => w.path);
+}
+
+/** Filesystem identity of an existing worktree root: resolves symlinks and Windows short names, preserving case sensitivity.
+ * Device/inode also identify case aliases where realpath preserves the caller's spelling; zero inodes are not trusted.
+ * Missing or inaccessible paths cannot authorize status; stale Git worktree registrations are skipped.
+ */
+async function directoryIdentity(path: string): Promise<{ path: string; dev: bigint; ino: bigint } | undefined> {
+  try {
+    const canonical = await realpath(path);
+    const info = await stat(canonical, { bigint: true });
+    return info.isDirectory() ? { path: canonical, dev: info.dev, ino: info.ino } : undefined;
+  } catch { return undefined; }
+}
+
+/** Every local and remote branch with its worktree and how far it is ahead of and behind `main`. */
+async function branches(root: string): Promise<string> {
+  const refs = await run('git', ['for-each-ref', '--format=%(refname) %(symref)', 'refs/heads', 'refs/remotes'], root);
+  if (refs.code !== 0) return `git for-each-ref failed: ${refs.out}`;
+  const trees = await worktrees(root);
+  const base = (await run('git', ['rev-parse', '--verify', '-q', 'refs/heads/main'], root)).code === 0 ? 'refs/heads/main' : 'refs/remotes/origin/main';
+  const lines: string[] = [];
+  for (const row of refs.out.split(/\r?\n/)) {
+    const [ref, symref] = row.split(' ');
+    if (!ref || symref) continue; // origin/HEAD only points at another branch
+    const remote = ref.startsWith('refs/remotes/');
+    const name = ref.replace(/^refs\/(heads|remotes)\//, '');
+    const counts = await run('git', ['rev-list', '--left-right', '--count', `${base}...${ref}`, '--'], root);
+    const [behind, ahead] = counts.code === 0 ? counts.out.trim().split(/\s+/) : ['?', '?'];
+    const tree = remote ? undefined : trees.find((w) => w.branch === name);
+    lines.push(`${name}${remote ? ' (remote)' : ''}: ahead ${ahead}, behind ${behind}${tree ? `, worktree ${tree.path}` : ''}`);
+  }
+  return lines.join('\n') || 'No branches.';
+}
+
+/** `git status --short` of the project checkout, or of `path` when it is one of the repository's worktrees. */
+async function status(root: string, path?: string): Promise<string> {
+  let dir = root;
+  if (path !== undefined) {
+    const requested = await directoryIdentity(path);
+    const trees = await worktrees(root);
+    const identities = await Promise.all(trees.map((w) => directoryIdentity(w.path)));
+    const tree = requested === undefined ? undefined : trees.find((_, i) => {
+      const registered = identities[i];
+      return registered !== undefined && (registered.path === requested.path ||
+        (requested.ino !== 0n && registered.dev === requested.dev && registered.ino === requested.ino));
+    });
+    if (!tree) throw new Error(`Not a worktree of this project: ${path}`);
+    dir = tree.path;
+  }
+  // Status must not refresh the index on disk while answering a read-only tool call.
+  const out = await git(dir, ['--no-optional-locks', 'status', '--short']);
+  return out.trim() ? out : 'Clean: no changes.';
+}
+
 /** A check run of a pull request, as gh's `statusCheckRollup` lists it. */
 interface Check { name?: string; context?: string; status?: string; conclusion?: string; state?: string; detailsUrl?: string; targetUrl?: string }
 
 /**
  * Answers one `read_repo` question about the repository at `root` as text for the agent, at most 30,000 characters.
- * `log` lists commits (hash, date, author, subject); `show` one commit with its stat and diff; `prs` and `issues`
+ * `log` lists commits (hash, date, author, subject); `show` one commit with its stat and diff; `branches` every local
+ * and remote branch with its worktree and ahead/behind counts against `main`; `status` is `git status --short` of the
+ * checkout or of a worktree given by `path` (it must belong to the project); `prs` and `issues`
  * list them; `pr` shows one with its checks and, with `logs`, the failed lines of each failed GitHub Actions job;
  * `issue` shows one with its comments. Only reads: refs are checked so git cannot take them as options.
  */
@@ -51,6 +119,10 @@ export async function readRepo(root: string, q: RepoQuery): Promise<string> {
     case 'show':
       if (!q.ref) throw new Error('show needs ref: the commit to show');
       return cap(await git(root, ['show', '--stat', '--patch', '--format=fuller', q.ref, '--']));
+    case 'branches':
+      return cap(await branches(root));
+    case 'status':
+      return cap(await status(root, q.path));
     case 'prs': {
       const prs = await ghJson<{ number: number; title: string; state: string; headRefName: string; isDraft: boolean; updatedAt: string }[]>(root, ['pr', 'list', '--state', state, '--limit', limit, '--json', 'number,title,state,headRefName,isDraft,updatedAt']);
       return prs.map((p) => `#${p.number} ${p.state}${p.isDraft ? ' (draft)' : ''} ${p.headRefName} ${p.updatedAt.slice(0, 10)}: ${p.title}`).join('\n') || `No ${state} pull requests.`;

@@ -1,0 +1,9 @@
+# 2026-10-21: Windows 8.3 fixture quoting and CI follow-up
+
+Scope: [selfdev-004](../../features/self-development/SPEC.md#requirements), follow-up to the [path-identity repair](../2026-10-21-07-read-repo-path-identity/DETAILS.md) on PR #61, branch `merge-conflict-test`.
+
+After `request_merge` pushed `7f78b9e`, macOS and Ubuntu tests and the private-data scan succeeded. Windows passed the original branches/status test and the new alias, foreign-path, stale-registration and case-identity tests. Its only failure was the added 8.3 fixture: Node's default Windows argument quoting produced literal quotes in the shell's returned path, so the fixture's own `realpathSync.native` threw ENOENT before it called the product.
+
+[repo-read.test.ts](../../../app/test/repo-read.test.ts) now passes the explicitly quoted command with `windowsVerbatimArguments: true` and asserts that the returned path exists before any availability skip. Local focused tests now pass 7/7, including actual Windows 8.3 identity. This corrects the preceding history's interpretation that this local volume had 8.3 names disabled: the earlier skip was caused by malformed fixture output, not volume configuration. No product assertions or validation boundaries were relaxed.
+
+Final Windows verification: `npm.cmd run typecheck` clean; `npm.cmd test` 97/97 passed, zero skips or failures (outside the sandbox because of the previously recorded Git ignore permission warnings); required tracked-file private-data scan clean. Staged diff reviewed for unrelated changes and private data. Product source remains as tested in `7f78b9e`. Commit `8b58751` remains unchanged on `preserve/d9150799-agent-selection`, excluded from PR ancestry. Next action: update existing PR #61 through `request_merge` and confirm all four checks and the merge. Correction uncommitted at record creation.

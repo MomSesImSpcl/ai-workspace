@@ -49,9 +49,9 @@ const task = session.task;
 server.registerTool(
   'read_repo',
   {
-    description: "Reads a workspace project's repository, never changes it: log (recent commits; ref, path, limit), show (one commit with its diff; ref), prs and issues (lists; state, limit), pr (one pull request with its checks; number, logs for the failed lines of failed checks), issue (one issue with comments; number). project defaults to this session's project.",
+    description: "Reads a workspace project's repository, never changes it: log (recent commits; ref, path, limit), show (one commit with its diff; ref), branches (every local and remote branch with its worktree and ahead/behind counts against main), status (git status --short of the project checkout, or of a worktree of the project given as path), prs and issues (lists; state, limit), pr (one pull request with its checks; number, logs for the failed lines of failed checks), issue (one issue with comments; number). project defaults to this session's project.",
     inputSchema: {
-      action: z.enum(['log', 'show', 'prs', 'pr', 'issues', 'issue']),
+      action: z.enum(['log', 'show', 'branches', 'status', 'prs', 'pr', 'issues', 'issue']),
       project: z.string().optional().describe('A workspace project id; default: this session\'s project'),
       ref: z.string().optional(), path: z.string().optional(), limit: z.number().int().optional(), number: z.number().int().optional(),
       state: z.enum(['open', 'closed', 'merged', 'all']).optional(), logs: z.boolean().optional(),
