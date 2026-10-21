@@ -7,9 +7,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { addMessage, createSession, loadSession, readEvents, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, loadSession, readEvents, sessionWorking, turnRunning, type SessionAgent } from '../src/sessions.ts';
 import { createTask } from '../src/tasks.ts';
-import { runTurn } from '../src/turn.ts';
+import { hostSession, runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
 import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, npmCommand, planWorktree } from '../src/worktrees.ts';
 import { guardedRequest, sandboxPath } from '../src/adapters/codex.ts';
@@ -175,16 +175,35 @@ test('the cleanup removes merged branches only, archives their chats, and leaves
   writeFileSync(join(unsaved.worktree!.path, 'draft.txt'), 'x');
   const state = Object.fromEntries(branchInfo(getProject('P')).map((b) => [b.branch, [b.merged, b.ahead, b.dirty]]));
   assert.deepEqual(state, { fresh: [false, 0, false], open: [false, 1, false], done: [true, 0, false], unsaved: [true, 0, true] });
-  assert.deepEqual(cleanupBranches(), ['done']);
+  assert.deepEqual(await cleanupBranches(), ['done']);
   assert.equal(existsSync(done.worktree!.path), false);
   assert.equal(git('branch', '--list', 'done'), '');
   assert.equal(loadSession(done.id).archived, true); // its chat is archived, the others are not
   assert.equal(loadSession(open.id).archived, undefined);
-  assert.throws(() => removeBranch(open.worktree!.path), /1 unmerged commit; removing it loses that work/);
-  removeBranch(open.worktree!.path, true);
+  await assert.rejects(removeBranch(open.worktree!.path), /1 unmerged commit; removing it loses that work/);
+  await removeBranch(open.worktree!.path, true);
   assert.equal(existsSync(open.worktree!.path), false);
   assert.equal(loadSession(open.id).archived, true);
   assert.deepEqual(branchInfo(getProject('P')).map((b) => b.branch).sort(), ['fresh', 'unsaved']);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('an idle agent does not keep a merged branch: the cleanup ends its host, then removes the branch', async () => {
+  const { branchInfo, cleanupBranches } = await import('../src/branches.ts');
+  const s = createSession('P', 'Chat', { integration: 'claude-code' }, { name: 'idle' });
+  addMessage(s.id, 'go');
+  const host = hostSession(s.id, recording([])); // stays alive, idle, after its turn
+  while (sessionWorking(s.id) || !loadSession(s.id).worktree?.ready) await new Promise((r) => setTimeout(r, 50));
+  const path = loadSession(s.id).worktree!.path;
+  writeFileSync(join(path, 'x.txt'), 'x');
+  for (const args of [['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'x']]) spawnSync('git', args, { cwd: path });
+  git('merge', '-q', '--ff-only', 'idle');
+  assert.equal(turnRunning(s.id), true);
+  assert.equal(branchInfo(getProject('P'))[0].busy, false, 'idle is not busy');
+  assert.deepEqual(await cleanupBranches(), ['idle']);
+  await host;
+  assert.equal(turnRunning(s.id), false);
+  assert.equal(existsSync(path), false);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -218,10 +237,10 @@ test('a squash-merged branch counts as merged and is cleaned up; one with anythi
   commit(root, 'main.txt'); // main moves on after the merges
   const state = Object.fromEntries(branchInfo(getProject('P')).map((b) => [b.branch, [b.merged, b.ahead]]));
   assert.deepEqual(state, { done: [true, 2], later: [false, 2], reverted: [false, 1] }, 'commits stay "ahead" after a squash; only the content counts');
-  assert.deepEqual(cleanupBranches(), ['done']);
+  assert.deepEqual(await cleanupBranches(), ['done']);
   assert.equal(git('branch', '--list', 'done'), '', 'git branch -d would refuse a squash-merged branch');
   assert.equal(loadSession(done.id).archived, true);
-  assert.throws(() => removeBranch(later.worktree!.path), /2 unmerged commits; removing it loses that work/);
+  await assert.rejects(removeBranch(later.worktree!.path), /2 unmerged commits; removing it loses that work/);
   assert.equal(existsSync(reverted.worktree!.path), true);
   rmSync(root, { recursive: true, force: true });
 });

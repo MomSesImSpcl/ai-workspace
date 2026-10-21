@@ -162,8 +162,8 @@ function continueWithSetup(id: string): void {
 }
 
 // Keeps one agent process for the session and feeds it each new message, so plugins and hooks keep their
-// state between turns (issue #15). Ends after idleMs() without a message (at once with `once`), or when
-// the session is deleted. An agent switch starts the new agent's process.
+// state between turns (issue #15). Ends after idleMs() without a message (at once with `once`), on Stop while
+// idle, or when the session is deleted. An agent switch starts the new agent's process.
 export async function hostSession(id: string, agents: Record<string, SessionAgent> = sessionAgents, once = false): Promise<void> {
   if (!acquireRunner(id)) return;
   let proc: AgentProcess | undefined;
@@ -201,7 +201,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
         if (once) break;
         continue;
       }
-      if (stopRequested(id)) clearStop(id); // Stop while idle: nothing to stop
+      if (stopRequested(id)) { clearStop(id); break; } // Stop while idle ends the host (endIdleHost, branch removal)
       if (once || Date.now() - idleSince > idleMs()) break;
       await sleep(300);
     }
