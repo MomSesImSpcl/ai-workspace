@@ -30,6 +30,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 - Write guard limits (added 2026-10-19 by the user): [#18](https://github.com/MomSesImSpcl/ai-workspace/issues/18) (shell paths computed at run time; no OS sandbox for Claude Code on Windows) and [#21](https://github.com/MomSesImSpcl/ai-workspace/issues/21) (command-wrapping hooks fail inside Codex's sandbox, so Codex worktree chats cannot run git; added 2026-10-20 by the user) are fixed, or closed by a decision of the user, before M1 is reached
 - Worktree checks under Codex (added 2026-10-20 by the user): [#25](https://github.com/MomSesImSpcl/ai-workspace/issues/25) (`npm test` stalls inside Codex's Windows sandbox) and [#26](https://github.com/MomSesImSpcl/ai-workspace/issues/26) (a new worktree has no dependencies installed) are fixed before M1 is reached, since exit criterion 3 needs both
 - Merge approval for Codex (added 2026-10-20 by the user): the limits in [#31](https://github.com/MomSesImSpcl/ai-workspace/issues/31) are fixed, or closed by a decision of the user, before M1 is reached
+- Restored chats continue (added 2026-10-21 by the user): unarchiving a chat whose branch was removed makes the branch again from `main`, so the requesting session can continue after its merge and cleanup (exit criterion 5)
 - Already built and reused: sessions-001–008, 010, 018, 019 (session, live activity, Stop, approvals)
 
 **Helps:**

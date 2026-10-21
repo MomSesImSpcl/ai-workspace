@@ -418,7 +418,8 @@ export function addWorktree(root: string, wt: Worktree): string {
   try {
     mkdirSync(dirname(wt.path), { recursive: true });
     // Long paths let Windows Git check out files deeper than 260 characters, when the system allows them.
-    git(root, ['-c', 'core.longpaths=true', 'worktree', 'add', '-b', wt.branch, wt.path, 'HEAD']);
+    // An existing branch (its folder was removed but not the branch) is checked out again, not made anew.
+    git(root, ['-c', 'core.longpaths=true', 'worktree', 'add', ...(had ? [wt.path, wt.branch] : ['-b', wt.branch, wt.path, 'HEAD'])]);
   } catch (e) {
     // Git makes the branch before the folder, so a failure leaves the branch behind (#22).
     try { git(root, ['worktree', 'prune']); } catch { /* nothing to prune */ }

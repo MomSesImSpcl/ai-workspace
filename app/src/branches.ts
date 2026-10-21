@@ -55,6 +55,9 @@ function archiveGone(all: Session[]): number {
   return n;
 }
 
+/** A restored chat whose branch was removed gets that branch planned again: its next turn makes it from main. */
+export const replanBranch = (s: Session): Session => (s.worktree?.ready && !existsSync(s.worktree.path) ? { ...s, worktree: { ...s.worktree, ready: false } } : s);
+
 /**
  * Removes one branch of the app project with its folder, then archives its chats. Refused while an agent works
  * in it; idle agents are ended first. A branch that is not merged or has uncommitted changes needs `force`, since that work is lost.
