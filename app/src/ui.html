@@ -150,7 +150,11 @@
   .branch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); }
   .branch-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .branch-row .meta { grid-column: 1; }
-  .branch-row .row { grid-column: 2; grid-row: 1 / span 2; }
+  /* Equal columns sized by the widest label, and each Remove button reserves its longest label, so nothing resizes while removing. */
+  .branch-row .row { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .branch-row .row .btn { display: grid; justify-items: center; }
+  .branch-row .row .btn > span { grid-area: 1 / 1; }
+  .branch-row .row .btn > .spare { visibility: hidden; }
   .worktree-head { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--t); }
   .worktree-head:hover, .worktree-head:focus-visible { color: var(--text); }
   .worktree-pick { display: flex; gap: 6px; min-width: 0; flex: 0 1 360px; }
@@ -1005,7 +1009,7 @@ function renderBranches(tab) {
   const total = state.branches.reduce((n, b) => n + b.size, 0);
   const html = state.branches.length ? state.branches.map((b) => `<div class="branch-row"><code title="${esc(b.path)}">${esc(b.branch)}</code>
       <span class="meta">${esc(branchState(b))} · ${sizeText(b.size)}</span>
-      <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" type="button" data-open-folder="${esc(b.path)}" ${window.desktop ? '' : 'disabled'} title="Open the folder">Open</button><button class="btn small" type="button" data-remove-branch="${esc(b.path)}" ${b.busy ? 'disabled title="Stop its agent first"' : state.branchRemoving ? 'disabled title="Another branch is being removed"' : ''}>${state.branchRemoving === b.path ? 'Removing…' : 'Remove…'}</button></span></div>`).join('')
+      <span class="row"><button class="btn small" type="button" data-open-folder="${esc(b.path)}" ${window.desktop ? '' : 'disabled'} title="Open the folder">Open</button><button class="btn small" type="button" data-remove-branch="${esc(b.path)}" ${b.busy ? 'disabled title="Stop its agent first"' : state.branchRemoving ? 'disabled title="Another branch is being removed"' : ''}>${state.branchRemoving === b.path ? '<span>Removing…</span><span class="spare">Remove…</span>' : '<span>Remove…</span><span class="spare">Removing…</span>'}</button></span></div>`).join('')
       + `<p class="meta" style="margin:4px 0 0">${state.branches.length} branch${state.branches.length === 1 ? '' : 'es'}, ${sizeText(total)} in total.</p>`
     : '<p class="meta" style="margin:0">No branches yet.</p>';
   if ($('#branch-list').__html !== html) $('#branch-list').innerHTML = $('#branch-list').__html = html;
