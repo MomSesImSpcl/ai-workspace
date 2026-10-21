@@ -29,7 +29,7 @@
   #update[aria-disabled="true"] { opacity: .45; cursor: default; }
   #update[aria-busy="true"] { cursor: default; filter: none; } /* checking, waiting, a message or updating: clicks do nothing */
   #update.pulse { animation: update-pulse 1.6s ease-in-out infinite; }
-  @keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); } 50% { box-shadow: 0 0 0 4px var(--accent-edge); } }
+  @keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 42%, transparent); } }
   @media (prefers-reduced-motion: reduce) { #update.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent-edge); } }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
