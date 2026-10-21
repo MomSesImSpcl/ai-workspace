@@ -22,6 +22,7 @@ Each milestone lists **Required** requirements (the milestone is not reached wit
 
 **Required:**
 
+- Acceptance blocker (agreed 2026-10-21): [#62 — stale session/branch publication binding](https://github.com/MomSesImSpcl/ai-workspace/issues/62) must be fixed and verified before M1 can be accepted as finished.
 - [self-development](features/self-development/SPEC.md) selfdev-001 (worktree per session, set by the workspace), selfdev-002 (running instance untouched), selfdev-003 and selfdev-004 (the agent verifies and asks before merging), selfdev-005 (apply by restart), selfdev-006 (fall back)
 - [sessions](features/sessions/SPEC.md) sessions-021 (turn-start project state, so the agent sees what changed)
 - Lean orchestrator and tasks (added 2026-10-18 by the user, to cut token use, also while testing; built 2026-10-18, [history](history/2026-10-18-10-lean-orchestrator-and-tasks/SUMMARY.md)): onboarding-010, orchestrator-005; closes [#16](https://github.com/MomSesImSpcl/ai-workspace/issues/16)
