@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readRepo } from '../src/repo-read.ts';
@@ -48,6 +48,93 @@ test('branches lists local and remote branches with worktree and ahead/behind; s
   assert.equal(await readRepo(dir, { action: 'status' }), 'Clean: no changes.');
   await assert.rejects(readRepo(dir, { action: 'status', path: tmpdir() }), /Not a worktree of this project/);
   await assert.rejects(readRepo(dir, { action: 'status', path: join(realpathSync(dir), '..') }), /Not a worktree of this project/);
+});
+
+test('status accepts filesystem aliases of registered roots and leaves the index, refs and worktree registrations unchanged', async () => {
+  const { dir, git } = repo();
+  const parent = mkdtempSync(join(tmpdir(), 'ws-alias-'));
+  const wt = join(parent, 'tree with spaces-\u00e9');
+  const alias = join(parent, 'linked');
+  const registration = git('worktree', 'add', '-q', '-b', 'alias-test', wt);
+  assert.ok(existsSync(join(wt, '.git')), registration);
+  symlinkSync(wt, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  mkdirSync(join(wt, 'child'));
+  const index = git('-C', wt, 'rev-parse', '--path-format=absolute', '--git-path', 'index');
+  const indexBefore = readFileSync(index);
+  const refsBefore = git('show-ref');
+  const treesBefore = git('worktree', 'list', '--porcelain', '-z');
+  // A stat change normally makes git status refresh the index even with unchanged contents.
+  writeFileSync(join(wt, 'a.txt'), 'a.txt');
+  writeFileSync(join(wt, 'new.txt'), 'new');
+  try {
+    for (const path of [wt, alias, realpathSync.native(wt), join(alias, 'child', '..')]) {
+      assert.equal(await readRepo(dir, { action: 'status', path }), '?? new.txt');
+    }
+    assert.equal(await readRepo(dir, { action: 'status', path: realpathSync.native(dir) }), 'Clean: no changes.');
+    assert.ok((await readRepo(dir, { action: 'branches' })).includes('tree with spaces-\u00e9'));
+    for (const path of [join(alias, 'child'), parent, join(parent, 'missing')]) {
+      await assert.rejects(readRepo(dir, { action: 'status', path }), /Not a worktree of this project/);
+    }
+    assert.deepEqual(readFileSync(index), indexBefore);
+    assert.equal(existsSync(`${index}.lock`), false);
+    assert.equal(git('show-ref'), refsBefore);
+    assert.equal(git('worktree', 'list', '--porcelain', '-z'), treesBefore);
+  } finally {
+    rmSync(alias); // Remove only the link, never its target.
+    git('worktree', 'remove', '--force', wt);
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test('status refuses foreign repositories, their aliases, and missing registered worktrees', async () => {
+  const { dir, git } = repo();
+  const foreign = repo();
+  const parent = mkdtempSync(join(tmpdir(), 'ws-foreign-'));
+  const alias = join(parent, 'linked');
+  const missing = join(parent, 'removed');
+  symlinkSync(foreign.dir, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  git('worktree', 'add', '-q', '-b', 'removed', missing);
+  rmSync(missing, { recursive: true, force: true });
+  try {
+    for (const path of [foreign.dir, alias, missing]) {
+      await assert.rejects(readRepo(dir, { action: 'status', path }), /Not a worktree of this project/);
+    }
+    // One stale registration must not prevent reading a valid worktree.
+    assert.equal(await readRepo(dir, { action: 'status', path: dir }), 'Clean: no changes.');
+  } finally { rmSync(alias); rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('status does not fold distinct paths on a case-sensitive filesystem', async (t) => {
+  const { dir, git } = repo();
+  const parent = mkdtempSync(join(tmpdir(), 'ws-case-'));
+  const wt = join(parent, 'Tree');
+  const other = join(parent, 'tree');
+  git('worktree', 'add', '-q', '-b', 'case-test', wt);
+  try {
+    if (existsSync(other)) {
+      assert.equal(await readRepo(dir, { action: 'status', path: other }), 'Clean: no changes.');
+      t.diagnostic('Case-insensitive volume: alternate case identifies the same worktree.');
+    } else {
+      mkdirSync(other);
+      await assert.rejects(readRepo(dir, { action: 'status', path: other }), /Not a worktree of this project/);
+    }
+  } finally { git('worktree', 'remove', wt); rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('status accepts Windows 8.3 worktree paths', { skip: process.platform !== 'win32' }, async (t) => {
+  const { dir, git } = repo();
+  const parent = mkdtempSync(join(tmpdir(), 'ws-short-'));
+  const wt = join(parent, 'worktree with a long name');
+  git('worktree', 'add', '-q', '-b', 'short-test', wt);
+  try {
+    const result = spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${wt}") do @echo %~sI`], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const short = result.stdout.trim();
+    if (!short.includes('~')) { t.skip('8.3 names are disabled on this volume'); return; }
+    assert.equal(realpathSync.native(short), realpathSync.native(wt));
+    writeFileSync(join(wt, 'short.txt'), 'new');
+    assert.equal(await readRepo(dir, { action: 'status', path: short }), '?? short.txt');
+  } finally { git('worktree', 'remove', '--force', wt); rmSync(parent, { recursive: true, force: true }); }
 });
 
 test('pull requests and issues come from gh; a failed gh says so', async () => {

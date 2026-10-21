@@ -1,7 +1,7 @@
 // The read-only repository tool `read_repo` of the workspace MCP server (`app/src/approval-server.ts`, #31): commit
 // history, commits, branches and status through git, pull requests, checks and issues through gh. For the orchestrator, which cannot
 // run commands, and for Codex in a worktree, whose shells have no gh login (ADR 0017). It never writes or merges.
-import { resolve } from 'node:path';
+import { realpath, stat } from 'node:fs/promises';
 import { gh, run } from './restart.ts';
 
 /** One question to `read_repo`; `action` picks it, the other fields are its options. */
@@ -35,18 +35,28 @@ async function ghJson<T>(root: string, args: string[]): Promise<T> {
 
 /** The checked-out worktrees of the repository at `root`: absolute path and branch (undefined when detached). */
 async function worktrees(root: string): Promise<{ path: string; branch?: string }[]> {
-  const r = await run('git', ['worktree', 'list', '--porcelain'], root);
+  const r = await run('git', ['worktree', 'list', '--porcelain', '-z'], root);
   if (r.code !== 0) throw new Error(`git worktree failed: ${r.out}`);
-  return r.out.split(/\r?\n\r?\n/).map((block) => ({
-    path: /^worktree (.+)$/m.exec(block)?.[1] ?? '',
-    branch: /^branch refs\/heads\/(.+)$/m.exec(block)?.[1],
-  })).filter((w) => w.path);
+  return r.out.split('\0\0').map((block) => {
+    const fields = block.split('\0');
+    return {
+      path: fields.find((f) => f.startsWith('worktree '))?.slice('worktree '.length) ?? '',
+      branch: fields.find((f) => f.startsWith('branch refs/heads/'))?.slice('branch refs/heads/'.length),
+    };
+  }).filter((w) => w.path);
 }
 
-const samePath = (a: string, b: string) => {
-  const [x, y] = [resolve(a), resolve(b)];
-  return process.platform === 'win32' || process.platform === 'darwin' ? x.toLowerCase() === y.toLowerCase() : x === y;
-};
+/** Filesystem identity of an existing worktree root: resolves symlinks and Windows short names, preserving case sensitivity.
+ * Device/inode also identify case aliases where realpath preserves the caller's spelling; zero inodes are not trusted.
+ * Missing or inaccessible paths cannot authorize status; stale Git worktree registrations are skipped.
+ */
+async function directoryIdentity(path: string): Promise<{ path: string; dev: bigint; ino: bigint } | undefined> {
+  try {
+    const canonical = await realpath(path);
+    const info = await stat(canonical, { bigint: true });
+    return info.isDirectory() ? { path: canonical, dev: info.dev, ino: info.ino } : undefined;
+  } catch { return undefined; }
+}
 
 /** Every local and remote branch with its worktree and how far it is ahead of and behind `main`. */
 async function branches(root: string): Promise<string> {
@@ -72,11 +82,19 @@ async function branches(root: string): Promise<string> {
 async function status(root: string, path?: string): Promise<string> {
   let dir = root;
   if (path !== undefined) {
-    const tree = (await worktrees(root)).find((w) => samePath(w.path, path));
+    const requested = await directoryIdentity(path);
+    const trees = await worktrees(root);
+    const identities = await Promise.all(trees.map((w) => directoryIdentity(w.path)));
+    const tree = requested === undefined ? undefined : trees.find((_, i) => {
+      const registered = identities[i];
+      return registered !== undefined && (registered.path === requested.path ||
+        (requested.ino !== 0n && registered.dev === requested.dev && registered.ino === requested.ino));
+    });
     if (!tree) throw new Error(`Not a worktree of this project: ${path}`);
     dir = tree.path;
   }
-  const out = await git(dir, ['status', '--short']);
+  // Status must not refresh the index on disk while answering a read-only tool call.
+  const out = await git(dir, ['--no-optional-locks', 'status', '--short']);
   return out.trim() ? out : 'Clean: no changes.';
 }
 
