@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
-import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, ORCHESTRATOR_NOTE, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
 import { stateOf } from '../src/setup.ts';
 import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -259,6 +259,58 @@ test('tasks run uncapped unless asked; the chat cap applies; the chosen agent, m
   assert.equal(startFromSession(chat.id, { goal: 'd', role: 'Implementation', effort }).effort, effort);
   assert.throws(() => startFromSession(chat.id, { goal: 'e', role: 'Implementation', effort: 'warp' }), /Unknown effort/);
   assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none' }), /Unknown agent/);
+});
+
+test('list_agents distinguishes setup switches from capabilities; implementation defaults and user overrides survive', async () => {
+  const { saveInventory, setItemState, setupStatus } = await import('../src/setup.ts');
+  const { requestSetup } = await import('../src/tasks.ts');
+  for (const agent of ['claude-code', 'codex']) saveInventory(agent, await sessionAgent(agent).inventory(root));
+  setRole('Implementation', { integration: 'codex', effort: 'medium' });
+  const chat = createSession('P', ORCHESTRATION, { integration: 'claude-code' });
+  addMessage(chat.id, 'fix it');
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/approval-server.ts', import.meta.url)), chat.id], env: { ...process.env } as Record<string, string> }));
+  try {
+    const result = await client.callTool({ name: 'list_agents', arguments: {} });
+    const catalog = JSON.parse((result.content as { text: string }[])[0]!.text);
+    assert.equal(catalog.roles.Implementation.integration, 'codex');
+    assert.ok(catalog.setup['claude-code'].some((i: { id: string }) => i.id === 'tool:Bash'));
+    assert.ok(!catalog.setup.codex.some((i: { id: string }) => i.id.startsWith('tool:')));
+    assert.deepEqual(catalog.setupStatus.codex, { requiresBuiltInTool: false, alwaysOn: ['feature:shell_tool'] });
+    assert.equal(catalog.setupStatus['claude-code'].requiresBuiltInTool, true);
+    // Only prompt is picked: the Codex shell is already enabled, no invented tool:* id is necessary.
+    const started = await client.callTool({ name: 'start_task', arguments: { goal: 'args', setup: ['prompt'], effort: 'medium' } });
+    assert.ok(!started.isError);
+    const t = listTasks()[0]!;
+    assert.deepEqual([t.integration, t.model, t.effort], ['codex', undefined, 'medium']);
+    await runTurn(t.id);
+    assert.equal(JSON.parse(last(t.id).text).config['features.shell_tool'], undefined); // not switched off
+    assert.throws(() => requestSetup(t.id, ['tool:Bash'], 'run tests'), /Unknown setup items/);
+    setItemState('Implementation', 'codex', 'feature:shell_tool', 'decide');
+    assert.deepEqual(setupStatus('codex').alwaysOn, []);
+    assert.match(requestSetup(t.id, ['feature:shell_tool'], 'run tests'), /End your turn/);
+    assert.equal(loadSession(t.id).integration, 'codex');
+    setItemState('Implementation', 'codex', 'feature:shell_tool', 'off');
+    assert.throws(() => requestSetup(t.id, ['feature:shell_tool'], 'run tests'), /switched these off/);
+    assert.equal(loadSession(t.id).integration, 'codex');
+    // A saved model is inherited; changing the role is observed even in this existing MCP server.
+    setRole('Implementation', { integration: 'claude-code', model: 'sonnet', effort: 'high' });
+    const inherited = startFromSession(chat.id, { goal: 'fix', role: 'Implementation', setup: ['tool:Edit'] });
+    assert.deepEqual([inherited.integration, inherited.model], ['claude-code', 'sonnet']);
+    const explicit = startFromSession(chat.id, { goal: 'user chose Codex', role: 'Implementation', agent: 'codex', model: '', effort: 'medium', setup: ['prompt'] });
+    assert.deepEqual([explicit.integration, explicit.model], ['codex', undefined]);
+    const updated = await client.callTool({ name: 'list_agents', arguments: {} });
+    assert.equal(JSON.parse((updated.content as { text: string }[])[0]!.text).roles.Implementation.model, 'sonnet');
+  } finally { await client.close(); }
+});
+
+test('orchestrator instructions bind implementation to the configured role and make tool selection agent-specific', () => {
+  assert.match(ORCHESTRATOR_NOTE, /omit agent and model in start_task to inherit them unless the user explicitly overrides them/);
+  assert.match(ORCHESTRATOR_NOTE, /Never switch integration because another agent exposes more setup items or tools/);
+  assert.match(ORCHESTRATOR_NOTE, /When requiresBuiltInTool is true/);
+  assert.match(ORCHESTRATOR_NOTE, /Codex has no tool:\* setup ids; its shell is feature:shell_tool/);
+  assert.match(ORCHESTRATOR_NOTE, /request_setup and continue on the same agent/);
+  assert.match(ORCHESTRATOR_NOTE, /report a blocker rather than switch agents or bypass permissions/);
 });
 
 test('orchestrator chats and tasks load only the chosen setup items, switched for the one run (orchestrator-005)', async () => {

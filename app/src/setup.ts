@@ -5,7 +5,8 @@ import { ORCHESTRATION, type Session } from './sessions.ts';
 
 // What an agent loads (onboarding-010): each item can be switched on or off for one run. Skills that do not come
 // from a plugin are one item, since Claude Code cannot switch them singly. `tool` is a built-in tool a task cannot
-// work without (a task needs at least one), `feature` an optional built-in one, `prompt` the agent's own system prompt.
+// work without (when listed, a task needs at least one), `feature` a switchable built-in capability,
+// `prompt` the agent's own system prompt. Agents need not expose the same kinds or ids.
 export type ItemKind = 'plugin' | 'mcp' | 'apps' | 'skills' | 'hooks' | 'tool' | 'feature' | 'prompt' | 'workspace';
 // The workspace's own `delegate` tool for tasks: a task without it cannot hand work to a subtask.
 export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: 'Delegate', description: "Hand a self-contained part to another workspace role's agent as a subtask" };
@@ -86,6 +87,16 @@ export function workspaceRules(root: string): string | undefined {
 export function decidable(agent: string, role = 'Implementation'): { id: string; title: string; description?: string }[] {
   const setup = getAgentSetup();
   return (setup.inventory?.[agent] ?? []).filter((i) => stateOf(setup, role, agent, i.id) === 'decide').map(({ id, title, description }) => ({ id, title, description }));
+}
+
+/** Setup constraints and already enabled items for list_agents; a decidable-only list hides default-on capabilities. */
+export function setupStatus(agent: string, role = 'Implementation'): { requiresBuiltInTool: boolean; alwaysOn: string[] } {
+  const setup = getAgentSetup();
+  const items = setup.inventory?.[agent] ?? [];
+  return {
+    requiresBuiltInTool: items.some((i) => i.kind === 'tool'),
+    alwaysOn: items.filter((i) => stateOf(setup, role, agent, i.id) === 'on').map((i) => i.id),
+  };
 }
 
 // The built-in tools a new task of this agent and role would get, or undefined when the agent lists none.

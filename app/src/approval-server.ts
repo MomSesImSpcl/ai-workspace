@@ -11,7 +11,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
-import { decidable, getAgentSetup, itemOn } from './setup.ts';
+import { decidable, getAgentSetup, itemOn, setupStatus } from './setup.ts';
 import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 import { requestMerge } from './merge.ts';
@@ -111,15 +111,15 @@ if (!task) {
       inputSchema: {
         title: z.string().optional().describe('A short title of what the task does, a few words'),
         goal: z.string().describe('Self-contained instructions for the task'),
-        agent: z.string().optional().describe('An agent from list_agents'),
-        model: z.string().optional().describe("One of the agent's models"),
+        agent: z.string().optional().describe("Omit to use the role's configured agent; a different implementer requires an explicit user override"),
+        model: z.string().optional().describe("Omit to use the role's configured model; change only for an explicit user override"),
         effort: z.string().optional().describe("One of the model's effort levels"),
         reason: z.string().optional().describe('One line: why this agent, model and effort'),
         tokenBudget: z.number().int().positive().optional().describe('Token cap at real cost; only when the user asked for one'),
         basedOn: z.string().optional().describe('Id of an earlier related task; the new task starts with its goal and result'),
         role: z.string().optional(),
         permissionMode: z.string().optional().describe("One of the agent's own permission modes; omit for the agent's settings"),
-        setup: z.array(z.string()).optional().describe("Ids from list_agents' setup list of the plugins, MCP servers, skills or hooks the task needs; omit for none"),
+        setup: z.array(z.string()).optional().describe("Ids from the selected agent's list_agents setup list that the task needs; setupStatus shows always-on items and whether a built-in tool must be selected. Never use another agent's ids"),
       },
     },
     tool((a: { title?: string; goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
@@ -148,8 +148,8 @@ if (!task) {
   );
   server.registerTool(
     'list_agents',
-    { description: "The agents a task can use, with their models and effort levels, each workspace role's assigned agent, and per agent the setup items (plugins, MCP servers, skills, hooks) a task may add with start_task's setup.", inputSchema: {} },
-    tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])) })),
+    { description: "Current role assignments (agent, model, effort), each agent's catalog, decidable setup items and setupStatus (alwaysOn ids, requiresBuiltInTool). Use the configured Implementation agent and model unless the user explicitly overrides them. Setup lists are switches, not complete capability catalogs; a missing tool:* id is not a reason to switch agents.", inputSchema: {} },
+    tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])), setupStatus: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, setupStatus(k)])) })),
   );
 }
 

@@ -9,6 +9,8 @@ Status: accepted (2026-10-19, chosen by the user); implemented 2026-10-19. Super
 - Each role names an agent, a default model and a default effort from the agent's catalog ([onboarding-008](../../features/onboarding/SPEC.md#requirements)), plus optional user instructions added to that role's agent.
 - Only integrations with a runnable agent can be assigned. `manual-browser` returns when its [browser handoff](../../features/integrated-browser/SPEC.md#planning-role-handoff) is built.
 
+Clarification (2026-10-21): implementation tasks inherit the current Implementation agent and model unless the user explicitly overrides them. Setup availability is not authority to substitute another integration; request missing setup or report a blocker. See [verification](../../history/2026-10-21-06-configured-implementer/DETAILS.md).
+
 ## Consequences
 
 - A role saved earlier under `ArchitectureReasoning` in `roles.json` is ignored; its global-rules switch is gone.
