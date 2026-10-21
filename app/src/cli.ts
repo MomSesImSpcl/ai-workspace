@@ -90,8 +90,8 @@ try {
     (await import('./worktrees.ts')).addAppProject();
     // Merged branches are removed at start: merges reach the checkout through Update and restart (or a pull and ⟳), which ends in a start.
     const { cleanupBranches } = await import('./branches.ts');
-    const cleanup = () => { try { const gone = cleanupBranches(); if (gone.length) console.log(`Removed merged branches: ${gone.join(', ')}`); } catch (e) { console.error(`Branch cleanup failed: ${(e as Error).message}`); } };
-    cleanup();
+    const cleanup = () => cleanupBranches().then((gone) => { if (gone.length) console.log(`Removed merged branches: ${gone.join(', ')}`); }, (e) => console.error(`Branch cleanup failed: ${(e as Error).message}`));
+    void cleanup(); // idle agents may take a moment to end; the UI starts meanwhile
     const server = serve(Number(values.port));
     server.on('listening', () => console.log(`Workspace UI: http://127.0.0.1:${(server.address() as { port: number }).port}/ (Ctrl+C stops the UI; tasks keep running)`));
   } else if (cmd === 'last-good' && rest[0]) {
