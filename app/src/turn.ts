@@ -21,6 +21,8 @@ async function workRoot(s: Session): Promise<string> {
     if (!existsSync(wt.path)) throw new Error(`This session's worktree is gone (${wt.path}, branch ${wt.branch}). Start a new session to keep working.`);
     return wt.path;
   }
+  // A restored chat whose sibling already remade the branch joins it.
+  if (existsSync(wt.path)) { saveSession({ ...loadSession(s.id), worktree: { ...wt, ready: true } }); return wt.path; }
   const from = addWorktree(sessionRoot({ projectId: s.projectId }), wt);
   saveSession({ ...loadSession(s.id), worktree: { ...wt, ready: true } });
   const n = turns(readEvents(s.id), true).at(-1)?.n ?? 0;

@@ -15,7 +15,7 @@ import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, 
 import { appRepo, isAppProject, listWorktrees } from './worktrees.ts';
 import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
-import { appProject, branchInfo, folderSize, removeBranch } from './branches.ts';
+import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
 
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -173,7 +173,7 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     setPinned(id, b.pinned === true);
   } else if (action === 'archive') {
     s.archived = b.archived === true;
-    saveSession(s);
+    saveSession(s.archived ? s : replanBranch(s));
   } else if (action === 'delete') {
     deleteSession(id);
     return { deleted: id };

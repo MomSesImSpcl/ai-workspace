@@ -747,7 +747,7 @@ function worktreeGroups(list) {
   }
   // Each heading opens its worktree folder (the project folder for sessions from before worktrees).
   return [...groups].map(([path, g]) => {
-    const gone = g.rows.some((s) => s.worktreeGone); // removed after merging: its chats are archived and read only
+    const gone = g.rows.every((s) => s.worktreeGone); // removed after merging: its chats are archived and read only
     const head = gone ? `<span class="eyebrow worktree-head" title="This branch and its folder were removed">${esc(g.branch)} · removed</span>`
       : `<button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}" title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button>`;
     return `<div class="list-head">${head}</div>${sessionRows(g.rows, 'project')}`;
@@ -854,7 +854,7 @@ function renderChat() {
   $('#stop').hidden = !working;
   renderPickers(s);
   renderCap(s);
-  $('[name=text]').placeholder = gone ? `Branch ${s.worktree.branch} was removed, so this chat is read only. Start a new chat to continue.` : s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
+  $('[name=text]').placeholder = gone ? `Branch ${s.worktree.branch} was removed, so this chat is read only. Unarchive it to continue on a new ${s.worktree.branch} branch from main.` : s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
   const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
   if (key === shown || document.activeElement?.dataset.replyTask) return; // keep the reader's scroll position and a reply being typed

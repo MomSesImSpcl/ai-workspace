@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { addMessage, createSession, loadSession, readEvents, sessionWorking, turnRunning, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, loadSession, readEvents, saveSession, sessionWorking, turnRunning, type SessionAgent } from '../src/sessions.ts';
 import { createTask } from '../src/tasks.ts';
 import { hostSession, runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
@@ -204,6 +204,30 @@ test('an idle agent does not keep a merged branch: the cleanup ends its host, th
   await host;
   assert.equal(turnRunning(s.id), false);
   assert.equal(existsSync(path), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('a restored chat of a removed branch gets that branch again from main; a restored sibling joins it', async () => {
+  const { cleanupBranches, replanBranch } = await import('../src/branches.ts');
+  const turn = async (id: string) => { addMessage(id, 'go'); await runTurn(id, recording([])); return loadSession(id); };
+  const a = await turn(createSession('P', 'Chat', { integration: 'claude-code' }, { name: 'shared' }).id);
+  const path = a.worktree!.path;
+  const b = await turn(createSession('P', 'Chat', { integration: 'claude-code' }, { path }).id);
+  writeFileSync(join(path, 'restored.txt'), 'r');
+  for (const args of [['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'a']]) spawnSync('git', args, { cwd: path });
+  git('merge', '-q', '--ff-only', 'shared');
+  assert.deepEqual(await cleanupBranches(), ['shared']);
+  assert.equal(loadSession(a.id).archived, true);
+  assert.equal(loadSession(b.id).archived, true);
+  saveSession({ ...replanBranch(loadSession(a.id)), archived: false });
+  await turn(a.id);
+  assert.equal(existsSync(path), true);
+  assert.equal(git('rev-parse', 'shared'), git('rev-parse', 'HEAD'), 'cut from main');
+  assert.equal(loadSession(b.id).archived, true, 'the sibling stays archived');
+  saveSession({ ...replanBranch(loadSession(b.id)), archived: false });
+  const again = await turn(b.id);
+  assert.equal(again.worktree!.ready, true);
+  assert.equal(readEvents(b.id).some((e) => e.type === 'error'), false);
   rmSync(root, { recursive: true, force: true });
 });
 
