@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { claudeSession } from './adapters/claude-code.ts';
 import { codexSession } from './adapters/codex.ts';
-import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
+import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, setupContinue, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
 import { addWorktree, appRepo, checkoutChanges, checkoutSnapshot, installDependencies } from './worktrees.ts';
 
@@ -158,7 +158,7 @@ function continueWithSetup(id: string): void {
   if (!added?.length || s.task!.cancelled || !['done', 'error'].includes(turns(readEvents(id), true).at(-1)?.state ?? '')) return;
   s.task!.setupAdded = undefined;
   saveSession(s);
-  addMessage(id, `The workspace enabled ${added.join(', ')}. Continue the task.`);
+  addMessage(id, setupContinue(added));
 }
 
 // Keeps one agent process for the session and feeds it each new message, so plugins and hooks keep their

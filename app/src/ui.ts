@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, addUsage, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { addMessage, addUsage, isSetupContinue, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { claudeHome, fileOr } from './adapters/claude-code.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
@@ -220,14 +220,15 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const s = loadSession(id);
     if (!s.task) throw new HttpError(404, 'not a task');
     // Each message the task got is its own run: the first is the start, later ones are replies that reused it.
-    // A Resume continues the run it paused, so its steps, tokens and result join that run.
+    // A Resume continues the run it paused, and the workspace's continue after request_setup the run that asked,
+    // so their steps, tokens and result join that run.
     type Run = { usage: Usage; n: number; request: string; result: string; state: string; marker?: string; model?: string; permissionMode?: string; startedAt: string; endedAt?: string; used: number; costUsd?: number; paused: number; steps: { label: string; done: boolean; error?: boolean }[] };
     const runs: Run[] = [];
     for (const t of turns(readEvents(id), turnRunning(id))) {
       const steps = t.activity.map((a) => ({ label: a.label, done: a.done, error: a.error }));
       const prev = runs.at(-1);
-      if (t.resume && prev) {
-        Object.assign(prev, { result: t.state === 'working' ? '' : t.text || prev.result, state: t.state, marker: t.marker, model: t.model ?? prev.model, endedAt: t.endedAt, used: prev.used + used(turnUsage(t)), usage: addUsage(prev.usage, turnUsage(t)), costUsd: prev.costUsd === undefined && t.usage.costUsd === undefined ? undefined : (prev.costUsd ?? 0) + (t.usage.costUsd ?? 0), paused: prev.paused + 1, steps: [...prev.steps, ...steps] });
+      if ((t.resume || isSetupContinue(t.user)) && prev) {
+        Object.assign(prev, { result: t.state === 'working' ? '' : t.text || prev.result, state: t.state, marker: t.marker, model: t.model ?? prev.model, endedAt: t.endedAt, used: prev.used + used(turnUsage(t)), usage: addUsage(prev.usage, turnUsage(t)), costUsd: prev.costUsd === undefined && t.usage.costUsd === undefined ? undefined : (prev.costUsd ?? 0) + (t.usage.costUsd ?? 0), paused: prev.paused + (t.resume ? 1 : 0), steps: [...prev.steps, ...steps] });
         continue;
       }
       runs.push({ usage: turnUsage(t), n: t.n, request: t.user, result: t.state === 'working' ? '' : t.text, state: t.state, marker: t.marker, model: t.model, permissionMode: t.permissionMode, startedAt: t.startedAt, endedAt: t.endedAt, used: used(turnUsage(t)), costUsd: turnUsage(t).costUsd, paused: 0, steps });

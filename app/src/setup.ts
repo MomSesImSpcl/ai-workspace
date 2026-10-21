@@ -44,9 +44,11 @@ export function setGlobalRules(role: string, on: boolean): void {
   update((s) => { (s.globalRules ??= {})[role] = on; });
 }
 
-// The orchestrator starts with nothing extra; a task's items default to the orchestrator's choice (orchestrator-005).
+// The orchestrator starts with nothing extra; a task's items default to the orchestrator's choice (orchestrator-005),
+// except what implementation needs every time: Codex's shell, without which a task asks for it and restarts.
+const TASK_DEFAULT_ON = ['feature:shell_tool'];
 export const stateOf = (setup: AgentSetup, role: string, agent: string, id: string): ItemState =>
-  setup.states?.[role]?.[agent]?.[id] ?? (role === ORCHESTRATION ? 'off' : 'decide');
+  setup.states?.[role]?.[agent]?.[id] ?? (role === ORCHESTRATION ? 'off' : TASK_DEFAULT_ON.includes(id) ? 'on' : 'decide');
 
 // Orchestrator chats and tasks run with a chosen setup; a plain chat keeps the user's full setup.
 export const setupApplies = (s: Session) => !!s.task || s.role === ORCHESTRATION;
