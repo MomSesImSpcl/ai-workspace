@@ -355,6 +355,7 @@
       <label class="check"><input id="show-archived" type="checkbox"> Show archived</label>
       <div class="session-list" id="session-list"></div>
       <div class="menu" id="project-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="web">Open in GitHub</button>
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="remove">Remove from workspace…</button>
       </div>
@@ -609,7 +610,7 @@ function renderProjects() {
     return `<div class="session-row" data-prow="${esc(p.id)}"><button class="task-row" ${p.archived ? '' : `data-project="${esc(p.id)}"`} aria-current="${p.id === state.project}">
       <span class="goal" ${p.app ? 'title="The repository this app runs from: each chat works in its own worktree and branch, never in this folder."' : ''}>${esc(p.id)}${p.app ? ' <small class="meta">this app</small>' : ''}${p.archived ? ' <small class="meta">archived</small>' : ''}</span><span class="meta">${esc(p.root)}</span>
       <span class="meta">${mine.length} tasks · ${running} running · ${work.toLocaleString()} tokens</span></button>
-      ${p.app ? '' : `<button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button>`}</div>${p.app && shown[i + 1] ? '<div class="project-sep" role="separator"></div>' : ''}`;
+      ${p.app && !p.web ? '' : `<button class="menu-btn" data-menu="${esc(p.id)}" data-kind="project" aria-label="Project actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === p.id}">⋯</button>`}</div>${p.app && shown[i + 1] ? '<div class="project-sep" role="separator"></div>' : ''}`;
   }).join('') || `<p class="empty">${archived ? 'No archived projects.' : 'No projects yet. Add a folder below to start.'}</p>`;
   const folders = archived ? [] : state.unaddedFolders ?? [];
   $('#unadded').innerHTML = folders.length ? `<div class="section-head"><h2>Folders in the workspace</h2><span>not added yet</span></div>
@@ -1396,6 +1397,14 @@ function openMenu(kind, id, x, y) {
   state.menu = { kind, id };
   const menu = $(`#${kind}-menu`);
   menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
+  if (kind === 'project') {
+    // Open in GitHub (or the site that hosts the repository) when it has a git remote; the app's own project only has that.
+    const web = menu.querySelector('[data-mact=web]');
+    web.hidden = !s.web;
+    web.textContent = s.web ? `Open in ${s.web.site}` : '';
+    web.title = s.web?.url ?? '';
+    for (const b of menu.querySelectorAll('[data-mact=archive], [data-mact=remove]')) b.hidden = !!s.app;
+  }
   const pin = menu.querySelector('[data-mact=pin]');
   if (pin) { pin.textContent = s.pinOrder !== undefined ? 'Unpin' : 'Pin'; pin.hidden = !!s.archived; } // archived chats are not in the pinned list
   menu.hidden = false;
@@ -1416,6 +1425,7 @@ async function projectMenuAction(act, id) {
   closeMenu();
   const p = menuItem('project', id);
   if (!p) return;
+  if (act === 'web') return void (p.web && window.open(p.web.url, '_blank'));
   if (act === 'remove') {
     if (!(await ask(`Remove "${p.id}" from the workspace?`, `Only the reference is removed. Nothing is deleted: the folder (${p.root}) stays, and its sessions and tasks stay in workspace storage. Adding the folder again with the same name brings them back.`, 'Remove', true))) return;
     try { await api(`/api/projects/${encodeURIComponent(id)}/remove`, {}); } catch (err) { return void ($('#project-error').textContent = err.message); }
