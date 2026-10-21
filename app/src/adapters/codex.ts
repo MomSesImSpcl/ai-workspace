@@ -122,7 +122,7 @@ export function guardedRequest(g: Guard, method: string, p: Record<string, unkno
 // Codex built-in parts that can be switched off for one run (codex-cli 0.163.0, measured on a task call).
 const CODEX_FEATURES = [
   ['memories', 'Memories', 'What Codex remembers across sessions, about 3.8k tokens per call'],
-  ['shell_tool', 'Shell tool', 'The classic shell tool; commands still run through exec'],
+  ['shell_tool', 'Shell tool', 'Runs shell commands (git, npm, tests); a task that runs commands needs it'],
   ['goals', 'Goals', 'Goal tracking tools'],
   ['image_generation', 'Image generation', 'Generate images'],
 ];

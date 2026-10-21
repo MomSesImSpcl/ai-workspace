@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
-import { addMessage, createSession, emit, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
+import { stateOf } from '../src/setup.ts';
 import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -540,4 +541,16 @@ test('an MCP server command names its program file only for an existing absolute
   assert.equal(commandFile(`"${process.execPath}" --flag`), process.execPath);
   assert.equal(commandFile('npx some-server'), undefined);
   assert.equal(commandFile('https://example.test/mcp'), undefined);
+});
+
+test("Codex's shell is on for tasks by default, never for the orchestrator; a set state wins", () => {
+  assert.equal(stateOf({}, 'Implementation', 'codex', 'feature:shell_tool'), 'on');
+  assert.equal(stateOf({}, 'Implementation', 'codex', 'feature:memories'), 'decide');
+  assert.equal(stateOf({}, ORCHESTRATION, 'codex', 'feature:shell_tool'), 'off');
+  assert.equal(stateOf({ states: { Implementation: { codex: { 'feature:shell_tool': 'off' } } } }, 'Implementation', 'codex', 'feature:shell_tool'), 'off');
+});
+
+test('the continue after request_setup is recognised, a user reply is not', () => {
+  assert.equal(isSetupContinue(setupContinue(['feature:shell_tool', 'tool:Bash'])), true);
+  assert.equal(isSetupContinue('Please continue the task.'), false);
 });
