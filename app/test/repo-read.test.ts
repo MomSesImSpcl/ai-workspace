@@ -1,8 +1,8 @@
-// read_repo (#31): commit history through git, pull requests and issues through gh, read only.
+// read_repo (#31): commit history, branches and status through git, pull requests and issues through gh, read only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readRepo } from '../src/repo-read.ts';
@@ -25,6 +25,29 @@ test('log and show read the commit history; a ref that looks like an option is r
   assert.match(show, /add b\.txt[\s\S]*b\.txt \| 1 \+[\s\S]*\+b\.txt/);
   await assert.rejects(readRepo(dir, { action: 'show', ref: '--output=x' }), /Not a branch or commit name/);
   await assert.rejects(readRepo(dir, { action: 'show' }), /needs ref/);
+});
+
+test('branches lists local and remote branches with worktree and ahead/behind; status reads the checkout or a project worktree', async () => {
+  const { dir, git } = repo();
+  const wt = join(mkdtempSync(join(tmpdir(), 'ws-wt-')), 'tree');
+  git('worktree', 'add', '-q', '-b', 'feature', wt);
+  writeFileSync(join(wt, 'c.txt'), 'c'); git('-C', wt, 'add', '.'); git('-C', wt, 'commit', '-qm', 'add c.txt');
+  git('branch', 'old', 'HEAD~1');
+  git('update-ref', 'refs/remotes/origin/feature', 'feature');
+  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/feature');
+  const list = (await readRepo(dir, { action: 'branches' })).split('\n');
+  assert.equal(list.length, 4);
+  assert.match(list.find((l) => l.startsWith('main:'))!, /^main: ahead 0, behind 0, worktree /);
+  assert.match(list.find((l) => l.startsWith('feature:'))!, /^feature: ahead 1, behind 0, worktree .*tree$/);
+  assert.equal(list.find((l) => l.startsWith('old:')), 'old: ahead 0, behind 1');
+  assert.equal(list.find((l) => l.startsWith('origin/feature')), 'origin/feature (remote): ahead 1, behind 0');
+
+  assert.equal(await readRepo(dir, { action: 'status' }), 'Clean: no changes.');
+  writeFileSync(join(wt, 'new.txt'), 'x');
+  assert.equal(await readRepo(dir, { action: 'status', path: wt }), '?? new.txt');
+  assert.equal(await readRepo(dir, { action: 'status' }), 'Clean: no changes.');
+  await assert.rejects(readRepo(dir, { action: 'status', path: tmpdir() }), /Not a worktree of this project/);
+  await assert.rejects(readRepo(dir, { action: 'status', path: join(realpathSync(dir), '..') }), /Not a worktree of this project/);
 });
 
 test('pull requests and issues come from gh; a failed gh says so', async () => {
