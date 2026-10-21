@@ -1105,7 +1105,9 @@ const newSession = () => {
 };
 $('#crumb').onclick = () => current() && window.desktop?.openFolder(current().root);
 $('#new-session').onclick = newSession;
-$('#restart').hidden = !window.desktop?.restart;
+// ⟳ restarts onto the checkout's code (after switching branches or local edits): like Check for updates, only in the
+// desktop app run from a git checkout (refreshUpdate shows it); other users have no use for it (user, 2026-10-21).
+$('#restart').hidden = true;
 $('#restart').onclick = () => window.desktop.restart();
 // Check for updates (selfdev-005): only in the desktop app run from a checkout, and only when the user clicks; no
 // background checks (user, 2026-10-20). States: the default "Check for updates"; "Checking…"; "Update and restart"
@@ -1141,7 +1143,7 @@ function flashUpdate(text, title) {
 // The checkout's branch and changes, read without the network: at start, and when the pointer comes to the button.
 async function refreshUpdate() {
   const u = await api('/api/app-update');
-  $('#update').hidden = !window.desktop?.restart || !u.local;
+  $('#update').hidden = $('#restart').hidden = !window.desktop?.restart || !u.local;
   $('#fallback-note').hidden = !u.fallback;
   $('#fallback-note').textContent = u.fallback ? `⚠ Last working version (${u.fallback.slice(0, 7)})` : '';
   $('#fallback-note').title = 'The new version failed its startup check, so the app runs its last working version. Fix main, then check for updates.';
