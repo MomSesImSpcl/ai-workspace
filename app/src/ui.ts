@@ -13,6 +13,7 @@ import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, r
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
 import { appRepo, isAppProject, listWorktrees } from './worktrees.ts';
+import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch } from './branches.ts';
 
@@ -213,7 +214,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
