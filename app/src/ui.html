@@ -27,6 +27,7 @@
      state (agreed exception to the motion rule, UI_STYLE.md); steady with reduced motion. */
   #update { width: 150px; text-align: center; white-space: nowrap; }
   #update[aria-disabled="true"] { opacity: .45; cursor: default; }
+  #update[aria-busy="true"] { cursor: default; filter: none; } /* checking, waiting, a message or updating: clicks do nothing */
   #update.pulse { animation: update-pulse 1.6s ease-in-out infinite; }
   @keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); } 50% { box-shadow: 0 0 0 4px var(--accent-edge); } }
   @media (prefers-reduced-motion: reduce) { #update.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent-edge); } }
@@ -1121,6 +1122,8 @@ function showUpdate(text, { title = '', pulse = true, blocked = false } = {}) {
   b.title = title;
   b.classList.toggle('pulse', pulse);
   b.setAttribute('aria-disabled', String(blocked));
+  // Only the default and "Update and restart" take a click; every other state is busy (set upd.mode first).
+  b.setAttribute('aria-busy', String(!['idle', 'update'].includes(upd.mode)));
 }
 function idleUpdate() {
   clearTimeout(upd.timer);
@@ -1148,7 +1151,7 @@ async function refreshUpdate() {
   else showUpdate(UPDATE_IDLE, { pulse: false, title: "Fetch main from GitHub and see whether the app's checkout can be updated" });
 }
 async function checkForUpdate() {
-  if (upd.mode === 'idle') showUpdate('Checking…');
+  if (upd.mode === 'idle') { upd.mode = 'checking'; showUpdate('Checking…'); }
   let r;
   try { r = await api('/api/app-update/check', { waitingFor: upd.waitingFor }); } catch (e) { return flashUpdate('Check failed', e.message); }
   if (r.state === 'update') { clearTimeout(upd.timer); upd.mode = 'update'; return showUpdate('Update and restart', { title: "Bring the app's checkout up to date with main and restart onto it" }); }
