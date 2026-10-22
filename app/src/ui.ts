@@ -16,6 +16,7 @@ import { appRepo, isAppProject, listWorktrees } from './worktrees.ts';
 import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
+import { continueSession } from './binding.ts';
 
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -171,6 +172,11 @@ async function sessionRoute(req: IncomingMessage, url: URL, id?: string, action?
     saveSession(s);
   } else if (action === 'pin') {
     setPinned(id, b.pinned === true);
+  } else if (action === 'continue') {
+    // A chat with a stale binding goes on in a new chat on a new or existing branch, only after the user confirmed it (#62).
+    if (b.confirmed !== true) throw new HttpError(400, 'Continuing in a new chat needs your confirmation.');
+    const choice = { name: typeof b.worktreeName === 'string' ? b.worktreeName : undefined, path: typeof b.worktree === 'string' ? b.worktree : undefined };
+    try { return sessionView(continueSession(id, choice)); } catch (e) { throw new HttpError(400, (e as Error).message); }
   } else if (action === 'archive') {
     s.archived = b.archived === true;
     saveSession(s.archived ? s : replanBranch(s));

@@ -510,7 +510,7 @@ const pref = {
     api('/api/prefs', { key: k, value: v }).catch(() => {});
   },
 };
-const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, agents: {}, draft: null, session: null, sessionData: null };
+const state = { projects: [], roles: {}, integrations: [], tasks: [], project: null, page: 'projects', tool: null, selected: null, menu: null, sessions: [], globals: [], newGlobal: false, agents: {}, draft: null, session: null, sessionData: null, continueChoices: {} };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -825,6 +825,22 @@ function turnHtml(t, tasks = {}, lastTurnOf = {}) {
     ${t.text ? `<div class="msg agent">${md(t.text)}${used ? `<time title="${esc(breakdown(t.usage))}">${used.toLocaleString()} tokens</time>` : ''}</div>` : ''}${[...new Set(t.tasks)].map((id) => (lastTurnOf[id] === t.n ? taskCardHtml(tasks[id]) : tasks[id] ? `<div class="turn-activity meta">Task: ${esc(tasks[id].title)} — continued below</div>` : '')).join('')}${switched}`;
 }
 
+// The branches a stale chat can continue on (#62): the project's worktrees except the stale binding itself, loaded once per chat.
+async function loadContinueChoices(s) {
+  state.continueChoices[s.id] = [];
+  const list = await api(`/api/projects/${encodeURIComponent(s.projectId)}/worktrees`).catch(() => []);
+  state.continueChoices[s.id] = list.filter((w) => !(w.path.toLowerCase() === s.worktree.path.toLowerCase() && w.branch === s.worktree.branch));
+  renderChat();
+}
+// "Continue in a new chat" under a chat whose binding went stale (#62): a new branch from origin/main or an existing one.
+function continueHtml(s) {
+  const choices = state.continueChoices[s.id] ?? [];
+  return `<form class="turn-activity" data-continue-form><b>Continue in a new chat</b>
+    <div class="meta">The new chat gets this conversation and works on the branch you pick. This chat stays bound to ${esc(s.worktree.branch)}; nothing in its worktree is changed or moved.</div>
+    <div class="row worktree-pick" style="margin-top:8px"><select name="dest" aria-label="Branch for the new chat" title="A new branch from freshly fetched origin/main, or an existing branch to continue; the workspace checks it first">${option('new', 'New branch from origin/main', true)}${choices.map((w) => option(w.path, `${w.branch}${w.title ? ` · ${w.title}` : ''}`, false)).join('')}</select><input name="name" aria-label="Name of the new branch" placeholder="Branch name" maxlength="60" title="Letters, digits, '.', '_' and '-'; also the name of its worktree folder"><button class="btn primary small" type="submit">Continue…</button></div>
+    <p class="error" data-continue-error role="alert"></p></form>`;
+}
+
 let shown = '';
 function renderChat() {
   renderSessions();
@@ -856,13 +872,18 @@ function renderChat() {
   renderCap(s);
   $('[name=text]').placeholder = gone ? `Branch ${s.worktree.branch} was removed, so this chat is read only. Unarchive it to continue on a new ${s.worktree.branch} branch from main.` : s ? 'Message the agent. Enter sends, Shift+Enter adds a line.' : 'Start a new session. Enter sends, Shift+Enter adds a line.';
   $('#chat-state').innerHTML = working ? `<span class="dot s-running"></span> ${esc(s.integration)} is working…` : '';
-  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks]);
-  if (key === shown || document.activeElement?.dataset.replyTask) return; // keep the reader's scroll position and a reply being typed
+  // A chat whose binding went stale (#62) or whose branch was removed offers to continue in a new chat; a chat
+  // continued from one does not offer it again for the copied turn.
+  const lastTurn = d?.turns.at(-1);
+  const stale = !!s && !s.task && !!s.worktree && !working && (s.worktreeGone || (!!lastTurn?.binding && !(s.continuedFrom?.turn >= lastTurn.n)));
+  if (stale && !state.continueChoices[s.id]) loadContinueChoices(s);
+  const key = JSON.stringify([state.session, state.newGlobal, !!current(), d?.turns, d?.tasks, stale && state.continueChoices[s.id]]);
+  if (key === shown || document.activeElement?.dataset.replyTask || document.activeElement?.closest('[data-continue-form]')) return; // keep the reader's scroll position and a reply or continuation being typed
   shown = key;
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const lastTurnOf = Object.fromEntries((d?.turns ?? []).flatMap((t) => t.tasks.map((id) => [id, t.n])));
-  setHtml(box, d?.turns.map((t) => `<div class="turn">${turnHtml(t, d.tasks, lastTurnOf)}</div>`).join('')
+  setHtml(box, (d?.turns.map((t) => `<div class="turn">${turnHtml(t, d.tasks, lastTurnOf)}</div>`).join('') ?? '') + (stale ? continueHtml(s) : '')
     || `<p class="empty">${global ? 'Ask anything; the agent starts in the workspace folder.' : current() ? 'Ask the agent something about this project.' : 'Add a project first (Projects page).'}</p>`, state.session);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
@@ -886,6 +907,7 @@ function openSession(id, newGlobal = false) {
   state.session = id;
   state.newGlobal = !id && newGlobal;
   state.renaming = false;
+  state.continueChoices = {}; // branches change: read them again for the chat now open
   pref.set(`session.${state.project}`, id ?? '');
   shown = '';
   loadSessions().then(render).catch(() => {});
@@ -1532,6 +1554,30 @@ document.addEventListener('click', async (e) => {
 });
 
 // Rename edits the title in place (Electron has no window.prompt); Escape or leaving the field cancels.
+// "Continue in a new chat" (#62): asks before anything is made, then opens the new chat.
+document.addEventListener('change', (e) => {
+  const f = e.target.closest?.('[data-continue-form]');
+  if (f && e.target.name === 'dest') f.elements.name.hidden = e.target.value !== 'new';
+});
+document.addEventListener('submit', async (e) => {
+  const f = e.target.closest?.('[data-continue-form]');
+  const s = state.sessionData?.session;
+  if (!f || !s) return;
+  e.preventDefault();
+  const dest = f.elements.dest.value, name = f.elements.name.value.trim();
+  const error = f.querySelector('[data-continue-error]');
+  const bad = dest === 'new' ? worktreeNameError(name) : '';
+  if (bad) return void (error.textContent = bad);
+  const branch = (state.continueChoices[s.id] ?? []).find((w) => w.path === dest)?.branch;
+  const text = dest === 'new'
+    ? `The new chat gets this conversation and works on a new branch ${name} from freshly fetched origin/main. This chat keeps its binding to branch ${s.worktree.branch}; its worktree, commits and uncommitted changes stay as they are and nothing is moved.`
+    : `The new chat gets this conversation and works on the existing branch ${branch} in ${dest}. This chat keeps its binding to branch ${s.worktree.branch}; its worktree, commits and uncommitted changes stay as they are and nothing is moved.`;
+  if (!(await ask('Continue in a new chat?', text, 'Continue'))) return;
+  try {
+    const next = await api(`/api/sessions/${s.id}/continue`, { confirmed: true, ...(dest === 'new' ? { worktreeName: name } : { worktree: dest }) });
+    openSession(next.id);
+  } catch (err) { error.textContent = err.message; }
+});
 document.addEventListener('submit', (e) => {
   if (e.target.id !== 'rename-form') return;
   e.preventDefault();

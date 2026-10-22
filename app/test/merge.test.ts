@@ -29,7 +29,7 @@ test('the guard denies gh merges in app-project sessions only, with the way to m
 });
 
 /** A fake gh and git that keep pull requests and every call (in order) in a JSON file. */
-function fakeTools(prs: Record<string, object>, fail: { push?: boolean; merge?: boolean; update?: boolean } = {}) {
+function fakeTools(prs: Record<string, object>, fail: { push?: boolean; merge?: boolean; update?: boolean; notAncestor?: boolean } = {}) {
   const state = join(dir, 'tools-state.json');
   writeFileSync(state, JSON.stringify({ prs, calls: [] }));
   const head = `import { readFileSync, writeFileSync } from 'node:fs';
@@ -39,18 +39,19 @@ const save = () => writeFileSync(${JSON.stringify(state)}, JSON.stringify(s));`;
   const gh = join(dir, 'fake-gh.mjs');
   writeFileSync(gh, `${head}
 s.calls.push('gh ' + a.join(' '));
-if (a[0] === 'pr' && a[1] === 'view') { save(); const pr = s.prs[a[2]]; if (!pr) { console.error('no pull requests found'); process.exit(1); } console.log(JSON.stringify(pr)); process.exit(0); }
+if (a[0] === 'pr' && a[1] === 'list') { save(); const pr = s.prs[a[a.indexOf('--head') + 1]]; console.log(JSON.stringify(pr ? [pr] : [])); process.exit(0); }
 if (a[0] === 'pr' && a[1] === 'create') { const b = a[a.indexOf('--head') + 1]; s.prs[b] = { number: 9, url: 'https://x/pull/9', title: a[a.indexOf('--title') + 1], state: 'OPEN' }; save(); process.exit(0); }
 if (a[0] === 'pr' && a[1] === 'merge') { save(); if (${!!fail.merge}) { console.error('auto-merge is not allowed'); process.exit(1); } process.exit(0); }
 save(); process.exit(2);`);
   const git = join(dir, 'fake-git.mjs');
   writeFileSync(git, `${head}
 s.calls.push('git ' + a.join(' ')); save();
+if (a[0] === 'merge-base' && ${!!fail.notAncestor}) process.exit(1);
 if (a[0] === 'merge' && a[1] === '--no-edit' && ${!!fail.update}) { console.error('CONFLICT (content): Merge conflict in a.ts'); process.exit(1); }
 if (a[0] === 'push' && ${!!fail.push}) { console.error('fatal: could not read Username'); process.exit(128); }`);
   process.env.AI_WORKSPACE_GH = gh;
   process.env.AI_WORKSPACE_GIT = git;
-  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls.filter((c) => !c.startsWith('gh pr view'));
+  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls.filter((c) => !c.startsWith('gh pr list') && !c.startsWith('git merge-base'));
 }
 
 test('request_merge asks first; on Allow the app merges main in, pushes, opens the pull request if needed and turns on auto-merge', async () => {
@@ -76,8 +77,45 @@ test('request_merge asks first; on Allow the app merges main in, pushes, opens t
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git merge --abort'], 'a conflict is aborted; nothing pushed');
     fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } }, { merge: true });
     assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /auto-merge for #4 failed: auto-merge is not allowed/);
-    fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'MERGED' } });
-    await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /already merged/);
+    fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'MERGED', headRefOid: 'a'.repeat(40) } });
+    await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /#4 of branch fix is already merged[\s\S]*Do not switch this worktree[\s\S]*Continue in a new chat/);
+  } finally {
+    delete process.env.AI_WORKSPACE_GH;
+    delete process.env.AI_WORKSPACE_GIT;
+  }
+});
+
+test('request_merge checks the binding before the card and again after Allow; a pull request merged meanwhile stops it (#62)', async () => {
+  try {
+    const merged = { number: 61, url: 'https://x/pull/61', title: 'Old', state: 'MERGED', headRefOid: 'b'.repeat(40) };
+    let asked = 0;
+    const allow = async () => { asked++; return true; };
+    // A stale binding is refused before anything is asked or run.
+    let calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
+    await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, allow, () => 'The worktree has branch other checked out.'), /branch other checked out/);
+    assert.equal(asked, 0);
+    assert.deepEqual(calls(), []);
+    // The binding goes stale while the card waits: nothing is fetched, merged or pushed.
+    let stale = false;
+    calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
+    const flip = async () => { stale = true; return true; };
+    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, flip, () => (stale ? 'The worktree has a detached HEAD checked out.' : undefined)), /^Nothing was pushed or merged: the binding changed while the card waited\. The worktree has a detached HEAD/);
+    assert.deepEqual(calls(), []);
+    // The pull request merges while the card waits.
+    calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN', headRefOid: 'b'.repeat(40) } });
+    const mergeMeanwhile = async () => {
+      const file = join(dir, 'tools-state.json');
+      const st = JSON.parse(readFileSync(file, 'utf8'));
+      st.prs.fix.state = 'MERGED';
+      writeFileSync(file, JSON.stringify(st));
+      return true;
+    };
+    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, mergeMeanwhile), /^Nothing was pushed or merged\. Pull request #4 of branch fix is already merged/);
+    assert.deepEqual(calls(), []);
+    // A merged pull request of an earlier branch with the same name (made again from main) is not this branch's: a new one opens.
+    calls = fakeTools({ fix: merged }, { notAncestor: true });
+    assert.match(await requestMerge('fix', dir, { checks: 'ok', title: 'Next' }, allow), /auto-merge is on for #9/);
+    assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin fix', 'gh pr create --base main --head fix --title Next --body ', 'gh pr merge 9 --squash --auto']);
   } finally {
     delete process.env.AI_WORKSPACE_GH;
     delete process.env.AI_WORKSPACE_GIT;

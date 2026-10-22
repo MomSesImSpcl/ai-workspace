@@ -14,10 +14,11 @@ export interface Worktree {
   path: string; // under the workspace's storage (`<home>/worktrees/<project>/<session>`), outside the repository
   branch: string; // `aiws/<session id>`, cut from the project checkout's HEAD
   ready?: boolean;
+  base?: 'origin/main'; // a continued chat's new branch starts from freshly fetched origin/main, not the checkout's HEAD (#62)
 }
 
 /** Runs git in `cwd` and returns its trimmed output; a failure throws with git's own message. */
-function git(cwd: string, args: string[]): string {
+export function git(cwd: string, args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
   if (r.status !== 0) throw new Error(`git ${args[0]} failed in ${cwd}: ${(r.stderr || r.error?.message || '').trim()}`);
   return r.stdout.trim();
@@ -68,6 +69,27 @@ export function addAppProject(): Project | undefined {
 /** Where the workspace keeps a project's worktrees. */
 const worktreesDir = (project: Project) => join(home(), 'worktrees', project.id);
 
+/** Whether `path` is a worktree folder the workspace keeps for `project` (directly in its worktrees folder): binding ownership (#62). */
+export const ownWorktreePath = (project: Project, path: string) => same(dirname(resolve(path)), worktreesDir(project));
+
+/**
+ * What git has checked out in the folder `path` as a worktree of the repository at `root`: its branch (undefined for
+ * a detached HEAD) and HEAD commit. Undefined when git does not list the folder as one of that repository's
+ * worktrees (a plain folder, another repository's worktree). Read by `bindingProblem` in app/src/binding.ts (#62).
+ */
+export function checkedOut(root: string, path: string): { branch?: string; head: string } | undefined {
+  if (!existsSync(path)) return undefined;
+  const all: { path: string; head: string; branch?: string }[] = [];
+  for (const line of git(root, ['worktree', 'list', '--porcelain']).split('\n')) {
+    if (line.startsWith('worktree ')) all.push({ path: line.slice('worktree '.length).trim(), head: '' });
+    else if (line.startsWith('HEAD ') && all.length) all.at(-1)!.head = line.slice('HEAD '.length).trim();
+    else if (line.startsWith('branch refs/heads/') && all.length) all.at(-1)!.branch = line.slice('branch refs/heads/'.length).trim();
+  }
+  const want = real(path);
+  const hit = all.find((w) => existsSync(w.path) && real(w.path) === want);
+  return hit && { branch: hit.branch, head: hit.head };
+}
+
 /**
  * The workspace-made worktrees of a project that still exist, newest git order first, read from
  * `git worktree list`: the choices besides "New worktree" when a session starts (selfdev-001). A worktree the
@@ -115,7 +137,7 @@ export function planWorktree(project: Project, sessionId: string, choice: Worktr
 const WORKTREE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
 
 /** Whether a local branch of that name exists in the repository at `root`. */
-function branchExists(root: string, name: string): boolean {
+export function branchExists(root: string, name: string): boolean {
   try { git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]); return true; } catch { return false; }
 }
 
@@ -421,14 +443,22 @@ export async function installDependencies(path: string, notice: (text: string) =
   }
 }
 
-/** Makes a planned worktree: a new branch from the checkout's HEAD in `root`. Returns the commit it starts from ("<hash> <subject>"). */
+/**
+ * Makes a planned worktree: a new branch from the checkout's HEAD in `root`, or, for a continued chat (`base`, #62),
+ * from `origin/main` fetched just before, since the running checkout may lag behind main. A failed fetch makes nothing.
+ * Returns the commit it starts from ("<hash> <subject>").
+ */
 export function addWorktree(root: string, wt: Worktree): string {
   const had = branchExists(root, wt.branch);
+  if (wt.base && !had) {
+    try { git(root, ['fetch', 'origin', 'main']); } catch (e) { throw new Error(`Fetching origin/main for the new branch ${wt.branch} failed, so nothing was made; send the message again to retry. ${(e as Error).message}`); }
+  }
   try {
     mkdirSync(dirname(wt.path), { recursive: true });
     // Long paths let Windows Git check out files deeper than 260 characters, when the system allows them.
     // An existing branch (its folder was removed but not the branch) is checked out again, not made anew.
-    git(root, ['-c', 'core.longpaths=true', 'worktree', 'add', ...(had ? [wt.path, wt.branch] : ['-b', wt.branch, wt.path, 'HEAD'])]);
+    // --no-track: a branch from origin/main must not track main, or it would count as published (`bindingProblem`).
+    git(root, ['-c', 'core.longpaths=true', 'worktree', 'add', ...(had ? [wt.path, wt.branch] : wt.base ? ['--no-track', '-b', wt.branch, wt.path, wt.base] : ['-b', wt.branch, wt.path, 'HEAD'])]);
   } catch (e) {
     // Git makes the branch before the folder, so a failure leaves the branch behind (#22).
     try { git(root, ['worktree', 'prune']); } catch { /* nothing to prune */ }
