@@ -15,7 +15,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
-import { registerProject } from '../src/store.ts';
+import { home, registerProject } from '../src/store.ts';
 
 let root = '';
 beforeEach(() => {
@@ -221,7 +221,8 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   await runTurn(orch.id);
   const args = JSON.parse(last(orch.id).text) as string[];
   assert.match(args[args.indexOf('--disallowedTools') + 1]!, /Bash,Edit,Write/);
-  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator/);
+  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator[\s\S]*Workspace storage/);
+  assert.equal(args[args.indexOf('--add-dir') + 1], home()); // reads storage without a card
   const { setSettings } = await import('../src/sessions.ts');
   setSettings({ orchestratorInstructions: 'Keep goals under 50 words.' });
   const orch2 = createSession('P', 'Orchestration', { integration: 'claude-code' });
@@ -596,10 +597,11 @@ test('an MCP server command names its program file only for an existing absolute
   assert.equal(commandFile('https://example.test/mcp'), undefined);
 });
 
-test("Codex's shell is on for tasks by default, never for the orchestrator; a set state wins", () => {
+test("Codex's shell is on by default, for tasks and the orchestrator; a set state wins", () => {
   assert.equal(stateOf({}, 'Implementation', 'codex', 'feature:shell_tool'), 'on');
   assert.equal(stateOf({}, 'Implementation', 'codex', 'feature:memories'), 'decide');
-  assert.equal(stateOf({}, ORCHESTRATION, 'codex', 'feature:shell_tool'), 'off');
+  assert.equal(stateOf({}, ORCHESTRATION, 'codex', 'feature:shell_tool'), 'on');
+  assert.equal(stateOf({}, ORCHESTRATION, 'codex', 'feature:memories'), 'off');
   assert.equal(stateOf({ states: { Implementation: { codex: { 'feature:shell_tool': 'off' } } } }, 'Implementation', 'codex', 'feature:shell_tool'), 'off');
 });
 

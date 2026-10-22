@@ -39,6 +39,10 @@ Option 2 is built for testing. Revisit option 1 if the orchestrator needs to rev
 
 Why a handoff instead of reuse: a reused task resends its whole growing history on every model call. A new task pays a fixed setup, which drops further once tasks run lean (orchestrator-005).
 
+## Amendment 2026-10-22: the orchestrator reads storage
+
+To answer questions itself, the orchestrator reads workspace storage directly, with no task in between. Claude Code gets `--add-dir <storage>` next to its Read, Glob and Grep. Codex gets its shell by default; its read-only sandbox and the `never` approval policy keep the shell from writing (user, [history](../../history/2026-10-22-04-orchestrator-reads-storage/SUMMARY.md)).
+
 ## Consequences
 
 - The orchestrator's own context stays small; implementation happens in tasks, visible with Cancel in their chat and in the Task Center.

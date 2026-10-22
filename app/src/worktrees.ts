@@ -288,9 +288,11 @@ export function guardNotice(hit: string, what: { command?: string; file?: string
 }
 
 /** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */
-const READERS = new Set(['cd', 'pushd', 'popd', 'pwd', 'ls', 'dir', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'find', 'stat', 'du', 'diff', 'cmp', 'echo', 'realpath', 'readlink', 'basename', 'dirname', 'md5sum', 'sha1sum', 'sha256sum', 'which', 'where', 'true', 'test', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'select-string', 'sls', 'test-path', 'resolve-path', 'get-location', 'set-location', 'measure-object', 'select-object', 'git']);
-/** Git subcommands that only read; `branch` and `remote` only when they list. */
-const GIT_READERS = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'ls-tree', 'blame', 'grep', 'cat-file', 'describe', 'shortlog', 'merge-base', 'rev-list', 'branch', 'remote']);
+const READERS = new Set(['cd', 'pushd', 'popd', 'pwd', 'ls', 'dir', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'find', 'stat', 'du', 'diff', 'cmp', 'echo', 'realpath', 'readlink', 'basename', 'dirname', 'md5sum', 'sha1sum', 'sha256sum', 'which', 'where', 'true', 'test', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'select-string', 'sls', 'test-path', 'resolve-path', 'get-location', 'set-location', 'measure-object', 'select-object', 'git', 'sort', 'uniq', 'cut', 'tr', 'nl', 'date', 'read']);
+/** Git subcommands that only read; `branch`, `remote` and `reflog` only when they list. */
+const GIT_READERS = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'ls-tree', 'blame', 'grep', 'cat-file', 'describe', 'shortlog', 'merge-base', 'rev-list', 'branch', 'remote', 'reflog']);
+/** Shell words that start or end a loop or branch; the command after them is checked on its own (sed and awk stay off the list: their scripts can write and run commands). */
+const KEYWORDS = new Set(['do', 'done', 'then', 'else', 'elif', 'fi', 'while', 'until', 'if', '!', '{', '}']);
 /** Options that make a reader write or run something: find's actions, ripgrep's preprocessor, git's output file or pager. */
 const WRITING_OPTION = /^(-delete|-exec|-execdir|-ok|-okdir|-fprint|-fprint0|-fprintf|-fls|--pre|--output|-O|--open-files-in-pager)(=|$)/;
 
@@ -333,10 +335,16 @@ function parts(command: string): string[][] | undefined {
 export function readOnlyCommand(command: string): boolean {
   const all = parts(command);
   return !!all?.every((p) => {
-    const w = p.filter((x, i) => !p.slice(0, i + 1).every((y) => /^\w+=/.test(y))); // without leading `VAR=value`
+    let w = p.filter((x, i) => !p.slice(0, i + 1).every((y) => /^\w+=/.test(y))); // without leading `VAR=value`
+    while (w.length && KEYWORDS.has(w[0]!)) w = w.slice(1);
     if (!w.length) return true;
+    if (w[0] === 'for') return w[2] === 'in' || w.length === 2; // `for f in a b`: only words; substitutions were refused above
     const prog = basename(w[0]!.replaceAll('\\', '/')).toLowerCase().replace(/\.exe$/, '');
     if (!READERS.has(prog) || w.some((x) => WRITING_OPTION.test(x))) return false;
+    const args = w.slice(1).filter((x) => !x.startsWith('-'));
+    if (prog === 'sort') return !w.some((x) => /^-\w*o/.test(x) && !x.startsWith('--')); // `-o FILE` writes
+    if (prog === 'uniq') return args.length <= 1; // `uniq IN OUT` writes OUT
+    if (prog === 'date') return !w.some((x) => /^(-\w*s|--set)/.test(x)); // sets the clock
     if (prog !== 'git') return true;
     // Git's own options before the subcommand; `-c` can set a command to run, so it does not count as reading.
     let i = 1;
@@ -345,6 +353,7 @@ export function readOnlyCommand(command: string): boolean {
     if (!sub || !GIT_READERS.has(sub)) return false;
     if (sub === 'branch') return rest.every((x) => /^(-a|-r|-v|-vv|--all|--remotes|--list|--show-current|--merged|--no-merged|--contains)$/.test(x));
     if (sub === 'remote') return rest.every((x) => x === '-v');
+    if (sub === 'reflog') return !rest.length || rest[0] === 'show' || rest[0]!.startsWith('-'); // not expire or delete
     return true;
   });
 }

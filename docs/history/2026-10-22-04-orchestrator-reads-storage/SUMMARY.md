@@ -1,0 +1,3 @@
+# The orchestrator reads workspace storage; more read-only commands pass the write guard
+
+An orchestrator started a task only to read session history from workspace storage, and the write guard blocked that task's commands, because `sort`, `uniq`, `awk`, `git reflog` and `$(...)` are not on its read list. The orchestrator now reads storage itself: Claude Code gets `--add-dir` for storage, and Codex gets its shell by default, inside its read-only sandbox. Its note says where chat histories and the audit log are. The guard also lets through `sort`, `uniq`, `cut`, `tr`, `nl`, `date`, `read`, `git reflog`, and `for`/`while`/`if` loops, each with checks for its writing options. [Details](DETAILS.md).

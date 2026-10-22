@@ -298,7 +298,8 @@ export class ClaudeProcess implements AgentProcess {
     } else if (session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006). The unused
       // built-in tools cost about 24k prompt tokens per call, so it gets only the reading ones (`tools`).
-      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','));
+      // It reads workspace storage (chats, tasks, audit log) without a card; it has no tool that writes there.
+      args.push('--allowedTools', ORCHESTRATOR_TOOLS.map((t) => `mcp__aiws__${t}`).join(','), '--add-dir', home());
       disallowed.push('Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit');
     } else args.push('--allowedTools', [...ORCHESTRATOR_TOOLS, ...(merges ? ['request_merge'] : [])].map((t) => `mcp__aiws__${t}`).join(',')); // starting a task is the chat's job (ADR 0011); the task asks for its own actions
     if (setup) args.push('--tools', [...new Set(tools)].join(',')); // '' leaves the agent no built-in tool
