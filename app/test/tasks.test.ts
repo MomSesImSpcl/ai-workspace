@@ -374,7 +374,8 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   const cx = createSession('P', 'Orchestration', { integration: 'codex' });
   addMessage(cx.id, 'args');
   await runTurn(cx.id);
-  const sent = JSON.parse(last(cx.id).text) as { config: Record<string, unknown>; developerInstructions: string; disabledPluginIds: string[] };
+  const sent = JSON.parse(last(cx.id).text) as { config: Record<string, unknown>; developerInstructions: string; disabledPluginIds: string[]; aiws: string };
+  assert.equal(sent.aiws, 'ready'); // the first turn waited for the workspace tools
   assert.deepEqual(sent.disabledPluginIds, ['demo@market']);
   assert.equal(sent.config['mcp_servers.tools.enabled'], false);
   assert.equal(sent.config['features.apps'], false);

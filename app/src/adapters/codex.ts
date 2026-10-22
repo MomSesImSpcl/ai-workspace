@@ -140,6 +140,7 @@ export class CodexProcess implements AgentProcess {
   private path = ''; // the PATH Codex runs with
   private notes: string[] = []; // start-up notices for the first turn after a start
   private mcp = new Map<string, string>();
+  private onMcp?: (exited?: boolean) => void; // called on each MCP start-up status and when the process exits
   private disabledPluginIds?: string[]; // plugins switched off for this run (orchestrator-005)
   readonly model?: string;
   readonly effort?: string;
@@ -178,8 +179,10 @@ export class CodexProcess implements AgentProcess {
         let m: Message;
         try { m = JSON.parse(l) as Message; } catch { continue; }
         if (m.id !== undefined && !m.method) this.waiting.get(Number(m.id))?.(m);
-        else if (m.method === 'mcpServer/startupStatus/updated') this.mcp.set(String(m.params?.name), m.params?.status === 'ready' ? 'connected' : String(m.params?.status));
-        else this.onMessage?.(m);
+        else if (m.method === 'mcpServer/startupStatus/updated') {
+          this.mcp.set(String(m.params?.name), m.params?.status === 'ready' ? 'connected' : String(m.params?.status));
+          this.onMcp?.();
+        } else this.onMessage?.(m);
       }
     });
     child.stderr.on('data', (d) => (this.err = (this.err + d).slice(-4000)));
@@ -188,6 +191,7 @@ export class CodexProcess implements AgentProcess {
       this.child = undefined;
       for (const w of this.waiting.values()) w({ error: { message: `codex app-server exited: ${this.err.trim().split('\n').pop() || 'no output'}` } });
       this.waiting.clear();
+      this.onMcp?.(true);
       this.onExit?.();
     });
     this.child = child;
@@ -309,6 +313,20 @@ export class CodexProcess implements AgentProcess {
     const hooksOff = (params.config as Record<string, unknown> | undefined)?.['features.codex_hooks'] === false;
     this.notes = sandbox && !/danger/i.test(sandbox) && !hooksOff ? codexHookNotices(userCodexHome(), this.path) : [];
     this.info = { type: 'init', model: r.model as string | undefined, permissionMode: `approval ${String(r.approvalPolicy)}${sandbox ? ` · sandbox ${sandbox}` : ''}`, ruleFiles: r.instructionSources as string[] | undefined };
+    if ((params.config as Record<string, unknown> | undefined)?.['mcp_servers.aiws']) await this.aiwsSettled();
+  }
+
+  // Codex connects MCP servers in the background and a turn gets only the tools of those connected when it starts,
+  // so without this wait a new chat's first turn can lack start_task and the other workspace tools. Codex's own
+  // start-up timeout ends the wait with "failed"; the cap covers a Codex that never reports.
+  private async aiwsSettled(cap = 30_000): Promise<void> {
+    const settled = () => !['starting', undefined].includes(this.mcp.get('aiws'));
+    if (settled()) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, cap);
+      this.onMcp = (exited) => { if (exited || settled()) { clearTimeout(timer); resolve(); } };
+    });
+    this.onMcp = undefined;
   }
 
   kill(): void {
