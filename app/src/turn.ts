@@ -7,26 +7,28 @@ import { codexSession } from './adapters/codex.ts';
 import { acquireRunner, addMessage, clearStop, emit, queuedReplies, loadSession, markStarting, readEvents, releaseRunner, repeatsFor, saveSession, sessionFile, sessionRoot, setupContinue, stopRequested, transcript, turnPrompt, turns, used, type AgentProcess, type Body, type Session, type SessionAgent, type SessionEvent, type Usage } from './sessions.ts';
 import { startPendingTasks, taskUsed } from './tasks.ts';
 import { addWorktree, appRepo, checkoutChanges, checkoutSnapshot, installDependencies } from './worktrees.ts';
+import { BindingError, bindingProblem } from './binding.ts';
 
 /**
  * The folder a session's agent runs in (selfdev-001): its worktree, made at the first turn with a notice in the
- * chat, else the project folder (`sessionRoot`). A worktree that is gone after that (the agent cleaned it up
- * after merging, or the user removed it) throws, so the turn shows the error instead of the agent silently
- * working in the live checkout. A new worktree gets its dependencies installed before the agent starts (#26).
+ * chat, else the project folder (`sessionRoot`). Every turn first checks the binding (`bindingProblem` in
+ * app/src/binding.ts, #62): a worktree that is gone (the agent cleaned it up after merging, or the user removed it),
+ * one with another branch checked out, or a branch whose pull request already merged throws a `BindingError`, so the
+ * turn shows why instead of the agent working in the live checkout or on a stale branch. A new worktree gets its
+ * dependencies installed before the agent starts (#26).
  */
 async function workRoot(s: Session): Promise<string> {
   const wt = s.worktree;
   if (!wt) return sessionRoot(s);
-  if (wt.ready) {
-    if (!existsSync(wt.path)) throw new Error(`This session's worktree is gone (${wt.path}, branch ${wt.branch}). Start a new session to keep working.`);
-    return wt.path;
-  }
-  // A restored chat whose sibling already remade the branch joins it.
+  const problem = bindingProblem(s);
+  if (problem) throw new BindingError(problem);
+  if (wt.ready) return wt.path;
+  // A restored chat whose sibling already remade the branch joins it (checked above: it has this branch checked out).
   if (existsSync(wt.path)) { saveSession({ ...loadSession(s.id), worktree: { ...wt, ready: true } }); return wt.path; }
   const from = addWorktree(sessionRoot({ projectId: s.projectId }), wt);
   saveSession({ ...loadSession(s.id), worktree: { ...wt, ready: true } });
   const n = turns(readEvents(s.id), true).at(-1)?.n ?? 0;
-  emit(s.id, n, { type: 'notice', text: `Working in a new worktree on branch ${wt.branch}, from ${from}: ${wt.path}` });
+  emit(s.id, n, { type: 'notice', text: `Working in a new worktree on branch ${wt.branch}, from ${from}${wt.base ? ' (freshly fetched origin/main)' : ''}: ${wt.path}` });
   await installDependencies(wt.path, (text) => emit(s.id, n, { type: 'notice', text }));
   return wt.path;
 }
@@ -187,7 +189,7 @@ export async function hostSession(id: string, agents: Record<string, SessionAgen
           const root = await workRoot(session); // every turn, so a removed worktree stops the session here
           proc ??= sessionAgent(session.integration, agents).open(session, root);
         } catch (e) {
-          emit(id, turns(readEvents(id), true).at(-1)!.n, { type: 'error', message: (e as Error).message });
+          emit(id, turns(readEvents(id), true).at(-1)!.n, { type: 'error', message: (e as Error).message, ...(e instanceof BindingError ? { binding: true } : {}) });
           continue;
         }
         if ((await oneTurn(id, proc)).staleHint) {

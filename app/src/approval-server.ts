@@ -15,6 +15,7 @@ import { decidable, getAgentSetup, itemOn, setupStatus } from './setup.ts';
 import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 import { requestMerge } from './merge.ts';
+import { bindingProblem } from './binding.ts';
 import { readRepo } from './repo-read.ts';
 import { getProject, listProjects } from './store.ts';
 
@@ -169,11 +170,12 @@ if (wt && session.role !== ORCHESTRATION && !task?.parentId) {
     },
     async (a) => {
       try {
+        // The stored binding, checked against git before the card and again after Allow (#62); requestMerge asks gh about merged pull requests itself.
         const text = await requestMerge(wt.branch, wt.path, a, async (detail) => {
           const id = randomUUID();
           emit(sessionId, currentTurn(), { type: 'approval', id, tool: 'Merge pull request', detail });
           return awaitAnswer(sessionId, id);
-        });
+        }, () => bindingProblem(loadSession(sessionId), { merged: false }));
         return { content: [{ type: 'text' as const, text }] };
       } catch (e) {
         return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };

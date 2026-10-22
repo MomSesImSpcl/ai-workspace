@@ -83,6 +83,7 @@ export interface Session {
   taskCap?: number; // a chat's cap for the tasks it starts (the switch next to the chat box); unset: uncapped
   taskMode?: string; // the permission mode of the tasks a chat starts; unset: acceptEdits, '': the agent's settings
   worktree?: Worktree; // the session's own git worktree (selfdev-001); a task shares its chat's; unset: the project folder
+  continuedFrom?: { id: string; turn: number }; // the chat this one continues with a new binding (#62) and its last turn copied here
   createdAt: string;
   updatedAt: string;
 }
@@ -117,7 +118,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'usage'; usage: Usage }
   | { type: 'live-usage'; usage: Usage } // the running turn's usage so far, replaced by its 'usage' when it ends
   | { type: 'done' }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; binding?: boolean } // binding: refused by `bindingProblem` (#62); the chat offers to continue elsewhere
   | { type: 'stopped'; reason?: string } // reason: the workspace stopped it (budget, a repeat), not the user
   | { type: 'interrupted'; step: number; label?: string }
 );
@@ -411,6 +412,7 @@ export interface Turn {
   switchedTo?: { from: string; to: string; model?: string }; // after this turn the session moved to another agent
   state: TurnState;
   error?: string;
+  binding?: boolean; // the error is a stale binding (#62): the chat offers "Continue in a new chat"
   reason?: string; // why the workspace stopped the turn (budget, a possible repeat)
   usage: Usage;
   liveUsage?: Usage; // while working: usage streamed so far
@@ -455,7 +457,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);
     else if (e.type === 'live-usage') t.liveUsage = e.usage;
     else if (e.type === 'done' || e.type === 'stopped' || e.type === 'interrupted') Object.assign(t, { state: e.type === 'done' ? 'done' : e.type, endedAt: e.at, reason: e.type === 'stopped' ? e.reason : undefined });
-    else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at });
+    else if (e.type === 'error') Object.assign(t, { state: 'error', error: e.message, endedAt: e.at, ...(e.binding ? { binding: true } : {}) });
   }
   const last = out.at(-1);
   if (last?.state === 'working' && !running) last.state = 'interrupted';
