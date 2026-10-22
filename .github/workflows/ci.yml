@@ -1,7 +1,7 @@
 name: CI
 
 # One run per pull request change. main's ruleset (ADR 0016) requires a pull request that is up to date with main
-# and passed all four checks, so the squash commit on main holds exactly the tested code: no second run on main.
+# and passed the required checks, so the squash commit on main holds exactly the tested code: no second run on main.
 on:
   pull_request:
     branches: [main]
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 2 # enough to compare the pull request's merge commit with its base
-      # main's ruleset requires a pull request and all four checks (test on each system, private-data). A change to only docs and text files (*.md, *.txt) passes these checks without testing, so a
+      # main's ruleset requires a pull request and the Ubuntu, Windows and private-data checks; macOS runs but is not required. A change to only docs and text files (*.md, *.txt) passes these checks without testing, so a
       # docs pull request with auto-merge (gh pr merge --auto --squash) lands within seconds. Any other file runs it all.
       - id: changes
         shell: bash

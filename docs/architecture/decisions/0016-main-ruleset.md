@@ -17,7 +17,12 @@ CI runs Ubuntu only for draft pull requests and all three systems for ready ones
 
 The user turned on "Require branches to be up to date before merging". A pull request merges only when it contains `main`'s latest commit and passed all four checks on that code, so the squash commit equals what was tested. CI therefore no longer runs on pushes to `main`; that run repeated the pull request's run and sent extra mails. `request_merge` merges `main` into the branch before it pushes ([ADR 0017](0017-merge-through-workspace.md)).
 
+## Amendment 2026-10-22: macOS runs but is not required
+
+The required checks are now `test (ubuntu-latest)`, `test (windows-latest)` and `private-data`. `test (macos-latest)` still runs on every ready pull request and shows its result, but a merge no longer waits for it. macOS runners on GitHub sometimes queued for up to 29 minutes while every job ran in under 2 minutes, which held up each merge. Windows (the user's system) and Ubuntu (most Unix behaviour) keep blocking broken changes. A macOS-only failure can reach `main` and is then fixed in a follow-up pull request (user, [history](../../history/2026-10-22-02-macos-check-optional/SUMMARY.md)).
+
 ## Rejected alternatives
 
 - Admin bypass for docs only: GitHub rulesets cannot limit a bypass to file types; a full bypass would also let code skip the checks.
 - Direct pushes with a CI warning afterwards: flags unchecked code but cannot stop it.
+- Merge once the first test job passes (2026-10-22): Ubuntu always finishes first, so Windows would no longer gate merges in practice.
