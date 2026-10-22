@@ -10,6 +10,7 @@ let total = { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, cacheWriteIn
 let waiting = null; // the turn waiting for an interrupt
 const answers = new Map();
 let started = {}; // the last thread/start params, shown by an "args" turn
+let aiws; // the workspace server's start-up status, shown by an "args" turn
 
 function spend(turnId, input, output) {
   const last = { totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 };
@@ -50,13 +51,19 @@ for await (const line of createInterface({ input: process.stdin })) {
   else if (m.method === 'thread/start' || m.method === 'thread/resume') {
     if (m.method === 'thread/resume' && m.params.threadId !== thread) { out({ id: m.id, error: { message: 'no thread' } }); continue; }
     started = m.params;
-    out({ id: m.id, result: { thread: { id: thread }, model: m.params.model ?? 'fake-model', approvalPolicy: m.params.approvalPolicy ?? 'on-request', sandbox: { type: m.params.sandbox ?? 'workspaceWrite' }, instructionSources: ['AGENTS.md'] } });
+    // Like Codex, the workspace server connects in the background after the thread starts.
+    if (m.params.config?.['mcp_servers.aiws']) {
+      aiws = 'starting';
+      out({ method: 'mcpServer/startupStatus/updated', params: { name: 'aiws', status: 'starting' } });
+      setTimeout(() => { aiws = 'ready'; out({ method: 'mcpServer/startupStatus/updated', params: { name: 'aiws', status: 'ready' } }); }, 300);
+    }
+    out({ id: m.id, result:{ thread: { id: thread }, model: m.params.model ?? 'fake-model', approvalPolicy: m.params.approvalPolicy ?? 'on-request', sandbox: { type: m.params.sandbox ?? 'workspaceWrite' }, instructionSources: ['AGENTS.md'] } });
   } else if (m.method === 'turn/start') {
     turnNo++;
     const turnId = `turn-${turnNo}`;
     out({ id: m.id, result: { turn: { id: turnId, items: [], status: 'inProgress' } } });
     if (m.params.input[0].text.includes('args')) {
-      const text = JSON.stringify({ config: started.config, developerInstructions: started.developerInstructions, disabledPluginIds: m.params.disabledPluginIds });
+      const text = JSON.stringify({ config: started.config, developerInstructions: started.developerInstructions, disabledPluginIds: m.params.disabledPluginIds, aiws });
       out({ method: 'item/completed', params: { threadId: thread, turnId, item: { type: 'agentMessage', id: 'm1', text } } });
       completed(turnId, 'completed');
     } else void run(turnId, m.params.input[0].text);

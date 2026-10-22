@@ -95,9 +95,10 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   if (e.type === 'system' && e.subtype === 'init') {
     const paths = Array.isArray(e.memory_paths) ? e.memory_paths : e.memory_paths && typeof e.memory_paths === 'object' ? Object.values(e.memory_paths) : [];
     const ruleFiles = paths.map((p) => (typeof p === 'string' ? p : String((p as { path?: string }).path ?? JSON.stringify(p))));
-    // Built-in plugins ship with Claude Code; the workspace's own server (aiws) is not the user's. Claude Code drops a server named "workspace".
+    // Built-in plugins ship with Claude Code. The workspace's own server (aiws) stays listed, as with Codex, so a turn
+    // that started before it connected shows in the log. Claude Code drops a server named "workspace".
     const plugins = e.plugins?.filter((p) => p.path !== 'builtin').map((p) => p.name);
-    const mcp = e.mcp_servers?.filter((m) => m.name !== 'aiws').map(({ name, status }) => ({ name, status }));
+    const mcp = e.mcp_servers?.map(({ name, status }) => ({ name, status }));
     return { events: [{ type: 'init', model: e.model, permissionMode: e.permissionMode, ruleFiles, plugins, mcp, skills: e.skills?.length }], sessionId: e.session_id };
   }
   // Warnings Claude Code shows in its own UI, for example a plugin hook that dropped the prompt.
