@@ -4,6 +4,8 @@ Read this file at startup. Search [history](history/) folder summaries only for 
 
 ## Active / blocked
 
+**Orchestrator reads storage** (2026-10-22, user, branch `claude/orchestrator-reads-storage`): Claude Code orchestrators get `--add-dir` for workspace storage; Codex orchestrators get their shell by default, inside the read-only sandbox. The orchestrator note says where chat histories and the audit log are. The write guard lets through more read-only commands (`sort`, `uniq`, `cut`, `tr`, `nl`, `date`, `read`, `git reflog`, shell loops). Typecheck clean, tests 99/99 ([history](history/2026-10-22-04-orchestrator-reads-storage/SUMMARY.md)). Next action: merge, then ask an orchestrator about past sessions in the app.
+
 **macOS check optional** (2026-10-22, user): the `main` ruleset requires only the Ubuntu, Windows and private-data checks; macOS still runs on every ready pull request but merges no longer wait for its runner queue (up to 29 min). [ADR 0016](architecture/decisions/0016-main-ruleset.md) amended ([history](history/2026-10-22-02-macos-check-optional/SUMMARY.md)).
 
 **Codex waits for workspace tools** (2026-10-22, branch `claude/codex-orchestrator-task-start-753ee6`): a new Codex chat's first turn could start before `aiws` connected, so it lacked `start_task`. The Codex adapter now waits for `aiws` before the first turn. Claude Code already waits (checked with the real CLI) and now records `aiws`'s status. Typecheck clean, tests 99/99 ([history](history/2026-10-22-01-codex-waits-for-workspace-tools/SUMMARY.md)). Merged (PR #65, 2026-10-22). Next action: confirm in the app with a new Codex orchestrator chat.

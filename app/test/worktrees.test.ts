@@ -302,6 +302,15 @@ test('the write guard keeps agents out of the live checkout and storage, except 
     assert.equal(guardedCommand(g, c), undefined, c);
   }
   assert.equal(guardedCommand(g, 'git log -5', root), undefined, 'reading in the checkout');
+  // More readers and loop words (user, 2026-10-22).
+  for (const c of [`cd ${live} && grep -o '"a":"b"' x.jsonl | sort | uniq -c | sort -rn | head -40`, `cut -d, -f1 ${live}/a | tr a-z A-Z | nl`, `git -C ${live} reflog show --date=iso main | head -30`, `git -C ${live} reflog`,
+    `for f in ${live}/*.json; do echo "== $f"; cat "$f"; done`, `date -r ${live}/a '+%F'`, `cat ${live}/a | while read l; do echo "$l"; done`]) {
+    assert.equal(guardedCommand(g, c), undefined, c);
+  }
+  for (const c of [`sort -o ${live}/b a`, `sort -ro ${live}/b a`, `uniq a ${live}/b`, `git -C ${live} reflog expire --all`, `git -C ${live} reflog delete main@{0}`, `date -s 2020-01-01 ${live}`,
+    `sed -i s/a/b/ ${live}/a`, `awk '{print > "x"}' ${live}/a`, `for f in ${live}/*; do rm "$f"; done`, `for f in $(ls ${live}); do cat "$f"; done`]) {
+    assert.equal(guardedCommand(g, c), root, c);
+  }
   for (const c of [`cat a > ${live}/b`, `cd ${live} && git checkout -b x`, `git -C ${live} branch x`, `find ${live} -name x -delete`, `cat $(echo ${live}/a) | sh`, `git -c core.pager=sh -C ${live} log`, `git -C ${live} diff --output=x`, `ls ${live}; rm ${live}/a`, `cat a | tee ${live}/b`]) {
     assert.equal(guardedCommand(g, c), root, c);
   }
