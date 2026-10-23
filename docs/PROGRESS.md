@@ -4,6 +4,8 @@ Read this file at startup. Search [history](history/) folder summaries only for 
 
 ## Active / blocked
 
+**One agent interface, code over instruction text: decided, not built** (2026-10-23, user, [principles 11–12](PRINCIPLES.md#product-invariants), [ADR 0023](architecture/decisions/0023-one-agent-interface.md)): every agent gets the same instructions and tools through one adapter interface, with no agent-specific instruction text; enforceable rules become code. Iterations: unified interface and instruction builder, capability parity, rules into schemas and code, editing ([history](history/2026-10-23-06-one-agent-interface/SUMMARY.md)). Next action: specify iteration one.
+
 **Branch heading and composer fixes** (2026-10-23, user, branch `claude/branch-heading-fixes`): branch headings get a ⋯ button for their menu; the session list is rebuilt only when it changed, so hover no longer flickers every second; the composer shrinks with a narrow chat column instead of spilling over the page ([history](history/2026-10-23-03-branch-heading-fixes/SUMMARY.md)). Next action: merge.
 
 **Test instance of a branch** (2026-10-23, user, branch `claude/test-instance`, [selfdev-009](features/self-development/SPEC.md#requirements), [ADR 0020](architecture/decisions/0020-test-instance.md)): right-click a branch heading in the app project's sessions, Open test instance; own storage, copied settings, no update buttons, title `Test Branch - <branch>`. Tests 108/108, started for real on Windows ([history](history/2026-10-23-02-test-instance/SUMMARY.md)). Next action: after merge and Update and restart, open a test instance from the menu and check its titlebar and hidden button. ui-verification's agent parts stay unbuilt (user).

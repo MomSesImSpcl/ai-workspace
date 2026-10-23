@@ -21,6 +21,8 @@ Binding across every feature. Detail lives in the linked feature specs and [arch
 8. Enforce least privilege, scoped tools, auditability, review and rollback. Protect current user work. Security/approval enforcement belongs in deterministic services.
 9. Deliver tested vertical slices incrementally. A UI or mock is not implemented behavior. Local-first is useful, but deployment must allow local and central services without coupling the product to either topology.
 10. Reuse before building. Prefer existing standards and maintained solutions (for example MCP for tools and the `SKILL.md` format for skills) over custom implementations; build only what no suitable option covers. Software, libraries and services the workspace depends on MUST be free to use. Paid model or provider usage remains an optional user choice, never a requirement.
+11. One agent interface. Agent integrations implement one shared interface; the workspace offers every agent the same tools, instructions and lookups under the same names, and an agent simply does not use what it does not need. Agent-specific code stays inside its adapter and as small as possible; no instruction text names or targets one agent. A need of one agent is added to the shared interface, available to all ([ADR 0023](architecture/decisions/0023-one-agent-interface.md)).
+12. Code over instruction text. Behavior the workspace can enforce or produce in code (tool schemas, required parameters, defaults, validation, fixed output) MUST be built that way rather than written as instruction text an agent could ignore or read differently. Instruction text is kept for judgment that code cannot make, and kept short ([ADR 0023](architecture/decisions/0023-one-agent-interface.md)).
 
 ## Cross-platform contract
 
