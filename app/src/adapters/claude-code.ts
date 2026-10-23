@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { GUARD_MARK, guardFor } from '../worktrees.ts';
 import { forget, guardServer, guardToken } from '../guard.ts';
-import { MERGE_NOTE } from '../merge.ts';
-import { commandFile, DELEGATE, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
-import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ORCHESTRATOR_TOOLS, ownInstructions, READ_REPO_NOTE, TASK_NOTE } from '../sessions.ts';
+import { agentInstructions } from '../prompt.ts';
+import { commandFile, minimalPrompt, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
+import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_TOOLS } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
-// workspace server, which shows them as approval cards (sessions-019) and offers tasks `delegate`.
+// workspace server, which shows them as approval cards (sessions-019).
 
 interface ClaudeResult {
   subtype: string;
@@ -63,7 +63,6 @@ export function activityLabel(name: string, input: Record<string, unknown>, root
   if (name === 'WebSearch') return { label: `Searching the web: ${s('query')}` };
   if (name === 'Task' || name === 'Agent') return { label: `Delegating: ${s('description')}` };
   if (name === 'TodoWrite') return { label: 'Updating the to-do list' };
-  if (name === 'mcp__aiws__delegate') return { label: `Subtask: ${s('goal')}` };
   if (name === 'mcp__aiws__start_task') return { label: `Starting task: ${s('goal')}` };
   // Any other tool: its name and the first text it was given, so the step says what it worked on.
   const first = Object.values(input).find((v) => typeof v === 'string' && v.trim());
@@ -178,7 +177,6 @@ export function claudeInventory(root: string): SetupItem[] {
   const label = (name: string) => { const from = pluginSkills.get(readText(join(claudeHome(), 'skills', name, 'SKILL.md')) ?? ''); return from ? `${name} (copy of the ${from} plugin's skill)` : name; };
   if (skills.length) items.push({ id: 'skills', kind: 'skills', title: 'Standalone skills', description: `Skills not from a plugin, switched together: ${skills.map(label).join(', ')}`, parts: skills.map((name) => ({ name: label(name), path: fileOr(join(claudeHome(), 'skills', name), 'SKILL.md') })) });
   for (const [name, description] of Object.entries(CLAUDE_TOOLS)) items.push({ id: `tool:${name}`, kind: 'tool', title: name, description });
-  items.push(DELEGATE);
   items.push({ id: 'prompt', kind: 'prompt', title: "Claude Code's own instructions", description: 'Its system prompt: how to work with tools, git and commits, and the environment. Off: a short workspace prompt, about 3k tokens less per call' });
   const hooks = Object.keys(readJsonFile<ClaudeSettings>(join(claudeHome(), 'settings.json'))?.hooks ?? {});
   if (hooks.length) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: `Hooks in your Claude Code settings: ${hooks.join(', ')}`, path: join(claudeHome(), 'settings.json') });
@@ -291,8 +289,8 @@ export class ClaudeProcess implements AgentProcess {
       : { type: 'command', command: [process.execPath, guardHook, ...(g.merge ? ['--merge'] : []), g.allow, ...g.deny].map(shellPath).join(' '), timeout: 30 };
     settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [guard] }] };
     if (session.task) {
-      // A task's own `delegate` runs without a card; a call that repeats an interrupted attempt is held (runtime-004).
-      args.push('--allowedTools', session.task.parentId ? 'mcp__aiws__request_setup,mcp__aiws__read_repo' : `mcp__aiws__delegate,mcp__aiws__request_setup,mcp__aiws__read_repo${merges ? ',mcp__aiws__request_merge' : ''}`);
+      // A task's workspace tools run without a card; a call that repeats an interrupted attempt is held (runtime-004).
+      args.push('--allowedTools', `mcp__aiws__request_setup,mcp__aiws__read_repo${merges ? ',mcp__aiws__request_merge' : ''}`);
       const hook = { type: 'command', command: `${shellPath(process.execPath)} ${shellPath(repeatHook)} ${session.id}`, timeout: 30 };
       settings.hooks = { ...settings.hooks, PreToolUse: [...(settings.hooks?.PreToolUse ?? []), { matcher: '*', hooks: [hook] }] };
     } else if (session.role === ORCHESTRATION) {
@@ -308,7 +306,7 @@ export class ClaudeProcess implements AgentProcess {
     if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', `AI Workspace ${session.task ? 'task' : 'session'}: effort level ${this.effort ?? "not set by the workspace (the agent's own default)"}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.${session.task ? ` ${TASK_NOTE} ${READ_REPO_NOTE}` + (session.task.parentId || !(setup?.on(DELEGATE) ?? true) ? '' : ' To hand a self-contained part of the work to the agent of another workspace role, use the mcp__aiws__delegate tool.') + ownInstructions('implementationInstructions') : session.role === ORCHESTRATION ? ` ${orchestratorNote()}` : ` To run self-contained work in the background as a task, use the mcp__aiws__start_task tool. ${READ_REPO_NOTE}` + ownInstructions('chatInstructions')}${merges ? ` ${MERGE_NOTE}` : ''}${setup?.workspaceRules ? `\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}` : ''}`);
+    args.push('--append-system-prompt', agentInstructions(session, { effort: this.effort, workspaceRules: setup?.workspaceRules }));
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;

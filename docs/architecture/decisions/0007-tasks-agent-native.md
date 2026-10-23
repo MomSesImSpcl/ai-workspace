@@ -4,7 +4,7 @@ Status: accepted (2026-10-17, chosen by the user); implemented 2026-10-17 as bac
 
 ## Decision
 
-- **Same start as sessions:** a task starts the agent with its own tools, settings, plugins, hooks and MCP servers (sessions-025); the workspace MCP server keeps only `delegate`. The "Allow writes" option is removed.
+(Superseded 2026-10-23 by [ADR 0024](0024-no-delegate.md): `delegate` is removed; tasks do not start tasks.) - **Same start as sessions:** a task starts the agent with its own tools, settings, plugins, hooks and MCP servers (sessions-025); the workspace MCP server keeps only `delegate`. The "Allow writes" option is removed.
 - **Approvals wait until answered:** an "ask" from the agent becomes an approval card in the task view; the task waits, with no timeout, and the waiting state is visible in the task list (and later in notifications).
 - **Permission mode:** the task form defaults to the agent's own settings and offers a per-task override passed as the agent's own flag (Claude Code `--permission-mode`, typically `acceptEdits` for long background tasks). `bypassPermissions` is never a default and shows a warning.
 - **Recovery:** before each step the turn-start version-control state is recorded (sessions-021). On resume the agent gets the interruption marker and the changes since the step started.

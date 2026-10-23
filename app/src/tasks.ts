@@ -3,7 +3,6 @@
 // tree. Status is read from the session's event log.
 import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { assignmentFor } from './roles.ts';
 import { addMessage, addUsage, allSessions, createSession, emit, loadSession, queueReply, readEvents, requestStop, saveSession, sessionFile, sessionWorking, turnRunning, turns, used, type Session, type SessionEvent, type Turn, type Usage } from './sessions.ts';
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
@@ -66,7 +65,7 @@ export function createTask(f: NewTask): Session {
 // servers in a Windows job that is closed with the agent).
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
-  if (chat.task) throw new Error('Tasks start subtasks with delegate, not start_task');
+  if (chat.task) throw new Error('Tasks do not start tasks: name the follow-up work in your result, and the chat starts it');
   // A task based on an earlier one keeps that one's setup items.
   const setup = [...new Set([...(f.basedOn ? loadSession(f.basedOn).task?.setup ?? [] : []), ...(f.setup ?? [])])];
   const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
@@ -187,38 +186,6 @@ export function resumeTask(id: string, tokenBudget?: number, text = RESUME): Ses
   saveSession(s);
   addMessage(id, text, text === RESUME);
   return s;
-}
-
-const lastTurn = (id: string) => turns(readEvents(id), turnRunning(id)).at(-1);
-
-// Runs a subtask under another role and returns its final reply (the workspace `delegate` tool). The child
-// gets the parent's project, at most its remaining budget, and the parent's mode when it is the same agent.
-// Delegating the same goal again reuses the child, so a resumed parent does not redo it.
-export async function delegate(parentId: string, goal: string, role = 'Implementation'): Promise<string> {
-  const parent = taskOf(parentId);
-  if (parent.task.parentId) throw new Error('Delegation depth limit: subtasks cannot delegate');
-  const remaining = parent.task.tokenBudget === undefined ? undefined : parent.task.tokenBudget - taskUsed(parent);
-  if (remaining !== undefined && remaining <= 0) throw new Error('Parent token budget exhausted');
-  let child = childrenOf(parentId).find((c) => turns(readEvents(c.id), true)[0]?.user === goal);
-  if (child?.task?.cancelled) throw new Error(`Subtask ${child.id} was cancelled`);
-  if (!child) {
-    const { integration } = assignmentFor(role);
-    child = createTask({ projectId: parent.projectId, goal, role, tokenBudget: remaining, permissionMode: integration === parent.integration ? parent.permissionMode : undefined, parentId, setup: integration === parent.integration ? parent.task.setup : undefined });
-    audit({ kind: 'delegate', taskId: parentId, childId: child.id, role, integration });
-  } else if (lastTurn(child.id)?.state === 'done') {
-    return `subtask ${child.id} completed\n${lastTurn(child.id)!.text}`;
-  } else if (lastTurn(child.id)?.state !== 'working') {
-    resumeTask(child.id, remaining === undefined ? undefined : used(usageOf(child.id)) + remaining);
-  }
-  startTurn(child.id);
-  let last = lastTurn(child.id);
-  while (last?.state === 'working') {
-    await sleep(500);
-    last = lastTurn(child.id);
-  }
-  const status = taskStatus(loadSession(child.id), last ? [last] : []);
-  if (status !== 'completed') throw new Error(`subtask ${child.id} ${status}${last?.marker ? `: ${last.marker}` : ''}${last?.error ? ` (${last.error})` : ''}`);
-  return `subtask ${child.id} completed\n${last!.text}`;
 }
 
 // --- Tasks recorded before they were sessions (core slice 1): converted once into task sessions with the

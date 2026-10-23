@@ -10,7 +10,7 @@ import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, ORCHESTRATOR_NOTE, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
 import { stateOf } from '../src/setup.ts';
-import { cancelTask, childrenOf, createTask, delegate, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
+import { cancelTask, childrenOf, createTask, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
@@ -162,20 +162,6 @@ test('codex has no pre-run check: a repeated call stops the task and names the e
   assert.match(last(t.id).marker!, /possible repeat: step 1: Running `echo repeat` already ran before the interruption/);
 });
 
-test('delegate runs a subtask under a role, charges the parent, reuses it for the same goal and has a depth limit', async () => {
-  const parent = task('parent', 5000);
-  const out = await delegate(parent.id, 'sub goal');
-  const [child] = childrenOf(parent.id);
-  assert.match(out, new RegExp(`^subtask ${child!.id} completed\\nturn 1 pid \\d+ effort default$`));
-  assert.equal(child!.task!.tokenBudget, 5000);
-  assert.equal(taskUsed(loadSession(parent.id)), 12);
-  assert.equal(await delegate(parent.id, 'sub goal'), out);
-  assert.equal(childrenOf(parent.id).length, 1);
-  await assert.rejects(delegate(child!.id, 'deeper'), /depth limit/);
-  cancelTask(parent.id);
-  assert.equal(loadSession(child!.id).task!.cancelled, true);
-});
-
 test('a chat starts a task: the task records the chat, which shows it with its approvals and result, and takes replies', async () => {
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(chat.id, 'please start one');
@@ -184,7 +170,7 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   assert.deepEqual(last(chat.id).tasks, [t.id]);
   startPendingTasks(chat.id); // the chat's runner does this while its turn runs
   await until(() => status(t.id) === 'completed');
-  assert.throws(() => startFromSession(t.id, { goal: 'x', role: 'Implementation', tokenBudget: 10 }), /delegate/);
+  assert.throws(() => startFromSession(t.id, { goal: 'x', role: 'Implementation', tokenBudget: 10 }), /Tasks do not start tasks/);
   assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', tokenBudget: 0 }), /token budget/);
   assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', tokenBudget: 10, permissionMode: 'yolo' }), /Unknown permission mode/);
   const server = serve(0);
@@ -204,7 +190,7 @@ test('a chat starts a task: the task records the chat, which shows it with its a
   }
 });
 
-test('the workspace MCP server offers start_task to a chat session, delegate to a top-level task and read_repo to both', async () => {
+test('the workspace MCP server offers start_task to a chat session, request_setup to a task and read_repo to both', async () => {
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   const tools = async (id: string) => {
     const client = new Client({ name: 'test', version: '0' });
@@ -212,7 +198,7 @@ test('the workspace MCP server offers start_task to a chat session, delegate to 
     try { return (await client.listTools()).tools.map((x) => x.name).sort(); } finally { await client.close(); }
   };
   assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'read_repo', 'rename_task', 'reply_task', 'start_task', 'task_status']);
-  assert.deepEqual(await tools(task('t').id), ['approve', 'delegate', 'read_repo', 'request_setup']); // a command-line task gets every allowed item
+  assert.deepEqual(await tools(task('t').id), ['approve', 'read_repo', 'request_setup']); // no delegate: tasks do not start tasks (ADR 0024)
 });
 
 test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
@@ -608,4 +594,20 @@ test("Codex's shell is on by default, for tasks and the orchestrator; a set stat
 test('the continue after request_setup is recognised, a user reply is not', () => {
   assert.equal(isSetupContinue(setupContinue(['feature:shell_tool', 'tool:Bash'])), true);
   assert.equal(isSetupContinue('Please continue the task.'), false);
+});
+
+test('both agents receive the same instructions in every role (ADR 0023)', async () => {
+  const sent = async (agent: string, role: string) => {
+    const s = role === 'Implementation' ? createTask({ projectId: 'P', goal: 'args', role, agent }) : createSession('P', role, { integration: agent });
+    if (!s.task) addMessage(s.id, 'args');
+    await runTurn(s.id);
+    if (agent === 'codex') return (JSON.parse(last(s.id).text) as { developerInstructions: string }).developerInstructions;
+    const args = JSON.parse(last(s.id).text) as string[];
+    return args[args.indexOf('--append-system-prompt') + 1];
+  };
+  for (const role of ['Chat', 'Orchestration', 'Implementation']) {
+    const claude = await sent('claude-code', role);
+    assert.match(claude!, /^AI Workspace (session|task): effort level/, role);
+    assert.equal(await sent('codex', role), claude, role);
+  }
 });

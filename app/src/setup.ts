@@ -8,8 +8,6 @@ import { ORCHESTRATION, type Session } from './sessions.ts';
 // work without (when listed, a task needs at least one), `feature` a switchable built-in capability,
 // `prompt` the agent's own system prompt. Agents need not expose the same kinds or ids.
 export type ItemKind = 'plugin' | 'mcp' | 'apps' | 'skills' | 'hooks' | 'tool' | 'feature' | 'prompt' | 'workspace';
-// The workspace's own `delegate` tool for tasks: a task without it cannot hand work to a subtask.
-export const DELEGATE: SetupItem = { id: 'delegate', kind: 'workspace', title: 'Delegate', description: "Hand a self-contained part to another workspace role's agent as a subtask" };
 // `path` is the item's file or folder and `parts` the things it switches together, each with its own, when known.
 export interface SetupItem { id: string; kind: ItemKind; title: string; description?: string; path?: string; parts?: { name: string; path: string }[] }
 export type ItemState = 'on' | 'decide' | 'off';

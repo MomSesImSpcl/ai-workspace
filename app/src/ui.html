@@ -285,6 +285,25 @@
   .app[data-sidebar=collapsed] .drawer[data-wide=true] { width: min(max(var(--drawer-w), calc(var(--agents, 1) * 576px + 34px)), calc(100% - 48px)); }
   #drawer-settings { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   #drawer-settings [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; }
+  /* Agent instructions: the list on the left, the selected instruction on the right, each scrolling on its own. */
+  .drawer[data-wide=instructions] { width: min(1100px, calc(100% - var(--sessions-w) - 48px)); }
+  .app[data-sidebar=collapsed] .drawer[data-wide=instructions] { width: min(1100px, calc(100% - 48px)); }
+  #spanel-instructions { display: grid; grid-template-columns: minmax(200px, 320px) minmax(0, 1fr); gap: 16px; overflow: hidden !important; }
+  .instr-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .instr-filters { flex-wrap: nowrap; gap: 6px; }
+  .instr-filters select { flex: 1 1 0; min-width: 0; }
+  #instr-items { flex: 1; min-height: 0; overflow-y: auto; }
+  .instr-group { position: sticky; top: 0; z-index: 1; margin: 0; padding: 12px 0 4px; background: var(--panel); border-bottom: 1px solid var(--hairline); color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .instr-item { display: grid; gap: 2px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+  .instr-item:hover { background: var(--surface-2); }
+  .instr-item[aria-current=true] { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+  .instr-item span { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .instr-detail { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 12px; padding-right: 6px; }
+  .instr-detail h3 { margin: 0; font-size: 15px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+  .instr-detail dl { font-size: 12px; }
+  .instr-detail pre { max-height: none; }
+  .instr-detail .ph { color: var(--accent-bright); font-style: italic; } /* a value filled in at run time, never a real value */
+  .instr-badge { display: inline-block; padding: 1px 6px; border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); font-size: 11px; color: var(--text-dim); }
   #spanel-setup { display: flex; flex-direction: column; gap: 6px; overflow: hidden !important; }
   #setup-items { flex: 1; min-height: 0; display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
   #setup-items > .agent-col { flex: 0 0 560px; max-width: 90%; min-width: 0; overflow-y: auto; padding-right: 6px; }
@@ -450,6 +469,7 @@
           <button role="tab" id="stab-general" data-stab="general" aria-controls="spanel-general">General</button>
           <button role="tab" id="stab-agents" data-stab="agents" aria-controls="spanel-agents">Agents</button>
           <button role="tab" id="stab-setup" data-stab="setup" aria-controls="spanel-setup">Agent setup</button>
+          <button role="tab" id="stab-instructions" data-stab="instructions" aria-controls="spanel-instructions" hidden>Agent instructions</button>
         </div>
         <div role="tabpanel" id="spanel-general" aria-labelledby="stab-general">
         <form id="workspace-form" style="display:grid;gap:6px;margin-bottom:18px"><b>Workspace folder</b>
@@ -477,6 +497,15 @@
           <div id="rule-switches" style="display:grid;gap:4px"></div>
           <div class="row" style="align-items:center"><button class="btn small" id="list-setup" type="button">List again</button><span class="meta" id="setup-status" role="status"></span></div>
           <div id="setup-items"></div></div>
+        </div>
+        <!-- Every instruction the workspace writes for agents, read only, in a development environment (agent-instructions-001–005, ADR 0022). -->
+        <div role="tabpanel" id="spanel-instructions" aria-labelledby="stab-instructions">
+          <div class="instr-list">
+            <input id="instr-search" type="search" placeholder="Search instructions" aria-label="Search instructions">
+            <div class="row instr-filters"><select id="instr-role" aria-label="Filter by role"></select></div>
+            <div id="instr-items" role="list"></div>
+          </div>
+          <div id="instr-detail" class="instr-detail" aria-live="polite"></div>
         </div>
       </div>
     </aside>
@@ -1068,14 +1097,17 @@ async function removeBranch(path) {
 
 function renderDrawer() {
   if (state.tool === 'settings') {
-    const tab = pref.get('settingsTab', 'general');
-    $('#drawer').dataset.wide = String(tab === 'setup');
+    let tab = pref.get('settingsTab', 'general');
+    if (tab === 'instructions' && !state.instructions) tab = 'general'; // only in a development environment
+    $('#stab-instructions').hidden = !state.instructions;
+    $('#drawer').dataset.wide = tab === 'setup' ? 'true' : tab === 'instructions' ? 'instructions' : 'false';
     for (const b of $$('[data-stab]')) {
       b.setAttribute('aria-selected', String(b.dataset.stab === tab));
       b.tabIndex = b.dataset.stab === tab ? 0 : -1;
       $(`#spanel-${b.dataset.stab}`).hidden = b.dataset.stab !== tab;
     }
     renderAgentSetup();
+    if (tab === 'instructions') renderInstructions();
     renderBranches(tab);
     // Not rebuilt while a field in it is in use, so typing and an open list are kept.
     if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
@@ -1302,6 +1334,79 @@ async function pickerChanged(which) {
 }
 for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pickerChanged(id === 'agent' ? 'agent' : id);
 $('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null, true); };
+// Agent instructions in Settings (agent-instructions-001–005): a read-only catalog of what the workspace tells agents,
+// loaded the first time the tab opens. Placeholders are marked as such, so no runtime value is implied.
+const INSTR_INSPECT = {
+  shown: 'Shown in full: the workspace holds this text.',
+  file: 'A file on this computer; the agent reads it itself. Open it to read it.',
+  hidden: 'Not inspectable: part of the agent itself. The workspace cannot read it, and this list does not contain it.',
+  unknown: 'Not listed: the workspace does not read these, so it cannot say what they contain.',
+};
+const instr = { data: null, loading: false, error: '', selected: null };
+// Roles only: every agent gets the same instructions (ADR 0023). Where one still misses an entry, that gap is named.
+const appliesText = (applies) => Object.keys(applies).join(' · ') || '—';
+const gapsText = (applies, agents) => {
+  const gaps = agents.map((a) => [a, Object.entries(applies).filter(([, list]) => !list.includes(a)).map(([r]) => r)]).filter(([, roles]) => roles.length);
+  return gaps.map(([a, roles]) => `${a} (${roles.join(', ')})`).join(' · ');
+};
+const withPlaceholders = (text) => esc(text).replace(/\{(\w+)\}/g, '<span class="ph" title="Filled in at run time">{$1}</span>');
+function instrMatches(e) {
+  const q = $('#instr-search').value.trim().toLowerCase(), role = $('#instr-role').value;
+  if (role && !e.applies[role]) return false;
+  return !q || [e.title, e.purpose, e.text, e.id, ...(e.variants ?? []).map((v) => v.text)].some((t) => t?.toLowerCase().includes(q));
+}
+function renderInstructions() {
+  if (!instr.data) {
+    if (!instr.loading && !instr.error) {
+      instr.loading = true;
+      api('/api/instructions').then((d) => {
+        instr.data = d;
+        $('#instr-role').innerHTML = option('', 'All roles', true) + d.roles.map((r) => option(r, r, false)).join('');
+      }, (err) => (instr.error = err.message)).finally(() => { instr.loading = false; renderInstructions(); });
+    }
+    $('#instr-items').innerHTML = `<p class="meta">${esc(instr.error || 'Loading…')}</p>`;
+    $('#instr-detail').innerHTML = '';
+    return;
+  }
+  const d = instr.data;
+  instr.selected ??= pref.get('instruction', ''); // prefs load after this script starts
+  const item = (id, title, purpose) => `<button type="button" class="instr-item" role="listitem" data-instr-id="${esc(id)}" aria-current="${id === instr.selected}" title="${esc(purpose)}"><b>${esc(title)}</b><span>${esc(purpose)}</span></button>`;
+  const groups = d.groups.map((g) => {
+    const list = d.entries.filter((e) => e.group === g && instrMatches(e)).sort((a, b) => a.title.localeCompare(b.title));
+    return list.length ? `<h4 class="instr-group">${esc(g)}</h4>${list.map((e) => item(e.id, e.title, e.purpose)).join('')}` : '';
+  }).join('');
+  const external = d.external.filter(instrMatches).sort((a, b) => a.title.localeCompare(b.title));
+  $('#instr-items').innerHTML = (groups + (external.length ? `<h4 class="instr-group">Outside sources (not written by the workspace)</h4>${external.map((s) => item(s.id, s.title, s.purpose)).join('')}` : '')) || '<p class="meta">No matching instructions.</p>';
+  const e = d.entries.find((x) => x.id === instr.selected), s = !e && d.external.find((x) => x.id === instr.selected);
+  $('#instr-detail').innerHTML = e ? instructionDetail(e) : s ? sourceDetail(s) : '<p class="meta">Select an instruction to read it, with where and why it is used. Nothing here can be edited yet.</p>';
+}
+function instructionDetail(e) {
+  const ph = Object.entries(e.placeholders ?? {});
+  return `<h3>${esc(e.title)}</h3><p style="margin:0">${esc(e.purpose)}</p>
+    <dl><dt>Used by</dt><dd>${esc(appliesText(e.applies))}</dd>${gapsText(e.applies, instr.data.agents) ? `<dt>Not yet for</dt><dd>${esc(gapsText(e.applies, instr.data.agents))} <span class="meta">A gap the unified interface removes; until then this agent does not get it there.</span></dd>` : ''}<dt>When included</dt><dd>${esc(e.when)}</dd><dt>How it reaches the agent</dt><dd>${esc(e.channel)}</dd>
+    <dt>Source</dt><dd>${e.sources.map((x) => `<code>${esc(x.file)}</code> · <code>${esc(x.symbol)}</code>`).join('<br>')}<br><span class="meta">${e.from === 'definition' ? 'Shown from the definition the agents get.' : 'A copy of text written in that code; a test fails when they differ.'}</span></dd></dl>
+    <div><b>Text</b><pre>${withPlaceholders(e.text)}</pre></div>
+    ${e.params?.length ? `<div><b>Parameters</b><dl>${e.params.map((p) => `<dt><code>${esc(p.name)}</code></dt><dd>${esc(p.text)}</dd>`).join('')}</dl></div>` : ''}
+    ${e.variants?.length ? `<div style="display:grid;gap:8px"><b>Other forms</b>${e.variants.map((v) => `<div><span class="meta">${esc(v.label)}</span><pre>${withPlaceholders(v.text)}</pre></div>`).join('')}</div>` : ''}
+    ${ph.length ? `<div><b>Placeholders</b> <span class="meta">Filled in when the text is sent; these are descriptions, not actual values.</span><dl>${ph.map(([k, v]) => `<dt><span class="ph">{${esc(k)}}</span></dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` : ''}`;
+}
+function sourceDetail(s) {
+  const path = s.path ? `<dt>File</dt><dd>${window.desktop && s.exists ? `<button class="loc" type="button" data-open="${esc(s.path)}" title="Show ${esc(s.path)}">${esc(s.path)}${FOLDER_ICON}</button>` : `<code>${esc(s.path)}</code>`}${s.exists ? '' : ' <span class="meta">(not on this computer)</span>'}</dd>` : '';
+  return `<h3>${esc(s.title)}</h3><p style="margin:0">${esc(s.purpose)}</p><p style="margin:0"><span class="instr-badge">${esc(INSTR_INSPECT[s.inspectable])}</span></p>
+    <dl><dt>Used by</dt><dd>${esc(appliesText(s.applies))}</dd><dt>When included</dt><dd>${esc(s.when)}</dd>${path}</dl>
+    ${s.inspectable === 'shown' ? `<div><b>Text</b>${s.text ? `<pre>${esc(s.text)}</pre>` : '<p class="meta" style="margin:0">Empty: nothing is added.</p>'}</div>` : ''}`;
+}
+$('#instr-search').oninput = $('#instr-role').onchange = () => renderInstructions();
+$('#spanel-instructions').onclick = (ev) => {
+  const open = ev.target.closest('[data-open]');
+  if (open) return void window.desktop?.showPath(open.dataset.open);
+  const b = ev.target.closest('[data-instr-id]');
+  if (!b) return;
+  instr.selected = b.dataset.instrId;
+  pref.set('instruction', instr.selected);
+  renderInstructions();
+};
+
 // Agent setup in Settings: loaded once when Settings opens, changed one switch at a time.
 const ROLE_NAMES = { Chat: 'Chat', Orchestration: 'Orchestrator', Implementation: 'Implementer' };
 // The user's own instructions per role, added to that role's agent: plain chats, orchestrator chats, tasks.

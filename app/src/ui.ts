@@ -17,6 +17,7 @@ import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
 import { continueSession } from './binding.ts';
+import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable } from './instructions.ts';
 import { installed, startTestInstance, testBranch } from './test-instance.ts';
 
 
@@ -221,7 +222,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home(), testBranch: testBranch() ?? null };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home(), testBranch: testBranch() ?? null, instructions: instructionsAvailable() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -279,6 +280,11 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (id === 'check') return checkForUpdate(repo, Array.isArray(b.waitingFor) ? b.waitingFor.filter((n): n is number => Number.isInteger(n)).slice(0, 20) : []);
     if (id) throw new HttpError(404, 'not found');
     try { return await applyUpdate(repo); } catch (e) { throw new HttpError(409, (e as Error).message); }
+  }
+  // The Agent Instructions tab (agent-instructions-001–005): read only, in a development environment only (ADR 0022).
+  if (req.method === 'GET' && kind === 'instructions') {
+    if (!instructionsAvailable()) throw new HttpError(404, 'Agent instructions are shown only when the app runs from a checkout.');
+    return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: CATALOG, external: externalSources() };
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});

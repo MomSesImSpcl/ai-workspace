@@ -1,7 +1,6 @@
 // Stdio MCP server of the workspace for one session or task. `approve` is Claude Code's
 // --permission-prompt-tool: every "ask" becomes an approval card in the chat, and the user's answer goes
-// back to the agent (sessions-019, runtime-002). A top-level task also gets `delegate` (runtime-001), a chat
-// session gets `start_task` (sessions-002) and the orchestrator's `reply_task`, `task_status`, `list_agents` (orchestrator-006);
+// back to the agent (sessions-019, runtime-002). A chat session gets `start_task` (sessions-002) and the orchestrator's `reply_task`, `task_status`, `list_agents` (orchestrator-006);
 // an app-project chat or top-level task gets `request_merge` (selfdev-004); every session and task gets the read-only
 // `read_repo` (#31).
 // Usage: node src/approval-server.ts <sessionId>. One server serves all turns of a long-lived agent process.
@@ -11,8 +10,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
 import { getRoles } from './roles.ts';
-import { decidable, getAgentSetup, itemOn, setupStatus } from './setup.ts';
-import { delegate, requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
+import { decidable, getAgentSetup, setupStatus } from './setup.ts';
+import { requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
 import { sessionAgents } from './turn.ts';
 import { requestMerge } from './merge.ts';
 import { bindingProblem } from './binding.ts';
@@ -80,22 +79,6 @@ if (task) {
     async (a) => {
       try { return { content: [{ type: 'text' as const, text: requestSetup(sessionId, a.items, a.reason) }] }; }
       catch (e) { return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true }; }
-    },
-  );
-}
-if (task && !task.parentId && itemOn(session, 'delegate')) {
-  server.registerTool(
-    'delegate',
-    {
-      description: 'Runs a self-contained subtask with the agent assigned to a workspace role (default Implementation) in this project, and returns its final reply. Blocks until the subtask ends. The subtask gets at most the remaining token budget.',
-      inputSchema: { goal: z.string().describe('Self-contained instructions for the subtask'), role: z.string().optional() },
-    },
-    async (a) => {
-      try {
-        return { content: [{ type: 'text' as const, text: await delegate(sessionId, a.goal, a.role) }] };
-      } catch (e) {
-        return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true };
-      }
     },
   );
 }

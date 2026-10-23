@@ -129,7 +129,7 @@ test('edits outside the project folder are flagged; paths inside are shown relat
 test('codex app-server items map to activity rows with fingerprints; other items are not tool calls', () => {
   assert.deepEqual(codexActivity({ type: 'commandExecution', id: 'i1', command: 'ls' }), { label: 'Running `ls`', fp: fingerprint('commandExecution', 'ls') });
   assert.equal(codexActivity({ type: 'fileChange', id: 'i2', changes: [{ path: 'a.ts' }] })?.label, 'Editing `a.ts`');
-  assert.equal(codexActivity({ type: 'mcpToolCall', id: 'i3', server: 'aiws', tool: 'delegate', arguments: { goal: 'x' } })?.label, 'Subtask');
+  assert.equal(codexActivity({ type: 'mcpToolCall', id: 'i3', server: 'aiws', tool: 'delegate', arguments: { goal: 'x' } })?.label, 'Using aiws delegate');
   assert.equal(codexActivity({ type: 'agentMessage', id: 'i4', text: 'hi' }), null);
 });
 

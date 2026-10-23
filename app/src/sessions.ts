@@ -93,7 +93,7 @@ export interface TaskSpec {
   reason?: string; // why the orchestrator chose its agent, model and effort (orchestrator-004)
   overridden?: boolean; // the user changed that choice
   basedOn?: string; // an earlier related task whose goal and reply this one started with
-  parentId?: string; // a subtask started by the parent's `delegate` call
+  parentId?: string; // a subtask an earlier `delegate` call started; kept so old ones still show (ADR 0024)
   sessionId?: string; // the chat that started it (sessions-002): its approvals, replies and result show there
   cancelled?: boolean;
   setup?: string[]; // ids of the agent's setup items the orchestrator picked for this task (orchestrator-005)

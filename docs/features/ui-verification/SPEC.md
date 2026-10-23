@@ -16,7 +16,7 @@ Static analysis ([code-index](../code-index/SPEC.md#721-language-analysis)) can 
 - **uiverify-006 — Permissions and cleanup:** Starting the instance, opening pages and running scripts go through the [tool broker](../tool-broker/SPEC.md) and the project's permissions. The test instance gets only test data; real credentials are never typed into it. The instance and its temporary storage are removed after the check unless the user keeps them for inspection.
 - **uiverify-007 — Unavailable:** When no browser runtime or test instance can start, report that explicitly with the reason; never report a UI check as passed without running it.
 
-Agent dependence: agents reach these tools through the workspace MCP server, like the workspace `delegate` tool ([integration matrix](../../INTEGRATIONS.md), row "Delegate to a child task"); no agent-specific browser support is required.
+Agent dependence: agents reach these tools through the workspace MCP server, like the workspace `read_repo` tool ([integration matrix](../../INTEGRATIONS.md), row "Delegate to a child task"); no agent-specific browser support is required.
 
 ## Acceptance evidence
 

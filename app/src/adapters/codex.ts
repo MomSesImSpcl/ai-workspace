@@ -5,10 +5,11 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home } from '../store.ts';
 import { codexHookNotices } from '../sandbox-check.ts';
-import { ghBlockArgs, MERGE_NOTE, mergeCommand } from '../merge.ts';
+import { ghBlockArgs, mergeCommand } from '../merge.ts';
+import { agentInstructions } from '../prompt.ts';
 import { commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
-import { commandFile, DELEGATE, itemOn, minimalPrompt, runSetup, saveInventory, setupApplies, WORKSPACE_RULES, type SetupItem } from '../setup.ts';
-import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, orchestratorNote, ownInstructions, READ_REPO_NOTE, TASK_NOTE } from '../sessions.ts';
+import { commandFile, minimalPrompt, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
+import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -85,7 +86,7 @@ export function codexActivity(item: Item): { label: string; fp: string } | null 
     const paths = (item.changes ?? []).map((c) => c.path);
     return { label: `Editing ${paths.map((p) => `\`${p}\``).join(', ')}`, fp: fingerprint('fileChange', paths) };
   }
-  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'delegate' ? 'Subtask' : item.server === 'aiws' && item.tool === 'start_task' ? 'Starting task' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}) };
+  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'start_task' ? 'Starting task' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}) };
   return null;
 }
 
@@ -236,7 +237,6 @@ export class CodexProcess implements AgentProcess {
     if (existsSync(join(userCodexHome(), 'hooks.json'))) items.push({ id: 'hooks', kind: 'hooks', title: 'Your hooks', description: 'Hooks in your Codex hooks.json', path: join(userCodexHome(), 'hooks.json') });
     // Built-in parts with a feature switch; editing (apply_patch) and command execution always stay.
     for (const [flag, title, description] of CODEX_FEATURES) items.push({ id: `feature:${flag}`, kind: 'feature', title, description });
-    items.push(DELEGATE);
     items.push({ id: 'prompt', kind: 'prompt', title: "Codex's own instructions", description: 'Its base prompt: coding conventions, editing and sandbox guidance, answer format. Off: a short workspace prompt, about 4k tokens less per call' });
     return { items, skillPaths: skills.map((k) => k.path) };
   }
@@ -250,22 +250,13 @@ export class CodexProcess implements AgentProcess {
     const wanted = ['PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SYSTEMROOT', 'GH_CONFIG_DIR', 'AI_WORKSPACE_GH'];
     const own = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v && wanted.includes(k.toUpperCase())) as [string, string][]); // keys as spelled (Windows: Path)
     const aiws = { command: process.execPath, args: [workspaceServer, this.session.id], env: { ...own, AI_WORKSPACE_HOME: home() }, tool_timeout_sec: 2147483 };
-    if (task && !task.parentId) {
-      params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} ${READ_REPO_NOTE}${itemOn(this.session, 'delegate') ? ' To hand a self-contained part of the work to the agent of another workspace role, use the workspace delegate tool.' : ''}${ownInstructions('implementationInstructions')}`;
-    } else if (task) {
-      params.developerInstructions = `AI Workspace task: ${TASK_NOTE} ${READ_REPO_NOTE}${ownInstructions('implementationInstructions')}`;
-    } else if (!task) {
-      // Starting a task is the chat's job (ADR 0011), so no card; the task asks for its own actions.
-      params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
-      params.developerInstructions = `AI Workspace session: to run self-contained work in the background as a task, use the workspace start_task tool. ${READ_REPO_NOTE}` + ownInstructions('chatInstructions');
-    }
-    // App-project chats and top-level tasks merge through the workspace's request_merge (selfdev-004).
-    if (this.session.worktree && this.session.role !== ORCHESTRATION && !task?.parentId) params.developerInstructions = `${params.developerInstructions ?? ''} ${MERGE_NOTE}`;
+    // Chats, orchestrator chats and top-level tasks get the workspace tools; subtasks have none yet.
+    if (!task?.parentId) params.config = { 'mcp_servers.aiws': { ...aiws, default_tools_approval_mode: 'approve' } };
     if (!task && this.session.role === ORCHESTRATION) {
       // The orchestrator only reads and runs tasks, whatever agent the role uses (orchestrator-006): no writes, no escalation.
-      Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only', developerInstructions: `AI Workspace session: ${orchestratorNote()}` });
+      Object.assign(params, { approvalPolicy: 'never', sandbox: 'read-only' });
     }
+    let workspaceRules: string | undefined;
     // Orchestrator chats and tasks load only the chosen items, switched for this run only (orchestrator-005). Codex
     // reads its global AGENTS.md on every run and has no switch for one run, so the global-rules setting does not apply.
     if (setupApplies(this.session)) {
@@ -283,8 +274,9 @@ export class CodexProcess implements AgentProcess {
         else if (i.kind === 'feature') config[`features.${i.id.slice('feature:'.length)}`] = false;
         else if (i.kind === 'prompt') params.baseInstructions = minimalPrompt(this.root);
       }
-      if (setup.workspaceRules) params.developerInstructions = `${params.developerInstructions ?? ''}\n\n${WORKSPACE_RULES}\n${setup.workspaceRules}`;
+      workspaceRules = setup.workspaceRules;
     }
+    params.developerInstructions = agentInstructions(this.session, { effort: this.effort, workspaceRules });
     if (this.session.worktree && !params.sandbox) {
       const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { sandbox_mode?: string } };
       if (config?.sandbox_mode === 'danger-full-access') params.sandbox = 'danger-full-access';
@@ -464,7 +456,8 @@ export class CodexProcess implements AgentProcess {
   }
 }
 
-const userCodexHome = () => process.env.CODEX_HOME ?? join(homedir(), '.codex');
+/** The user's Codex folder (config.toml, hooks.json, the global AGENTS.md); also named in the Agent Instructions tab (app/src/instructions.ts). */
+export const userCodexHome = () => process.env.CODEX_HOME ?? join(homedir(), '.codex');
 
 // shortcut: reads two top-level keys with a regex, not a TOML parser or profiles; upgrade with app-server `config/read`.
 export function codexPermissions(): { line: string; warn?: string } {
