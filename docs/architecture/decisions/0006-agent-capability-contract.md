@@ -1,6 +1,6 @@
 # ADR 0006 — Agent capability contract with fallbacks and a conformance check
 
-Status: accepted (2026-10-17, chosen by the user); not implemented. Builds on [ADR 0004](0004-agent-native-permissions.md). Affects every agent integration and every feature that relies on agent behavior.
+Status: accepted (2026-10-17, chosen by the user); not implemented. Builds on [ADR 0004](0004-agent-native-permissions.md). Affects every agent integration and every feature that relies on agent behavior. Amended by [ADR 0023](0023-one-agent-interface.md): one shared adapter interface and the same tools for every agent.
 
 ## Context
 
