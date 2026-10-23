@@ -42,7 +42,6 @@ Planning/design, orchestration and implementation roles are independently select
 
 ## Proposed — not yet agreed
 
-
 Using the workspace on its own repository after the core and the longer tentative feature order remain proposals; see the [preserved proposal record](history/2026-10-16-00-imported-progress-snapshot/DETAILS.md#proposed-not-yet-agreed). There is no fixed delivery sequence.
 
 ## Resume here
