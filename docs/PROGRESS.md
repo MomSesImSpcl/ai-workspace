@@ -4,6 +4,8 @@ Read this file at startup. Search [history](history/) folder summaries only for 
 
 ## Active / blocked
 
+**Branch heading and composer fixes** (2026-10-23, user, branch `claude/branch-heading-fixes`): branch headings get a ⋯ button for their menu; the session list is rebuilt only when it changed, so hover no longer flickers every second; the composer shrinks with a narrow chat column instead of spilling over the page ([history](history/2026-10-23-03-branch-heading-fixes/SUMMARY.md)). Next action: merge.
+
 **Test instance of a branch** (2026-10-23, user, branch `claude/test-instance`, [selfdev-009](features/self-development/SPEC.md#requirements), [ADR 0020](architecture/decisions/0020-test-instance.md)): right-click a branch heading in the app project's sessions, Open test instance; own storage, copied settings, no update buttons, title `Test Branch - <branch>`. Tests 108/108, started for real on Windows ([history](history/2026-10-23-02-test-instance/SUMMARY.md)). Next action: after merge and Update and restart, open a test instance from the menu and check its titlebar and hidden button. ui-verification's agent parts stay unbuilt (user).
 
 **Write-guard rules in the worktree note** (2026-10-23, user, branch `claude/write-guard-note`, [selfdev-002](features/self-development/SPEC.md#requirements)): worktree agents are told up front to keep their shell in the worktree, write files with edit tools and keep merge commands out of command text, so fewer block notices clutter the chat; the guard is unchanged ([history](history/2026-10-23-01-write-guard-note/SUMMARY.md)). Next action: merge, then watch whether blocks become rarer.
