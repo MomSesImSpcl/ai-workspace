@@ -90,6 +90,8 @@
   .menu-btn { position: absolute; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); cursor: pointer; opacity: 0; }
   .session-row:hover .menu-btn, .menu-btn:focus-visible, .menu-btn[aria-expanded=true] { opacity: 1; }
   .menu-btn:hover { background: var(--surface-2); color: var(--text); }
+  .list-head .menu-btn { position: static; flex: none; }
+  .list-head:hover .menu-btn { opacity: 1; }
   .menu { position: fixed; z-index: 20; min-width: 150px; padding: 4px; border: 1px solid var(--hairline-strong); border-radius: 9px; background: var(--elevated); box-shadow: 0 8px 24px rgba(0,0,0,.4); display: grid; }
   .menu button { padding: 7px 10px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; }
   .menu button:hover, .menu button:focus-visible { background: var(--surface-2); }
@@ -137,14 +139,15 @@
   .msg time { display: block; font-size: 10px; color: var(--text-muted); margin-top: 4px; }
   .chat-state { font-size: 11px; color: var(--text-dim); }
   .chat-state:empty { display: none; }
-  .chat-composer { display: grid; gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); }
+  .chat-composer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px 15px 14px; border-top: 1px solid var(--hairline); } /* rows shrink with the column instead of spilling out */
   .chat-composer textarea { min-height: 64px; max-height: 40vh; }
   .pickers { flex-wrap: nowrap; gap: 6px; }
   .project-sep { border-top: 1px solid var(--hairline); margin: 4px 0; }
   .pickers select { flex: 1 1 0; min-width: 0; padding: 4px 6px; font-size: 11px; }
   .chat-total { justify-self: start; min-width: 0; overflow: hidden; }
   .chat-tokens { white-space: nowrap; }
-  .row.send-row { flex-wrap: nowrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom */
+  .row.send-row { flex-wrap: wrap; gap: 6px; align-items: center; } /* .row (later) would align to the bottom; a narrow column puts the branch picker on its own line */
+  .send-row #task-mode { white-space: nowrap; }
   .send-row #foot-status { flex: 1; min-width: 0; }
   .branch-list { display: grid; gap: 4px; }
   .branch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); }
@@ -755,7 +758,8 @@ function worktreeGroups(list) {
     const testable = !state.testBranch && g.branch && g.rows.some((s) => s.testable && !s.archived);
     const head = gone ? `<span class="eyebrow worktree-head" title="This branch and its folder were removed">${esc(g.branch)} · removed</span>`
       : `<button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}"${testable ? ` data-test-path="${esc(path)}"` : ''} title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button>`;
-    return `<div class="list-head">${head}</div>${sessionRows(g.rows, 'project')}`;
+    const menu = testable ? `<button class="menu-btn" data-menu="${esc(path)}" data-kind="branch" aria-label="Branch actions" aria-haspopup="menu" aria-expanded="${state.menu?.id === path}">⋯</button>` : '';
+    return `<div class="list-head">${head}${menu}</div>${sessionRows(g.rows, 'project')}`;
   }).join('');
 }
 
@@ -767,11 +771,13 @@ function renderSessions() {
   const mine = state.sessions.filter(keep);
   const globals = state.globals.filter(keep);
   const empty = (text) => `<p class="empty" style="margin:4px 2px">${text}</p>`;
-  $('#session-list').innerHTML = ((current()?.app ? worktreeGroups(mine) : sessionRows(mine, 'project'))
+  const html = ((current()?.app ? worktreeGroups(mine) : sessionRows(mine, 'project'))
     || empty(current() ? (q || archived ? 'No matching sessions.' : 'No sessions yet. Write a message below to start one.') : 'Add a project first.'))
     + `<div class="list-head"><h2 class="eyebrow" style="margin:0">Global</h2></div>
     <button class="btn small" id="new-global" type="button" style="margin-bottom:4px" ${state.workspaceRoot ? '' : 'disabled title="Set the workspace folder in Settings first"'}>+ New global session</button>`
     + (sessionRows(globals, 'global') || empty(q || archived ? 'No matching sessions.' : 'Global sessions run in the workspace folder, outside any one project.'));
+  // Rebuilt only when it changed: the 1 s poll would otherwise replace the element under the pointer, so hover flickers.
+  if (html !== renderSessions.html) $('#session-list').innerHTML = renderSessions.html = html;
 }
 
 function activityList(t) {
