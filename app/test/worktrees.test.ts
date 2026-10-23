@@ -11,7 +11,7 @@ import { addMessage, createSession, loadSession, readEvents, saveSession, sessio
 import { createTask } from '../src/tasks.ts';
 import { hostSession, runTurn } from '../src/turn.ts';
 import { getProject, listProjects, registerProject } from '../src/store.ts';
-import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, npmCommand, planWorktree } from '../src/worktrees.ts';
+import { addAppProject, addWorktree, appRepo, commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, isAppProject, listWorktrees, npmCommand, planWorktree, testHome } from '../src/worktrees.ts';
 import { guardedRequest, sandboxPath } from '../src/adapters/codex.ts';
 import { sessionEvents } from '../src/adapters/claude-code.ts';
 import { forget, guardServer, guardToken } from '../src/guard.ts';
@@ -175,8 +175,10 @@ test('the cleanup removes merged branches only, archives their chats, and leaves
   writeFileSync(join(unsaved.worktree!.path, 'draft.txt'), 'x');
   const state = Object.fromEntries(branchInfo(getProject('P')).map((b) => [b.branch, [b.merged, b.ahead, b.dirty]]));
   assert.deepEqual(state, { fresh: [false, 0, false], open: [false, 1, false], done: [true, 0, false], unsaved: [true, 0, true] });
+  mkdirSync(testHome('done'), { recursive: true }); // its test instance's storage goes with it (selfdev-009)
   assert.deepEqual(await cleanupBranches(), ['done']);
   assert.equal(existsSync(done.worktree!.path), false);
+  assert.equal(existsSync(testHome('done')), false);
   assert.equal(git('branch', '--list', 'done'), '');
   assert.equal(loadSession(done.id).archived, true); // its chat is archived, the others are not
   assert.equal(loadSession(open.id).archived, undefined);

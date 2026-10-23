@@ -17,6 +17,7 @@ import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
 import { continueSession } from './binding.ts';
+import { installed, startTestInstance, testBranch } from './test-instance.ts';
 
 
 const page = fileURLToPath(new URL('./ui.html', import.meta.url));
@@ -93,7 +94,7 @@ function sessionView(s: Session) {
   const last = turns(readEvents(s.id), turnRunning(s.id)).at(-1);
   const working = last?.state === 'working';
   const own = last?.state === 'working' ? last.approvals.filter((a) => a.allow === undefined).length : 0;
-  return { ...s, file: sessionFile(s.id, '.jsonl'), working, state: last?.state, worktreeGone: !!s.worktree?.ready && !existsSync(s.worktree.path), pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
+  return { ...s, file: sessionFile(s.id, '.jsonl'), working, state: last?.state, worktreeGone: !!s.worktree?.ready && !existsSync(s.worktree.path), testable: !testBranch() && !!s.worktree?.ready && installed(s.worktree.path) || undefined, pendingApprovals: own + startedIn(s.id).reduce((n, t) => n + pendingOf(t).length, 0) };
 }
 
 // Agent, model and effort, checked against what the agent offers (its catalog).
@@ -220,7 +221,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home(), testBranch: testBranch() ?? null };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -307,6 +308,15 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     const b = await body(req);
     try { await removeBranch(text(b.path, 'path'), b.force === true); } catch (e) { throw new HttpError(400, (e as Error).message); }
     return { removed: b.path };
+  }
+  // A branch's test instance (selfdev-009): only for a worktree of the app project.
+  if (req.method === 'POST' && kind === 'test-instance') {
+    const path = text((await body(req)).path, 'path');
+    const project = appProject();
+    const wt = project && listWorktrees(project).find((w) => w.path.toLowerCase() === path.toLowerCase());
+    if (!wt) throw new HttpError(400, `Not a branch of this app: ${path}`);
+    try { startTestInstance(wt.path, wt.branch); } catch (e) { throw new HttpError(409, (e as Error).message); }
+    return { started: wt.branch };
   }
   // The worktrees a new session can continue in, each with the title of its most recently active chat.
   if (req.method === 'GET' && kind === 'projects' && action === 'worktrees') {

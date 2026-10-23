@@ -17,6 +17,8 @@ const fallbackCommit = process.env.AI_WORKSPACE_FALLBACK;
 const repoDir = fallbackCommit && process.env.AI_WORKSPACE_REPO ? resolve(process.env.AI_WORKSPACE_REPO) : resolve(appDir, '..');
 // Workspace storage, as `home` in app/src/store.ts.
 const storage = () => process.env.AI_WORKSPACE_HOME ?? join(homedir(), '.ai-workspace');
+// A branch's test instance (selfdev-009), started by `startTestInstance` in app/src/test-instance.ts.
+const testBranch = process.env.AI_WORKSPACE_TEST_BRANCH;
 // How long a new version has to load its page and data before it counts as failed.
 const CHECK_MS = 60_000;
 
@@ -75,7 +77,7 @@ function createWindow(url) {
     y: saved.y,
     minWidth: 760,
     minHeight: 480,
-    title: fallbackCommit ? `AI Workspace (last working version ${fallbackCommit.slice(0, 7)})` : 'AI Workspace',
+    title: testBranch ? `Test Branch - ${testBranch}` : fallbackCommit ? `AI Workspace (last working version ${fallbackCommit.slice(0, 7)})` : 'AI Workspace',
     backgroundColor: '#262624',
     titleBarStyle: 'hidden',
     // Native window buttons drawn over our titlebar (Windows/Linux); macOS keeps its traffic lights.
@@ -294,7 +296,7 @@ app.whenReady().then(async () => {
   log(`startup check passed${fallbackCommit ? ` (last working version ${fallbackCommit})` : commit ? ` (${commit})` : ''}`);
   if (replaces) endReplaced();
   // Keep this version as the last working one (selfdev-006), in the background; `ws last-good` skips what does not count.
-  if (commit && !fallbackCommit) {
+  if (commit && !fallbackCommit && !testBranch) {
     try {
       const out = openSync(join(app.getPath('userData'), 'last-good.log'), 'a');
       spawn('node', ['src/cli.ts', 'last-good', commit], { cwd: appDir, detached: true, windowsHide: true, stdio: ['ignore', out, out] }).unref();

@@ -1,6 +1,6 @@
 // Git worktree per session, so agents never edit the checkout a running app is started from (selfdev-001).
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -218,7 +218,11 @@ function mergesIntoHead(root: string, ref: string): boolean {
 export function deleteWorktree(root: string, wt: Worktree, force = false): void {
   git(root, ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path]);
   git(root, ['branch', '-D', wt.branch]);
+  try { rmSync(testHome(wt.branch), { recursive: true, force: true }); } catch { /* its test instance still open: the folder stays */ } // selfdev-009
 }
+
+/** The storage folder of a branch's test instance (selfdev-009), one per branch. */
+export const testHome = (branch: string) => join(home(), 'test', branch.replace(/[^\w.-]/g, '_'));
 
 /**
  * The folders an agent must not write to (selfdev-002, ADR 0015): the checkout the running app starts from and
@@ -420,7 +424,7 @@ export function npmCommand(args: string[], platform: NodeJS.Platform = process.p
 /**
  * Installs a new worktree's npm dependencies (#26): `npm ci` in its root and in `app/` where a `package-lock.json`
  * is, run by the app outside any agent sandbox with the user's normal npm cache, so the agent can run typecheck and
- * tests at once. Electron's binary is skipped as in CI, since nothing starts the desktop app from a worktree yet.
+ * tests at once. Electron's binary is skipped as in CI: a branch's test instance (selfdev-009) runs on the running app's Electron.
  * `notice` tells the chat; a failure is reported with npm's last lines and does not stop the session.
  */
 export async function installDependencies(path: string, notice: (text: string) => void): Promise<void> {
