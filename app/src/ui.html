@@ -371,6 +371,9 @@
         <button role="menuitem" data-mact="archive">Archive</button>
         <button role="menuitem" class="danger" data-mact="delete">Delete…</button>
       </div>
+      <div class="menu" id="branch-menu" role="menu" hidden>
+        <button role="menuitem" data-mact="test" title="Run this branch's code as a second window, with its own storage and a copy of your settings">Open test instance</button>
+      </div>
       <!-- Override of the orchestrator's agent, model and effort for one task (orchestrator-004). -->
       <dialog class="confirm" id="task-config" aria-labelledby="task-config-title">
         <form method="dialog"><h2 id="task-config-title">Change the task's agent</h2><p class="meta">Applies when the task continues. A different agent gets the conversation so far as text.</p>
@@ -748,8 +751,10 @@ function worktreeGroups(list) {
   // Each heading opens its worktree folder (the project folder for sessions from before worktrees).
   return [...groups].map(([path, g]) => {
     const gone = g.rows.every((s) => s.worktreeGone); // removed after merging: its chats are archived and read only
+    // Its context menu opens a test instance (selfdev-009) once the worktree is installed and a chat in it is not archived.
+    const testable = !state.testBranch && g.branch && g.rows.some((s) => s.testable && !s.archived);
     const head = gone ? `<span class="eyebrow worktree-head" title="This branch and its folder were removed">${esc(g.branch)} · removed</span>`
-      : `<button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}" title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button>`;
+      : `<button type="button" class="eyebrow worktree-head" data-open-folder="${esc(path || current()?.root || '')}"${testable ? ` data-test-path="${esc(path)}"` : ''} title="${esc(g.branch ? `Open the folder of branch ${g.branch}` : 'Sessions from before branches, in the project folder: open it')}">${esc(g.branch || 'Project folder')}</button>`;
     return `<div class="list-head">${head}</div>${sessionRows(g.rows, 'project')}`;
   }).join('');
 }
@@ -1094,6 +1099,11 @@ function render() {
 async function load() {
   const meta = await api('/api/meta');
   Object.assign(state, meta);
+  if (state.testBranch) {
+    // A branch's test instance (selfdev-009): named in the title and without the update buttons.
+    document.title = $('.titlebar b').textContent = `Test Branch - ${state.testBranch}`;
+    $('#update').hidden = true;
+  }
   const active = state.projects.filter((p) => !p.archived);
   if (!active.some((p) => p.id === state.project)) state.project = active[0]?.id ?? null;
 }
@@ -1169,7 +1179,8 @@ function flashUpdate(text, title) {
 // The checkout's branch and changes, read without the network: at start, and when the pointer comes to the button.
 async function refreshUpdate() {
   const u = await api('/api/app-update');
-  $('#update').hidden = $('#restart').hidden = !window.desktop?.restart || !u.local;
+  $('#restart').hidden = !window.desktop?.restart || !u.local;
+  $('#update').hidden = $('#restart').hidden || !!state.testBranch;
   $('#fallback-note').hidden = !u.fallback;
   $('#fallback-note').textContent = u.fallback ? `⚠ Last working version (${u.fallback.slice(0, 7)})` : '';
   $('#fallback-note').title = 'The new version failed its startup check, so the app runs its last working version. Fix main, then check for updates.';
@@ -1420,14 +1431,15 @@ function ask(title, text, ok, danger = false) {
   });
 }
 
-const menuItem = (kind, id) => (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id);
+const menuItem = (kind, id) => (kind === 'branch' ? { id } : (kind === 'project' ? state.projects : allSessions()).find((v) => v.id === id));
 function openMenu(kind, id, x, y) {
   const s = menuItem(kind, id);
   if (!s) return;
   closeMenu();
   state.menu = { kind, id };
   const menu = $(`#${kind}-menu`);
-  menu.querySelector('[data-mact=archive]').textContent = s.archived ? 'Restore' : 'Archive…';
+  const archive = menu.querySelector('[data-mact=archive]');
+  if (archive) archive.textContent = s.archived ? 'Restore' : 'Archive…';
   if (kind === 'project') {
     // Open in GitHub (or the site that hosts the repository) when it has a git remote; the app's own project only has that.
     const web = menu.querySelector('[data-mact=web]');
@@ -1449,6 +1461,13 @@ function closeMenu() {
   state.menu = null;
   for (const m of $$('.menu')) m.hidden = true;
   render();
+}
+
+// Opens the branch's test instance (selfdev-009); one already open comes to the front.
+async function branchMenuAction(act, path) {
+  closeMenu();
+  if (act !== 'test') return;
+  try { await api('/api/test-instance', { path }); } catch (err) { await ask('The test instance did not start', err.message, 'OK'); }
 }
 
 // Archive is the only way to take a project out of the workspace; nothing on disk is deleted.
@@ -1496,6 +1515,8 @@ async function menuAction(act, id) {
 }
 
 document.addEventListener('contextmenu', (e) => {
+  const head = e.target.closest('[data-test-path]');
+  if (head) { e.preventDefault(); return openMenu('branch', head.dataset.testPath, e.clientX, e.clientY); }
   const row = e.target.closest('[data-row],[data-prow]');
   if (!row) return;
   e.preventDefault();
@@ -1517,6 +1538,7 @@ document.addEventListener('click', async (e) => {
   if (branch) return removeBranch(branch.dataset.removeBranch);
   const item = e.target.closest('[data-mact]');
   if (item && state.menu?.kind === 'project') return projectMenuAction(item.dataset.mact, state.menu.id);
+  if (item && state.menu?.kind === 'branch') return branchMenuAction(item.dataset.mact, state.menu.id);
   if (item) return menuAction(item.dataset.mact, state.menu?.id);
   const menuBtn = e.target.closest('[data-menu]');
   if (menuBtn) {
