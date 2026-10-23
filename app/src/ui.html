@@ -1383,7 +1383,7 @@ function renderInstructions() {
 function instructionDetail(e) {
   const ph = Object.entries(e.placeholders ?? {});
   return `<h3>${esc(e.title)}</h3><p style="margin:0">${esc(e.purpose)}</p>
-    <dl><dt>Used by</dt><dd>${esc(appliesText(e.applies))}</dd>${gapsText(e.applies, instr.data.agents) ? `<dt>Not yet for</dt><dd>${esc(gapsText(e.applies, instr.data.agents))} <span class="meta">A gap the unified interface removes; until then this agent does not get it there.</span></dd>` : ''}<dt>When included</dt><dd>${esc(e.when)}</dd><dt>How it reaches the agent</dt><dd>${esc(e.channel)}</dd>
+    <dl><dt>Used by</dt><dd>${esc(appliesText(e.applies))}</dd>${gapsText(e.applies, instr.data.agents) ? `<dt>Not yet for</dt><dd>${esc(gapsText(e.applies, instr.data.agents))} <span class="meta">${e.needs ? `It needs an agent that ${esc(instr.data.capabilities[e.needs])}; the workspace does not provide that yet.` : 'A gap the unified interface removes; until then this agent does not get it there.'}</span></dd>` : ''}<dt>When included</dt><dd>${esc(e.when)}</dd><dt>How it reaches the agent</dt><dd>${esc(e.channel)}</dd>
     <dt>Source</dt><dd>${e.sources.map((x) => `<code>${esc(x.file)}</code> · <code>${esc(x.symbol)}</code>`).join('<br>')}<br><span class="meta">${e.from === 'definition' ? 'Shown from the definition the agents get.' : 'A copy of text written in that code; a test fails when they differ.'}</span></dd></dl>
     <div><b>Text</b><pre>${withPlaceholders(e.text)}</pre></div>
     ${e.params?.length ? `<div><b>Parameters</b><dl>${e.params.map((p) => `<dt><code>${esc(p.name)}</code></dt><dd>${esc(p.text)}</dd>`).join('')}</dl></div>` : ''}

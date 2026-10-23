@@ -152,7 +152,22 @@ export interface AgentModel { id: string; label: string; efforts: string[]; defa
 export interface AgentMode { id: string; label: string; hint?: string; warn?: boolean } // warn: skips every check
 export interface Catalog { models: AgentModel[]; modes?: AgentMode[] } // id '' is the agent's own default
 
+/**
+ * What an agent integration provides natively (ADR 0023). Everything else in the interface is the same for every
+ * agent; where one lacks a capability, the workspace fills it in itself or shows the gap (Settings → Agent instructions).
+ */
+export interface Capabilities {
+  approvalTool: boolean; // asks for approval through the workspace's approve tool; otherwise its own requests are relayed
+  refusalText: boolean; // a write the guard refuses reaches the agent with the reason; otherwise it is only declined
+}
+/** What each capability means, as the Agent instructions tab names a gap. */
+export const CAPABILITIES: Record<keyof Capabilities, string> = {
+  approvalTool: "asks for approval through the workspace's approve tool",
+  refusalText: "gets the write guard's reason when a write is refused",
+};
+
 export interface SessionAgent {
+  capabilities: Capabilities;
   open(session: Session, root: string): AgentProcess;
   permissions(root: string): { line: string; warn?: string };
   catalog(): Catalog;

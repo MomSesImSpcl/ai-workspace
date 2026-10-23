@@ -34,7 +34,7 @@ beforeEach(() => {
 
 /** A fake agent that records the folder each run starts in. */
 function recording(roots: string[]): Record<string, SessionAgent> {
-  return { 'claude-code': { open: (_s, r) => { roots.push(r); return { turn: async () => ({}), close() {} }; }, permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } };
+  return { 'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: (_s, r) => { roots.push(r); return { turn: async () => ({}), close() {} }; }, permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } };
 }
 
 test('only the app project gets worktrees; it is added on start once, by folder', () => {
@@ -410,7 +410,7 @@ test('app-project chats and top-level tasks get request_merge; orchestrator chat
 test("a write into the running app's checkout during a turn is reported in the chat; earlier changes are not (#18)", async () => {
   writeFileSync(join(root, 'notes.txt'), 'the user\'s own notes'); // changed before the turn: not the agent's
   let write = true;
-  const agent: Record<string, SessionAgent> = { 'claude-code': { open: () => ({ turn: async () => {
+  const agent: Record<string, SessionAgent> = { 'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: () => ({ turn: async () => {
     if (write) { writeFileSync(join(root, 'a.txt'), 'changed'); writeFileSync(join(root, 'stray.txt'), 'x'); }
     return {};
   }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } };

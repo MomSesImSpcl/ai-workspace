@@ -462,6 +462,7 @@ class ClaudeAgent implements AgentProcess {
 }
 
 export const claudeSession: SessionAgent = {
+  capabilities: { approvalTool: true, refusalText: true },
   open: (session, root) => new ClaudeAgent(session, root),
   permissions: claudePermissions,
   catalog: claudeCatalog,

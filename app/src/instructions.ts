@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { claudeHome, fileOr } from './adapters/claude-code.ts';
 import { userCodexHome } from './adapters/codex.ts';
 import { MERGE_NOTE } from './merge.ts';
-import { getSettings, ORCHESTRATOR_NOTE, READ_REPO_NOTE, setupContinue, TASK_NOTE } from './sessions.ts';
+import { getSettings, ORCHESTRATOR_NOTE, READ_REPO_NOTE, setupContinue, TASK_NOTE, type Capabilities, type SessionAgent } from './sessions.ts';
+import { sessionAgents } from './turn.ts';
 import { getAgentSetup, RULE_ROLES, WORKSPACE_RULES } from './setup.ts';
 import { getWorkspaceRoot } from './store.ts';
 import { appRepo, guardNotice } from './worktrees.ts';
@@ -41,6 +42,7 @@ export interface InstructionEntry {
   sources: { file: string; symbol: string }[]; // repository-relative file and the definition in it
   placeholders?: Record<string, string>;
   from: 'definition' | 'copy'; // shown from the exported definition, or a copy checked by app/test/instructions.test.ts
+  needs?: keyof Capabilities; // only agents with this capability get it (`withCapabilities`)
 }
 
 const BOTH: Agent[] = ['claude-code', 'codex'];
@@ -170,8 +172,8 @@ export const CATALOG: InstructionEntry[] = [
   // --- Tool replies and refusals that tell the agent what to do next. Plain validation errors that only name a bad value are not listed.
   { id: 'reply.approve', group: 'Tool replies and refusals', title: 'Approval answered', purpose: 'What Claude Code is told when the user denies an approval card or stops the turn.',
     text: 'The user denied this in the workspace.', variants: [{ label: 'The turn was stopped while the card waited', text: 'The user stopped the turn.' }],
-    applies: { Chat: CLAUDE, Orchestrator: CLAUDE, Implementer: CLAUDE }, when: 'An approval card is denied, or the turn is stopped while it waits.', channel: REPLY,
-    sources: [{ file: SERVER_FILE, symbol: 'approve' }], from: 'copy' },
+    applies: { Chat: BOTH, Orchestrator: BOTH, Implementer: BOTH }, when: 'An approval card is denied, or the turn is stopped while it waits.', channel: REPLY,
+    sources: [{ file: SERVER_FILE, symbol: 'approve' }], from: 'copy', needs: 'approvalTool' },
   { id: 'reply.start_task', group: 'Tool replies and refusals', title: 'start_task replies', purpose: 'Confirms a started task, or says what is missing.',
     text: 'task {task} started ({choice}); it runs in the background and shows in this chat', variants: [
       { label: 'Refused: the chosen agent lists built-in tools and none is on or picked', text: 'No built-in tool picked for this {agent} task: pass in setup the tools the goal needs (tool:… ids from list_agents)' },
@@ -228,18 +230,28 @@ export const CATALOG: InstructionEntry[] = [
     sources: [{ file: 'app/src/binding.ts', symbol: 'bindingProblem' }, { file: 'app/src/binding.ts', symbol: 'keptWork' }],
     placeholders: { reason: 'one of the reasons below', Session: 'Chat or Task', id: 'the session id', project: 'the project id', branch: 'the stored branch', path: 'the stored worktree folder', kept: 'one of the kept-work sentences below', files: 'the uncommitted files, for example "2 uncommitted files"', commits: 'the commits on no remote branch, for example "1 commit"', next: 'the next step below for a chat or a task', repo: "the project's repository folder", checkedOut: 'the branch or "a detached HEAD"', gone: '" Branch <branch> no longer exists." when the bound branch is gone, else nothing', head: 'the short commit id', number: 'the pull request number', url: 'its address' }, from: 'copy' },
   { id: 'guard.notice', group: 'Tool replies and refusals', title: 'Write guard refusal', purpose: "Why a write into the running app's checkout or the workspace storage was refused (selfdev-002, ADR 0015).",
-    text: guardNotice('{folder}', { file: '{file}' }), variants: [{ label: 'A command', text: guardNotice('{folder}', { command: '{command}' }) }], applies: { Chat: CLAUDE, Implementer: CLAUDE },
+    text: guardNotice('{folder}', { file: '{file}' }), variants: [{ label: 'A command', text: guardNotice('{folder}', { command: '{command}' }) }], applies: { Chat: BOTH, Implementer: BOTH }, needs: 'refusalText',
     when: "A Claude Code edit or command that would write there; the first paragraph of the refusal is also shown in the chat. Codex's request is declined without text and the chat shows the notice.", channel: 'Reason of the write guard that refuses the call',
     sources: [{ file: 'app/src/worktrees.ts', symbol: 'guardNotice' }], placeholders: { file: 'the file it would write', folder: 'the guarded folder', command: 'the command' }, from: 'definition' },
   { id: 'guard.instead', group: 'Tool replies and refusals', title: 'Write guard: what to do instead', purpose: 'Tells the agent where to work and how to only read.',
     text: "The running app's checkout and the workspace's storage must stay untouched. Work in {worktree}; to only read there, use the Read tool or a command that only reads (such as ls, cat, grep, git log or git diff, without writing output to a file).",
-    applies: { Chat: CLAUDE, Implementer: CLAUDE }, when: 'After the write guard refusal, in the same hook reason.', channel: 'Reason of the write guard that refuses the call',
+    applies: { Chat: BOTH, Implementer: BOTH }, needs: 'refusalText', when: 'After the write guard refusal, in the same hook reason.', channel: 'Reason of the write guard that refuses the call',
     sources: [{ file: 'app/src/guard.ts', symbol: 'guardDecision' }], placeholders: { worktree: 'the folder the session works in' }, from: 'copy' },
   { id: 'guard.merge', group: 'Tool replies and refusals', title: 'Merge command refused', purpose: 'Sends a merge attempt in a command back to request_merge (selfdev-004).',
     text: "Blocked by the write guard (selfdev-002): `{command}` would merge without the user's approval.\n\nMerging goes through the workspace: report your typecheck and test results, then call the workspace tool request_merge.",
-    applies: { Chat: CLAUDE, Implementer: CLAUDE }, when: "A Claude Code command in an app-project worktree that merges a pull request (gh pr merge or the merge API). Codex's request is declined without text.", channel: 'Reason of the write guard that refuses the call',
+    applies: { Chat: BOTH, Implementer: BOTH }, needs: 'refusalText', when: "A Claude Code command in an app-project worktree that merges a pull request (gh pr merge or the merge API). Codex's request is declined without text.", channel: 'Reason of the write guard that refuses the call',
     sources: [{ file: 'app/src/guard.ts', symbol: 'guardDecision' }, { file: 'app/src/worktrees.ts', symbol: 'GUARD_MARK' }], placeholders: { command: 'the command' }, from: 'copy' },
 ];
+
+/** The catalog as the agents set up now get it: an entry that needs a capability goes only to agents that report it. */
+export function withCapabilities(agents: Record<string, Pick<SessionAgent, 'capabilities'>> = sessionAgents): InstructionEntry[] {
+  return CATALOG.map((e) => {
+    const needs = e.needs;
+    if (!needs) return e;
+    const applies = Object.fromEntries(Object.entries(e.applies).map(([role, list]) => [role, list!.filter((a) => agents[a]?.capabilities[needs])]));
+    return { ...e, applies };
+  });
+}
 
 /** How much of an outside source the workspace can show. */
 export type Inspectable = 'shown' | 'file' | 'hidden' | 'unknown';

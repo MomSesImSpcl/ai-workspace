@@ -38,7 +38,7 @@ async function until(check: () => boolean, ms = 10000): Promise<void> {
 const last = (id: string) => turns(readEvents(id), turnRunning(id)).at(-1)!;
 const status = (id: string) => taskStatus(loadSession(id), turns(readEvents(id), turnRunning(id)));
 const task = (goal: string, tokenBudget = 10_000) => createTask({ projectId: 'P', goal, role: 'Implementation', tokenBudget });
-const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
+const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
 
 test('a task is a session with a budget, listed apart from chat sessions; a pending approval shows as waiting', () => {
   const t = task('do the thing');

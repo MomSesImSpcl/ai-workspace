@@ -68,7 +68,7 @@ process.exit(2);`);
 interface Run { root: string; prompt: string; history: string }
 /** A fake agent that records where each turn ran and the conversation it got. */
 const recording = (runs: Run[]): Record<string, SessionAgent> => ({
-  'claude-code': { open: (_s, r) => ({ turn: async (i) => { runs.push({ root: r, prompt: i.prompt, history: i.history }); i.emit({ type: 'text', text: `done: ${i.prompt}` }); return {}; }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] },
+  'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: (_s, r) => ({ turn: async (i) => { runs.push({ root: r, prompt: i.prompt, history: i.history }); i.emit({ type: 'text', text: `done: ${i.prompt}` }); return {}; }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] },
 });
 const say = async (id: string, text: string, runs: Run[]) => { addMessage(id, text); await runTurn(id, recording(runs)); };
 const lastTurn = (id: string) => turns(readEvents(id), false).at(-1)!;
@@ -238,7 +238,7 @@ test('continuing needs the user\'s confirmation and waits while the chat works; 
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   addMessage(a.id, 'switch branches');
-  const turn = runTurn(a.id, { 'claude-code': { open: () => ({ turn: async () => { git(wt.path, 'switch', '-q', '-c', 'side'); await gate; return {}; }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
+  const turn = runTurn(a.id, { 'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: () => ({ turn: async () => { git(wt.path, 'switch', '-q', '-c', 'side'); await gate; return {}; }, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
   while (!sessionWorking(a.id)) await new Promise((r) => setTimeout(r, 20));
   assert.throws(() => continueSession(a.id, { name: 'next' }), /This chat is working/);
   release();

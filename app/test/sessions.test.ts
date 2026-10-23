@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 const claude = { integration: 'claude-code' };
-const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
+const fake = (turn: AgentProcess['turn']): Record<string, SessionAgent> => ({ 'claude-code': { capabilities: { approvalTool: false, refusalText: false }, open: () => ({ turn, close() {} }), permissions: () => ({ line: 'fake' }), catalog: () => ({ models: [] }), inventory: async () => [] } });
 
 test('sessions are listed only in their own project, newest activity first', async () => {
   const other = mkdtempSync(join(tmpdir(), 'ws-other-'));

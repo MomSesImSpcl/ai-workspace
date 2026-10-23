@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assignmentFor, getRoles, setRole } from './roles.ts';
-import { addMessage, addUsage, isSetupContinue, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
+import { CAPABILITIES, addMessage, addUsage, isSetupContinue, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { claudeHome, fileOr } from './adapters/claude-code.ts';
 import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
@@ -17,7 +17,7 @@ import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
 import { continueSession } from './binding.ts';
-import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable } from './instructions.ts';
+import { CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable, withCapabilities } from './instructions.ts';
 import { installed, startTestInstance, testBranch } from './test-instance.ts';
 
 
@@ -284,7 +284,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   // The Agent Instructions tab (agent-instructions-001–005): read only, in a development environment only (ADR 0022).
   if (req.method === 'GET' && kind === 'instructions') {
     if (!instructionsAvailable()) throw new HttpError(404, 'Agent instructions are shown only when the app runs from a checkout.');
-    return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: CATALOG, external: externalSources() };
+    return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: withCapabilities(), external: externalSources(), capabilities: CAPABILITIES };
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});

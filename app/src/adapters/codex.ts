@@ -505,6 +505,7 @@ export function codexCatalog(): Catalog {
 }
 
 export const codexSession: SessionAgent = {
+  capabilities: { approvalTool: false, refusalText: false },
   open: (session, root) => new CodexProcess(session, root),
   permissions: codexPermissions,
   catalog: codexCatalog,
