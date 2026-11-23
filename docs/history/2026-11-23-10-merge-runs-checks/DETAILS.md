@@ -11,6 +11,6 @@
 
 **No wait before the card (user, same day):** a first version ran the checks before the card, about 35 s. Now the card goes up at once and the checks run alongside (`Promise.race` in `requestMerge`): passing checks update the card ("Checks passed in the worktree: …"), a failure withdraws it; an Allow given earlier waits for them ("Allowed: merging once typecheck and tests pass…", shown as a chat notice). New event `approval-status` (`app/src/sessions.ts`) carries a card's progress line, and `closed` withdraws it: the card leaves the pending list, `awaitAnswer` returns, and the activity list shows "Withdrawn (…)". Tests 125/125 (`app/test/merge.test.ts`, `app/test/tasks.test.ts`); browser check of an open card with its progress line and of a withdrawn one. Shortcut: after Deny or a stop the checks run to their end.
 
-**Not verified:** a real request_merge from an agent in a test instance (the card text and the wait while tests run).
+**Verified (user, 2026-11-23):** a real Claude Code task called request_merge; the card appeared at once with its progress line, and after Deny the agent reported the merge was denied. **Not verified with a real agent:** the card withdrawn by failing checks (covered by tests).
 
 **Branch:** `agent-instructions` (this worktree), committed locally, not pushed.
