@@ -9,3 +9,5 @@
 **Housekeeping:** the `agent-instructions` worktree in workspace storage held uncommitted edits from 2026-10-23 that removed instruction text main added later (configured implementer, `read_repo` note, `request_merge` part of the merge note, `basedOn`). The user chose not to carry them over; that worktree was not touched.
 
 **Checks:** documentation only; local links resolve; private-data scan clean.
+
+**Added (user, same day):** agent-interface-007, every instruction only through one registry, and 008, agent communication through fixed typed workspace tools, instructions only where code cannot decide.
