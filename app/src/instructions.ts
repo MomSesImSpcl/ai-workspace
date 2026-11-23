@@ -31,6 +31,8 @@ export interface InstructionEntry {
   group: string; // purpose group in the list
   title: string;
   description: string; // what it is for and when it is sent
+  textBecause: string; // why it is text and not code (agent-interface-008)
+  toCode?: string; // what of it could become code
   text: string; // exact text; `{name}` marks a value filled in at run time, explained in `placeholders`
   params?: { name: string; text: string }[]; // a tool's parameter descriptions, as the agent sees them
   variants?: { label: string; text: string }[]; // other forms of the same message, each with when it is used
@@ -63,7 +65,7 @@ function sendSites(): Map<string, { file: string; symbol: string }[]> {
 export const CATALOG: InstructionEntry[] = (() => {
   const sites = sendSites();
   return Object.entries(REGISTRY as Record<string, Entry>).map(([id, e]) => ({
-    id, group: e.group, title: e.title, description: e.description, text: e.text,
+    id, group: e.group, title: e.title, description: e.description, textBecause: e.textBecause, toCode: e.toCode, text: e.text,
     params: e.params && Object.entries(e.params).map(([name, text]) => ({ name, text })),
     variants: e.variants && Object.values(e.variants),
     applies: Object.fromEntries(e.roles.map((r) => [r, CATALOG_AGENTS])) as Applies,

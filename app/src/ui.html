@@ -1388,6 +1388,7 @@ function instructionDetail(e) {
   const gaps = gapsText(e.applies, instr.data.agents);
   return `<h3>${esc(e.title)}</h3><p style="margin:0">${esc(e.description)}</p><p class="meta" style="margin:0"><code>${esc(e.id)}</code></p>
     ${gaps ? `<p class="meta" style="margin:0">Not yet for ${esc(gaps)}: ${e.needs ? `it needs an agent that ${esc(instr.data.capabilities[e.needs])}.` : 'that agent does not get it there.'}</p>` : ''}
+    <dl><dt>Why it is text</dt><dd>${esc(e.textBecause)}</dd>${e.toCode ? `<dt>Could become code</dt><dd>${esc(e.toCode)}</dd>` : ''}</dl>
     <div><b>Text</b><pre>${withPlaceholders(e.text)}</pre></div>
     ${e.params?.length ? `<div><b>Parameters</b><dl>${e.params.map((p) => `<dt><code>${esc(p.name)}</code></dt><dd>${esc(p.text)}</dd>`).join('')}</dl></div>` : ''}
     ${e.variants?.length ? `<div style="display:grid;gap:8px"><b>Other forms</b>${e.variants.map((v) => `<div><span class="meta">${esc(v.label)}</span><pre>${withPlaceholders(v.text)}</pre></div>`).join('')}</div>` : ''}

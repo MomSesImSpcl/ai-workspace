@@ -43,6 +43,13 @@ test('workspace tools take their descriptions and parameter descriptions from th
   for (const m of server.matchAll(/\.describe\(([^)]*)\)/g)) assert.match(m[1]!, /^toolParam\('tool\./, `parameter description not from the registry: ${m[1]}`);
 });
 
+test('every instruction says why it is text and not code (agent-interface-008)', () => {
+  for (const e of CATALOG) {
+    assert.ok(e.textBecause.trim().length >= 20, `${e.id}: say why this cannot be code`);
+    if (e.toCode !== undefined) assert.ok(e.toCode.trim(), `${e.id}: an empty code proposal`);
+  }
+});
+
 test('agentText fills placeholders and refuses a missing value', () => {
   assert.equal(agentText('reply.rename_task', { task: 't1', title: 'Fix' }), 'task t1 is now titled "Fix"');
   assert.equal(agentText('reply.reply_task', { task: 't1', status: 'completed' }, 'finished'), 'Task t1 is completed; start a new task with basedOn: t1');
