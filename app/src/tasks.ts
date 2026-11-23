@@ -31,11 +31,13 @@ export function taskStatus(s: Session, ts: Turn[]): TaskStatus {
 
 // agent, model, effort and reason: the orchestrator's choice (orchestrator-004); unset, the role's assignment.
 // defaultMode: used when no mode is given and the agent offers it; basedOn: an earlier related task.
-export interface NewTask { projectId: string; goal: string; role: string; override?: boolean; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string; title?: string; setup?: string[] }
+export interface NewTask { projectId: string; goal: string; role: string; tokenBudget?: number; permissionMode?: string; defaultMode?: string; parentId?: string; sessionId?: string; agent?: string; model?: string; effort?: string; reason?: string; basedOn?: string; title?: string; setup?: string[] }
 
 // Tasks a chat starts edit files without asking unless the chat picks another mode; agents without this mode
 // keep their own settings.
 export const DEFAULT_TASK_MODE = 'acceptEdits';
+/** The role every task a chat starts runs in. */
+export const IMPLEMENTATION = 'Implementation';
 
 // The goal is the first message. Agent, model, effort and mode must be ones the agent offers.
 export function createTask(f: NewTask): Session {
@@ -64,21 +66,17 @@ export function createTask(f: NewTask): Session {
 // project in the background, and the chat shows it inline in the turn that started it. The chat's runner
 // starts it (startPendingTasks): a process started inside the agent's tree dies with it (Codex runs its MCP
 // servers in a Windows job that is closed with the agent).
-export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
+export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId' | 'role' | 'agent' | 'model'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error(agentText('reply.start_task', {}, 'fromTask'));
-  // The role's agent and model unless the user asked for others (agent-interface-008): code, not a rule in the note.
-  const role = assignmentFor(f.role);
-  const otherAgent = f.agent !== undefined && f.agent !== role.integration;
-  const otherModel = !!f.model && f.model !== role.model && (otherAgent || f.model !== (role.model ?? ''));
-  if ((otherAgent || otherModel) && !f.override) throw new Error(agentText('reply.start_task', { role: f.role, agent: role.integration, model: role.model || 'its default model' }, 'override'));
-  // Setup ids must be ones the task's agent lists and the user did not switch off; a task based on an earlier one
-  // keeps those of its items that this agent lists.
-  const integration = f.agent ?? role.integration;
-  if (f.setup?.length) checkRequest(integration, setupRole({ task: {}, role: f.role }), f.setup);
+  // The Implementation agent and model come from Settings, never from the chat's agent (user, 2026-11-23); the user
+  // changes them for one task with Change. Setup ids must be ones that agent lists and the user did not switch off; a
+  // task based on an earlier one keeps those of its items that this agent lists.
+  const integration = assignmentFor(IMPLEMENTATION).integration;
+  if (f.setup?.length) checkRequest(integration, setupRole({ task: {}, role: IMPLEMENTATION }), f.setup);
   const known = new Set((getAgentSetup().inventory?.[integration] ?? []).map((i) => i.id));
   const setup = [...new Set([...(f.basedOn ? (loadSession(f.basedOn).task?.setup ?? []).filter((id) => known.has(id)) : []), ...(f.setup ?? [])])];
-  const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, role: IMPLEMENTATION, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }

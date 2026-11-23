@@ -9,10 +9,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { awaitAnswer, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
-import { getRoles } from './roles.ts';
+import { assignmentFor } from './roles.ts';
 import { decidable, getAgentSetup, setupStatus } from './setup.ts';
 import { requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
-import { sessionAgents } from './turn.ts';
+import { sessionAgent } from './turn.ts';
 import { requestMerge } from './merge.ts';
 import { bindingProblem } from './binding.ts';
 import { readRepo } from './repo-read.ts';
@@ -96,20 +96,16 @@ if (!task) {
       inputSchema: {
         title: z.string().describe(toolParam('tool.start_task', 'title')),
         goal: z.string().describe(toolParam('tool.start_task', 'goal')),
-        agent: z.string().optional().describe(toolParam('tool.start_task', 'agent')),
-        model: z.string().optional().describe(toolParam('tool.start_task', 'model')),
         effort: z.string().optional().describe(toolParam('tool.start_task', 'effort')),
         reason: z.string().describe(toolParam('tool.start_task', 'reason')),
-        override: z.boolean().optional().describe(toolParam('tool.start_task', 'override')),
         tokenBudget: z.number().int().positive().optional().describe(toolParam('tool.start_task', 'tokenBudget')),
         basedOn: z.string().optional().describe(toolParam('tool.start_task', 'basedOn')),
-        role: z.string().optional(),
         permissionMode: z.string().optional().describe(toolParam('tool.start_task', 'permissionMode')),
         setup: z.array(z.string()).optional().describe(toolParam('tool.start_task', 'setup')),
       },
     },
-    tool((a: { title: string; goal: string; override?: boolean; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
-      const t = startFromSession(sessionId, { ...a, role: a.role ?? 'Implementation' });
+    tool((a: { title: string; goal: string; effort?: string; reason?: string; tokenBudget?: number; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
+      const t = startFromSession(sessionId, a);
       return agentText('reply.start_task', { task: t.id, choice: [t.integration, t.model, t.effort].filter(Boolean).join(', ') });
     }),
   );
@@ -135,7 +131,12 @@ if (!task) {
   server.registerTool(
     'list_agents',
     { description: agentText('tool.list_agents'), inputSchema: {} },
-    tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])), setupStatus: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, setupStatus(k)])) })),
+    tool(() => {
+      // Only the implementer set in Settings: the orchestrator does not choose the agent or model (user, 2026-11-23).
+      const role = assignmentFor('Implementation');
+      const catalog = sessionAgent(role.integration).catalog();
+      return JSON.stringify({ implementer: { agent: role.integration, model: role.model, effort: role.effort, models: catalog.models, modes: catalog.modes }, setup: decidable(role.integration), setupStatus: setupStatus(role.integration) });
+    }),
   );
 }
 
