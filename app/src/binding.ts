@@ -7,7 +7,7 @@ import { mergedPr } from './merge.ts';
 import { createSession, emit, loadSession, readEvents, saveSession, sessionFile, sessionWorking, turns, type Session } from './sessions.ts';
 import { audit, getProject } from './store.ts';
 import { branchExists, checkedOut, git, isAppProject, ownWorktreePath, planWorktree, type WorktreeChoice } from './worktrees.ts';
-import { agentText } from './registry.ts';
+import { agentText, type AgentText } from './registry.ts';
 
 /** A turn refused because its session's binding does not match git; the chat then offers "Continue in a new chat". */
 export class BindingError extends Error {}
@@ -28,8 +28,8 @@ function keptWork(path: string): string {
   try {
     const files = git(path, ['status', '--porcelain']).split('\n').filter(Boolean).length;
     const commits = Number(git(path, ['rev-list', '--count', 'HEAD', '--not', '--remotes']));
-    return agentText('reply.binding', { files: `${files} uncommitted file${files === 1 ? '' : 's'}`, commits: `${commits} commit${commits === 1 ? '' : 's'}` }, 'kept');
-  } catch { return agentText('reply.binding', {}, 'unreadable'); }
+    return agentText('refusal.binding', { files: `${files} uncommitted file${files === 1 ? '' : 's'}`, commits: `${commits} commit${commits === 1 ? '' : 's'}` }, 'kept');
+  } catch { return agentText('refusal.binding', {}, 'unreadable'); }
 }
 
 /**
@@ -42,14 +42,14 @@ function keptWork(path: string): string {
  * folder, stored and actual branch and the work the folder keeps, and says how to go on. Git HEAD is never trusted in
  * place of the stored branch, and nothing is changed.
  */
-export function bindingProblem(s: Pick<Session, 'id' | 'projectId' | 'worktree' | 'task'>, opts: { merged?: boolean } = {}): string | undefined {
+export function bindingProblem(s: Pick<Session, 'id' | 'projectId' | 'worktree' | 'task'>, opts: { merged?: boolean } = {}): AgentText | undefined {
   const wt = s.worktree;
   if (!wt) return undefined;
   const at = { project: s.projectId, path: wt.path, branch: wt.branch };
-  const say = (reason: string, values: Record<string, string | number> = {}) => agentText('reply.binding', {
-    reason: agentText('reply.binding', { ...at, ...values }, reason), who: s.task ? 'Task' : 'Chat', id: s.id, ...at,
-    kept: existsSync(wt.path) ? keptWork(wt.path) : '', next: agentText('reply.binding', {}, s.task ? 'nextTask' : 'nextChat'),
-  }).replace(/ {2,}/g, ' ');
+  const say = (reason: string, values: Record<string, string | number> = {}) => agentText('refusal.binding', {
+    reason: agentText('refusal.binding', { ...at, ...values }, reason), who: s.task ? 'Task' : 'Chat', id: s.id, ...at,
+    kept: existsSync(wt.path) ? keptWork(wt.path) : '', next: agentText('refusal.binding', {}, s.task ? 'nextTask' : 'nextChat'),
+  }).replace(/ {2,}/g, ' ') as AgentText; // only spaces from an empty section go
   let project;
   try { project = getProject(s.projectId); } catch { return say('removed'); }
   if (!isAppProject(project)) return say('notApp');
@@ -58,7 +58,7 @@ export function bindingProblem(s: Pick<Session, 'id' | 'projectId' | 'worktree' 
   const actual = checkedOut(project.root, wt.path);
   if (!actual) return say('notWorktree', { repo: project.root });
   if (actual.branch !== wt.branch) {
-    const branchGone = branchExists(project.root, wt.branch) ? '' : agentText('reply.binding', at, 'branchGone');
+    const branchGone = branchExists(project.root, wt.branch) ? '' : agentText('refusal.binding', at, 'branchGone');
     return say('otherBranch', { checkedOut: actual.branch ? `branch ${actual.branch}` : 'a detached HEAD', head: actual.head.slice(0, 7), branchGone });
   }
   if (opts.merged !== false && published(project.root, wt.branch)) {

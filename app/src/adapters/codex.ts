@@ -347,7 +347,7 @@ export class CodexProcess implements AgentProcess {
     const threadId = this.threadId!;
     emit({ ...this.info!, mcp: [...this.mcp].map(([name, status]) => ({ name, status })) } as Body);
     for (const text of this.notes.splice(0)) emit({ type: 'notice', text });
-    const prompt = this.fresh && input.history ? agentText('history.prefix', { history: input.history, message: input.prompt }) : input.prompt;
+    const prompt = this.fresh && input.history ? agentText('message.history', { history: input.history, message: input.prompt }) : input.prompt;
     this.fresh = false;
     let text = '';
     let turnId: string | undefined;

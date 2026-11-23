@@ -356,7 +356,7 @@ export class ClaudeProcess implements AgentProcess {
     if (!this.alive) this.start(this.session.vendorSessionId);
     const { emit, signal } = input;
     const resumed = !this.fresh;
-    const prompt = this.fresh && input.history ? agentText('history.prefix', { history: input.history, message: input.prompt }) : input.prompt;
+    const prompt = this.fresh && input.history ? agentText('message.history', { history: input.history, message: input.prompt }) : input.prompt;
     this.fresh = false;
     let text = '';
     let sawText = false;

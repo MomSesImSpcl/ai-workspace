@@ -19,9 +19,9 @@ test('every agent implements the whole interface and reports every capability', 
 test('an instruction that needs a capability goes only to agents that report it', () => {
   const agents = { 'claude-code': { capabilities: { approvalTool: true, refusalText: false }, installed: () => true }, codex: { capabilities: { approvalTool: false, refusalText: true }, installed: () => true } };
   const by = (id: string) => withCapabilities(agents).find((e) => e.id === id)!;
-  assert.deepEqual(by('reply.approve').applies.Chat, ['claude-code']);
-  assert.deepEqual(by('guard.notice').applies.Chat, ['codex']);
-  assert.deepEqual(by('session-note').applies.Chat, ['claude-code', 'codex']); // needs nothing: every agent
+  assert.deepEqual(by('tool.approve').applies.Chat, ['claude-code']);
+  assert.deepEqual(by('refusal.guard').applies.Chat, ['codex']);
+  assert.deepEqual(by('note.chat').applies.Chat, ['claude-code', 'codex']); // needs nothing: every agent
   for (const e of CATALOG.filter((x) => x.needs)) for (const list of Object.values(e.applies)) assert.deepEqual(list, ['claude-code', 'codex'], `${e.id}: written for every agent`);
 });
 

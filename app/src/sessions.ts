@@ -40,14 +40,11 @@ export function addUsage(a: Usage, b: Usage): Usage {
 
 // Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
 // Plain chats and tasks see read_repo only in their tool list; this sentence makes them try it (#31).
-export const READ_REPO_NOTE = agentText('read-repo.note');
-export const TASK_NOTE = agentText('task.note');
 
 // A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
 // whatever agent the role uses, so this rule is not the only guard.
 export const ORCHESTRATION = 'Orchestration';
 export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task', 'read_repo', 'search_history']; // its workspace tools, run without a card
-export const ORCHESTRATOR_NOTE = agentText('orchestrator.note');
 
 // The user's own instructions per role (Settings, optional): chat for plain chats, orchestrator for orchestrator
 // chats, implementation for tasks. They apply when the agent starts next.
@@ -56,11 +53,11 @@ type Settings = Partial<Record<(typeof INSTRUCTIONS)[number], string>>;
 const settingsPath = () => join(home(), 'settings.json');
 export const getSettings = () => readJson<Settings>(settingsPath(), {});
 export const setSettings = (v: Settings) => writeJson(settingsPath(), { ...getSettings(), ...v });
+/** The user's own instructions for a role (Settings → Agents), trimmed; '' when empty. */
 export function ownInstructions(key: (typeof INSTRUCTIONS)[number]): string {
   const own = getSettings()[key]?.trim();
-  return own ? ` ${agentText('own-instructions', { instructions: own })}` : '';
+  return own ?? '';
 }
-export const orchestratorNote = () => ORCHESTRATOR_NOTE + ownInstructions('orchestratorInstructions');
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
@@ -390,8 +387,8 @@ export const clearStop = (id: string) => rmSync(stopPath(id), { force: true });
 
 // The message that continues a task after request_setup (orchestrator-005); the task view counts it as part of
 // the run that asked, not as a reply that reused the task.
-export const setupContinue = (added: string[]) => agentText('task.setup-continue', { ids: added.join(', ') });
-export const isSetupContinue = (text: string) => isAgentText('task.setup-continue', text);
+export const setupContinue = (added: string[]) => agentText('message.continue', { ids: added.join(', ') }, 'setup');
+export const isSetupContinue = (text: string) => isAgentText('message.continue', text, 'setup');
 
 // Ends a session's idle host (Stop while idle ends it), so its worktree can be removed: Windows keeps a running
 // process's folder in use. False while the agent works, or when the host has not ended within `ms`.
@@ -488,8 +485,8 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
 function marker(t: Turn): string {
   const done = t.activity.filter((a) => a.done);
   const what = t.state === 'stopped' ? 'Stopped' : t.state === 'error' ? 'Failed' : 'Interrupted';
-  const at = done.length ? agentText('turn.marker', { outcome: what, n: done.length, step: done.at(-1)!.label }) : agentText('turn.marker', { outcome: what }, 'first');
-  return t.reason ? agentText('turn.marker', { marker: at, reason: t.reason }, 'reason') : at;
+  const at = done.length ? agentText('message.turn', { outcome: what, n: done.length, step: done.at(-1)!.label }, 'step') : agentText('message.turn', { outcome: what }, 'first');
+  return t.reason ? agentText('message.turn', { marker: at, reason: t.reason }, 'reason') : at;
 }
 
 // Tool calls the previous attempt completed, when it was interrupted (the runner died) or paused: a matching
@@ -504,7 +501,7 @@ export function repeatsFor(ts: Turn[]): Map<string, string> {
 
 // The conversation as text, for agents that cannot resume their own (Codex exec, an expired hint).
 export function transcript(ts: Turn[]): string {
-  return ts.map((t) => [agentText('history.transcript', { message: t.user }), t.text && agentText('history.transcript', { reply: t.text }, 'reply'), t.marker && agentText('history.transcript', { marker: t.marker }, 'marker')].filter(Boolean).join('\n\n')).join('\n\n');
+  return ts.map((t) => [agentText('message.history', { message: t.user }, 'turn'), t.text && agentText('message.history', { reply: t.text }, 'reply'), t.marker && agentText('message.history', { marker: t.marker }, 'marker')].filter(Boolean).join('\n\n')).join('\n\n');
 }
 
 // Records the user's message as a new turn. If the last turn did not finish, its marker is recorded
@@ -541,8 +538,8 @@ export function queueReply(id: string, text: string): void {
 // The last turn's message, prefixed with the previous turn's marker when it did not finish.
 export function turnPrompt(ts: Turn[]): string {
   const [prev, cur] = [ts.at(-2), ts.at(-1)!];
-  const relays = prev?.relays.map((r) => agentText('turn.relay', { task: r.taskId, text: r.text })).join('\n') ?? '';
-  const head = [prev?.marker ? agentText('turn.unfinished', { marker: prev.marker }) : '', relays].filter(Boolean).join('\n');
+  const relays = prev?.relays.map((r) => agentText('message.turn', { task: r.taskId, text: r.text }, 'relay')).join('\n') ?? '';
+  const head = [prev?.marker ? agentText('message.turn', { marker: prev.marker }) : '', relays].filter(Boolean).join('\n');
   return head ? `${head}\n\n${cur.user}` : cur.user;
 }
 

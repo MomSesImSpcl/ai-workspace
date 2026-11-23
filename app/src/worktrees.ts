@@ -310,7 +310,7 @@ export { GUARD_MARK } from './registry.ts';
  * through, so the user can check it and extend the read list.
  */
 export function guardNotice(hit: string, what: { command?: string; file?: string }): string {
-  return what.file ? agentText('guard.notice', { file: what.file, folder: hit }) : agentText('guard.notice', { command: what.command ?? '', folder: hit }, 'command');
+  return what.file ? agentText('refusal.guard', { file: what.file, folder: hit }) : agentText('refusal.guard', { command: what.command ?? '', folder: hit }, 'command');
 }
 
 /** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */

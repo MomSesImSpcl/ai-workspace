@@ -8,13 +8,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
-import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, ORCHESTRATOR_NOTE, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
+import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
 import { saveInventory, stateOf } from '../src/setup.ts';
 import { cancelTask, childrenOf, createTask, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { hostSession, runTurn, sessionAgent, startTurn } from '../src/turn.ts';
 import { serve } from '../src/ui.ts';
+import { REGISTRY } from '../src/registry.ts';
 import { home, registerProject } from '../src/store.ts';
 
 let root = '';
@@ -363,7 +364,7 @@ test('a chat\'s task runs on the implementer set in Settings, with checked setup
   const opus = startFromSession(chat.id, { goal: 'x', model: 'opus', setup: ['tool:Read'] }); // the model is the orchestrator's choice
   assert.deepEqual([opus.integration, opus.model], ['claude-code', 'opus']);
   assert.throws(() => startFromSession(chat.id, { goal: 'x', model: 'gpt-x', setup: ['tool:Read'] }), /Unknown model/); // but only one this agent offers
-  assert.doesNotMatch(ORCHESTRATOR_NOTE, /requiresBuiltInTool|override|integration|agent and model/); // the agent is decided by Settings, not told
+  assert.doesNotMatch(REGISTRY['note.orchestrator'].text, /requiresBuiltInTool|override|integration|agent and model/); // the agent is decided by Settings, not told
 });
 
 test('orchestrator chats and tasks load only the chosen setup items, switched for the one run (orchestrator-005)', async () => {
@@ -679,7 +680,7 @@ test('both agents receive the same instructions in every role (ADR 0023)', async
   };
   for (const role of ['Chat', 'Orchestration', 'Implementation']) {
     const claude = await sent('claude-code', role);
-    assert.match(claude!, /^AI Workspace (session|task): effort level/, role);
+    assert.match(claude!, /^AI Workspace: effort level/, role);
     assert.equal(await sent('codex', role), claude, role);
   }
 });

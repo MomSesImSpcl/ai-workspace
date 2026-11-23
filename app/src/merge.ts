@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { agentText } from './registry.ts';
+import { AgentError, agentText, type AgentText } from './registry.ts';
 import { home } from './store.ts';
 import { npmCommand } from './worktrees.ts';
 
@@ -69,7 +69,7 @@ export function mergedPr(branch: string, cwd: string, prs = branchPrs(branch, cw
 }
 
 /** What the agent is told when its branch's pull request is already merged: why, and the supported way on (#62). */
-const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { number: pr.number, branch, url: pr.url });
+const mergedText = (pr: Pr, branch: string) => agentText('tool.request_merge', { number: pr.number, branch, url: pr.url }, 'alreadyMerged');
 
 /**
  * Merges the worktree branch `branch` into main after the user's approval. Before the card it refuses uncommitted work and runs
@@ -83,24 +83,24 @@ const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { nu
  * merges into the checked-out branch, since the card may wait a long time (#62). A merged pull request is refused at
  * both points too. Returns what the agent is told; throws when the request cannot go to the user.
  */
-export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => string | undefined = () => undefined, verify = runChecks, status: (text: string, closed?: boolean) => void = () => {}): Promise<string> {
+export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => AgentText | undefined = () => undefined, verify = runChecks, status: (text: string, closed?: boolean) => void = () => {}): Promise<AgentText> {
   const problem = check();
-  if (problem) throw new Error(problem);
+  if (problem) throw new AgentError(problem);
   const prs = branchPrs(branch, cwd) ?? [];
   const merged = mergedPr(branch, cwd, prs);
-  if (merged) throw new Error(mergedText(merged, branch));
+  if (merged) throw new AgentError(mergedText(merged, branch));
   const open = prs.find((p) => p.state === 'OPEN');
-  if (!open && !args.title) throw new Error(agentText('reply.request_merge', { branch }, 'noTitle'));
+  if (!open && !args.title) throw new AgentError(agentText('tool.request_merge', { branch }, 'noTitle'));
   // The workspace checks what it would publish (agent-interface-008): committed work only, typecheck and tests passing.
   const dirty = git(['status', '--porcelain'], cwd).out.split('\n').filter(Boolean);
-  if (dirty.length) return agentText('reply.request_merge', { files: dirty.slice(0, 10).map((l) => l.trim().replace(/^\S+\s+/, '')).join(', ') + (dirty.length > 10 ? ` and ${dirty.length - 10} more` : '') }, 'uncommitted');
+  if (dirty.length) return agentText('tool.request_merge', { files: dirty.slice(0, 10).map((l) => l.trim().replace(/^\S+\s+/, '')).join(', ') + (dirty.length > 10 ? ` and ${dirty.length - 10} more` : '') }, 'uncommitted');
   // The card goes up at once and the checks run alongside it, so the user reads it while they run; Allow takes
   // effect only once they pass, and a failure withdraws the card.
   const checking = verify(cwd);
   const what = open ? `pull request #${open.number} "${open.title}"` : `a new pull request "${args.title}"`;
   const answer = ask(`Push branch ${branch} and squash-merge ${what} into main once typecheck and tests pass in the worktree and the required checks pass on GitHub.`.slice(0, 1000));
   status('Typecheck and tests are running in the worktree…');
-  const failed = (c: { check: string; output: string }) => agentText('reply.request_merge', { check: c.check, output: c.output }, 'checksFailed');
+  const failed = (c: { check: string; output: string }) => agentText('tool.request_merge', { check: c.check, output: c.output }, 'checksFailed');
   const first = await Promise.race([checking.then((c) => ({ c })), answer.then((a) => ({ a }))]);
   let allow: boolean | null;
   if ('c' in first) {
@@ -117,32 +117,32 @@ export async function requestMerge(branch: string, cwd: string, args: MergeArgs,
       status(`Checks passed in the worktree: ${c.summary}`);
     }
   }
-  if (allow === null) return agentText('reply.request_merge', {}, 'stopped');
-  if (!allow) return agentText('reply.request_merge', {}, 'denied');
+  if (allow === null) return agentText('tool.request_merge', {}, 'stopped');
+  if (!allow) return agentText('tool.request_merge', {}, 'denied');
   const stale = check();
-  if (stale) return agentText('reply.request_merge', { binding: stale }, 'stale');
+  if (stale) return agentText('tool.request_merge', { binding: stale }, 'stale');
   const mergedMeanwhile = mergedPr(branch, cwd);
-  if (mergedMeanwhile) return agentText('reply.request_merge', { merged: mergedText(mergedMeanwhile, branch) }, 'mergedMeanwhile');
+  if (mergedMeanwhile) return agentText('tool.request_merge', { merged: mergedText(mergedMeanwhile, branch) }, 'mergedMeanwhile');
   // main's ruleset merges only branches that are up to date with main (ADR 0016), so main comes in first.
   const fetched = git(['fetch', 'origin', 'main'], cwd);
-  if (!fetched.ok) return agentText('reply.request_merge', { output: fetched.out }, 'fetch');
+  if (!fetched.ok) return agentText('tool.request_merge', { output: fetched.out }, 'fetch');
   const updated = git(['merge', '--no-edit', 'origin/main'], cwd);
   if (!updated.ok) {
     git(['merge', '--abort'], cwd);
-    return agentText('reply.request_merge', { branch, output: updated.out }, 'conflict');
+    return agentText('tool.request_merge', { branch, output: updated.out }, 'conflict');
   }
   const pushed = git(['push', '-u', 'origin', branch], cwd);
-  if (!pushed.ok) return agentText('reply.request_merge', { branch, output: pushed.out }, 'push');
+  if (!pushed.ok) return agentText('tool.request_merge', { branch, output: pushed.out }, 'push');
   let pr = open;
   if (!pr) {
     const created = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', args.title!, '--body', args.body ?? ''], cwd);
-    if (!created.ok) return agentText('reply.request_merge', { output: created.out }, 'create');
+    if (!created.ok) return agentText('tool.request_merge', { output: created.out }, 'create');
     pr = branchPrs(branch, cwd)?.find((p) => p.state === 'OPEN');
-    if (!pr) return agentText('reply.request_merge', {}, 'unreadable');
+    if (!pr) return agentText('tool.request_merge', {}, 'unreadable');
   }
   const auto = gh(['pr', 'merge', String(pr.number), '--squash', '--auto'], cwd);
-  if (!auto.ok) return agentText('reply.request_merge', { number: pr.number, output: auto.out }, 'autoMerge');
-  return agentText('reply.request_merge', { branch, number: pr.number, url: pr.url });
+  if (!auto.ok) return agentText('tool.request_merge', { number: pr.number, output: auto.out }, 'autoMerge');
+  return agentText('tool.request_merge', { branch, number: pr.number, url: pr.url }, 'ok');
 }
 
 /**
@@ -162,5 +162,3 @@ export function mergeCommand(command: string): boolean {
   return /\bgh(\.exe)?["']?\s+pr\s+merge\b/i.test(command) || /\bgh(\.exe)?["']?\s+api\b[^;&|\n]*\/pulls\/\d+\/merge\b/i.test(command);
 }
 
-/** What agents in the app project are told (selfdev-003/004). */
-export const MERGE_NOTE = agentText('merge.note');

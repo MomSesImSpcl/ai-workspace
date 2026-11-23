@@ -17,14 +17,14 @@ export function guardDecision(g: Guard, input: HookInput): object {
   const path = args.file_path ?? args.notebook_path;
   if (g.merge && typeof args.command === 'string' && mergeCommand(args.command)) {
     // An app-project session merges only through the workspace, after the user's approval (selfdev-004).
-    const reason = agentText('guard.merge', { command: args.command });
+    const reason = agentText('refusal.guard', { command: args.command }, 'merge');
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
   }
   const hit = typeof args.command === 'string' ? guardedCommand(g, args.command, cwd) : typeof path === 'string' ? guardedPath(g, path, cwd) : undefined;
   if (!hit) return {};
   // The first paragraph is shown in the chat as a notice; the rest tells the agent what to do instead.
   const notice = guardNotice(hit, typeof args.command === 'string' ? { command: args.command } : { file: String(path) });
-  const reason = `${notice}\n\n${agentText('guard.instead', { worktree: g.allow })}`;
+  const reason = `${notice}\n\n${agentText('refusal.guard', { worktree: g.allow }, 'instead')}`;
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
 }
 

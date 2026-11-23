@@ -38,7 +38,7 @@ test('workspace tools take their descriptions and parameter descriptions from th
   const server = readFileSync(join(src, 'approval-server.ts'), 'utf8');
   const names = [...server.matchAll(/registerTool\(\s*'(\w+)'/g)].map((m) => m[1]);
   assert.ok(names.length >= 9);
-  assert.deepEqual(CATALOG.filter((e) => e.group === 'Workspace tools').map((e) => e.id.slice('tool.'.length)).sort(), [...names].sort());
+  assert.deepEqual(CATALOG.filter((e) => e.group === 'Workspace tools and their replies').map((e) => e.id.slice('tool.'.length)).sort(), [...names].sort());
   for (const m of server.matchAll(/description: ([^,\n]+)/g)) assert.match(m[1]!, /^agentText\('tool\./, `description not from the registry: ${m[1]}`);
   for (const m of server.matchAll(/\.describe\(([^)]*)\)/g)) assert.match(m[1]!, /^toolParam\('tool\./, `parameter description not from the registry: ${m[1]}`);
 });
@@ -51,13 +51,13 @@ test('every instruction says why it is text and not code (agent-interface-008)',
 });
 
 test('agentText fills placeholders and refuses a missing value', () => {
-  assert.equal(agentText('reply.rename_task', { task: 't1', title: 'Fix' }), 'task t1 is now titled "Fix"');
-  assert.equal(agentText('reply.reply_task', { task: 't1', status: 'completed' }, 'finished'), 'Task t1 is completed; start a new task with basedOn: t1');
-  assert.throws(() => agentText('reply.rename_task', { task: 't1' }), /no value for \{title\}/);
-  assert.throws(() => agentText('reply.rename_task', { task: 't1', title: 'x' }, 'nope'), /no variant nope/);
-  assert.equal(agentText('reply.rename_task', { task: '{title}', title: 'x' }), 'task {title} is now titled "x"'); // values are not filled again
-  assert.ok(isAgentText('task.setup-continue', agentText('task.setup-continue', { ids: 'tool:Bash, mcp:x' })));
-  assert.ok(!isAgentText('task.setup-continue', 'Continue the task.'));
+  assert.equal(agentText('tool.rename_task', { task: 't1', title: 'Fix' }, 'ok'), 'task t1 is now titled "Fix"');
+  assert.equal(agentText('tool.reply_task', { task: 't1', status: 'completed' }, 'finished'), 'Task t1 is completed; start a new task with basedOn: t1');
+  assert.throws(() => agentText('tool.rename_task', { task: 't1' }, 'ok'), /no value for \{title\}/);
+  assert.throws(() => agentText('tool.rename_task', { task: 't1', title: 'x' }, 'nope'), /no variant nope/);
+  assert.equal(agentText('tool.rename_task', { task: '{title}', title: 'x' }, 'ok'), 'task {title} is now titled "x"'); // values are not filled again
+  assert.ok(isAgentText('message.continue', agentText('message.continue', { ids: 'tool:Bash, mcp:x' }, 'setup'), 'setup'));
+  assert.ok(!isAgentText('message.continue', 'Continue the task.', 'setup'));
 });
 
 test('every placeholder is explained, ids are unique, groups and roles are known', () => {
@@ -86,4 +86,12 @@ test('no workspace-authored text names an agent (agent-interface-003)', () => {
 test('workspace-authored entries go to every registered agent (agent-interface-001)', () => {
   assert.deepEqual([...CATALOG_AGENTS].sort(), Object.keys(sessionAgents).sort());
   for (const e of CATALOG) for (const [role, agents] of Object.entries(e.applies)) assert.deepEqual([...agents!].sort(), [...CATALOG_AGENTS].sort(), `${e.id} (${role})`);
+});
+
+test('the workspace tool server hands an agent only registry text or labelled data (agent-interface-007)', () => {
+  const server = readFileSync(join(src, 'approval-server.ts'), 'utf8');
+  // One place builds a tool result, and its type takes only AgentText or AgentData; other errors are framed by refusal.failed.
+  assert.equal(server.match(/type: 'text' as const/g)?.length, 1);
+  assert.match(server, /const answer = \(text: AgentText \| AgentData/);
+  assert.doesNotMatch(server, /\(e as Error\)\.message \}\]/);
 });

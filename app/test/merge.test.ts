@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardDecision } from '../src/guard.ts';
 import { ghBlockArgs, mergeCommand, requestMerge } from '../src/merge.ts';
+import type { AgentText } from '../src/registry.ts';
 
 let dir = '';
 beforeEach(() => {
@@ -95,14 +96,14 @@ test('request_merge checks the binding before the card and again after Allow; a 
     const allow = async () => { asked++; return true; };
     // A stale binding is refused before anything is asked or run.
     let calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
-    await assert.rejects(requestMerge('fix', dir, {}, allow, () => 'The worktree has branch other checked out.'), /branch other checked out/);
+    await assert.rejects(requestMerge('fix', dir, {}, allow, () => 'The worktree has branch other checked out.' as AgentText), /branch other checked out/);
     assert.equal(asked, 0);
     assert.deepEqual(calls(), []);
     // The binding goes stale while the card waits: nothing is fetched, merged or pushed.
     let stale = false;
     calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
     const flip = async () => { stale = true; return true; };
-    assert.match(await requestMerge('fix', dir, {}, flip, () => (stale ? 'The worktree has a detached HEAD checked out.' : undefined)), /^Nothing was pushed or merged: the binding changed while the card waited\. The worktree has a detached HEAD/);
+    assert.match(await requestMerge('fix', dir, {}, flip, () => (stale ? 'The worktree has a detached HEAD checked out.' as AgentText : undefined)), /^Nothing was pushed or merged: the binding changed while the card waited\. The worktree has a detached HEAD/);
     assert.deepEqual(calls(), []);
     // The pull request merges while the card waits.
     calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN', headRefOid: 'b'.repeat(40) } });

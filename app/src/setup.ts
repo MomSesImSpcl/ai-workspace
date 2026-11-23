@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, relative } from 'node:path';
 import { getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
-import { agentText } from './registry.ts';
+import { AgentError, agentText } from './registry.ts';
 import { ORCHESTRATION, type Session } from './sessions.ts';
 
 // What an agent loads (onboarding-010): each item can be switched on or off for one run. Skills that do not come
@@ -120,9 +120,9 @@ export function checkRequest(agent: string, role: string, ids: string[]): SetupI
   const setup = getAgentSetup();
   const items = ids.map((id) => (setup.inventory?.[agent] ?? []).find((i) => i.id === id) ?? id);
   const unknown = items.filter((i) => typeof i === 'string');
-  if (unknown.length) throw new Error(agentText('reply.request_setup', { agent, ids: unknown.join(', ') }, 'unknown'));
+  if (unknown.length) throw new AgentError(agentText('tool.request_setup', { agent, ids: unknown.join(', ') }, 'unknown'));
   const off = ids.filter((id) => stateOf(setup, role, agent, id) === 'off');
-  if (off.length) throw new Error(agentText('reply.request_setup', { ids: off.join(', ') }, 'off'));
+  if (off.length) throw new AgentError(agentText('tool.request_setup', { ids: off.join(', ') }, 'off'));
   return items as SetupItem[];
 }
 

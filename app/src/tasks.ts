@@ -8,7 +8,7 @@ import { addMessage, addUsage, allSessions, createSession, emit, loadSession, qu
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
 import { checkRequest, getAgentSetup, setupRole, toolsFor } from './setup.ts';
 import { agentChoice, pending, sessionAgent, startTurn } from './turn.ts';
-import { agentText } from './registry.ts';
+import { AgentError, agentText, REGISTRY, type AgentText } from './registry.ts';
 
 export type TaskStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'interrupted' | 'cancelled';
 
@@ -46,7 +46,7 @@ export function createTask(f: NewTask): Session {
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   // A chat's task without a built-in tool could only talk: the orchestrator must pick them (orchestrator-005).
-  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(agentText('reply.start_task', {}, 'noTool'));
+  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new AgentError(agentText('tool.start_task', {}, 'noTool'));
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
   // A chat's tasks and their subtasks work on the chat's branch, so one change is reviewed and merged once (selfdev-001).
@@ -68,7 +68,7 @@ export function createTask(f: NewTask): Session {
 // servers in a Windows job that is closed with the agent).
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId' | 'role' | 'agent'>): Session {
   const chat = loadSession(sessionId);
-  if (chat.task) throw new Error(agentText('reply.start_task', {}, 'fromTask'));
+  if (chat.task) throw new AgentError(agentText('tool.start_task', {}, 'fromTask'));
   // The Implementation agent comes from Settings, never from the chat's agent (user, 2026-11-23); the model may be any
   // the agent offers (checked by agentChoice). The user changes a task's agent with Change. Setup ids must be ones that agent lists and the user did not switch off; a
   // task based on an earlier one keeps those of its items that this agent lists.
@@ -76,7 +76,7 @@ export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId'
   if (f.setup?.length) checkRequest(integration, setupRole({ task: {}, role: IMPLEMENTATION }), f.setup);
   const known = new Set((getAgentSetup().inventory?.[integration] ?? []).map((i) => i.id));
   const setup = [...new Set([...(f.basedOn ? (loadSession(f.basedOn).task?.setup ?? []).filter((id) => known.has(id)) : []), ...(f.setup ?? [])])];
-  const t = createTask({ ...f, role: IMPLEMENTATION, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
+  const t = createTask({ ...f, role: IMPLEMENTATION, setup, goal: f.basedOn ? agentText('message.task-start', { goal: f.goal, ...handoff(chat.projectId, f.basedOn) }, 'basedOn') : agentText('message.task-start', { goal: f.goal }), tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
   emit(sessionId, turns(readEvents(sessionId), true).at(-1)?.n ?? 0, { type: 'task', id: t.id });
   return t;
 }
@@ -93,7 +93,7 @@ export function replyFromSession(sessionId: string, taskId: string, text: string
   if (!t) throw new Error(`Unknown task in this chat: ${taskId}`);
   // A finished task is continued only by the user, from the reply field under it (orchestrator-006).
   const status = taskStatus(t, turns(readEvents(taskId), turnRunning(taskId)));
-  if (status !== 'running' && status !== 'waiting' && status !== 'paused') throw new Error(agentText('reply.reply_task', { task: taskId, status }, 'finished'));
+  if (status !== 'running' && status !== 'waiting' && status !== 'paused') throw new AgentError(agentText('tool.reply_task', { task: taskId, status }, 'finished'));
   if (status === 'paused') queueReply(taskId, text); // sent with Resume
   else replyTask(taskId, text);
   // The chat shows the task again in this turn, where its new cards and result appear.
@@ -124,7 +124,7 @@ export function replyTask(id: string, text: string): Session {
 // Option 1, sending it through the orchestrator, stays open (ADR 0011).
 // A task's request_setup (orchestrator-005): the items are added at once, shown in the task and its chat, and
 // the host continues the task with them once this turn ends.
-export function requestSetup(id: string, ids: string[], reason: string): string {
+export function requestSetup(id: string, ids: string[], reason: string): AgentText {
   const s = taskOf(id);
   const items = checkRequest(s.integration, setupRole(s), ids);
   s.task.setup = [...new Set([...(s.task.setup ?? []), ...ids])];
@@ -133,7 +133,7 @@ export function requestSetup(id: string, ids: string[], reason: string): string 
   const text = `Asked for ${items.map((i) => i.title).join(', ')}: ${reason}. The workspace restarts the agent with them and continues.`;
   emit(id, turns(readEvents(id), true).at(-1)?.n ?? 0, { type: 'notice', text });
   relayToChat(s, text);
-  return agentText('reply.request_setup', { ids: ids.join(', ') });
+  return agentText('tool.request_setup', { ids: ids.join(', ') }, 'ok');
 }
 
 export function relayToChat(task: Session, text: string): void {
@@ -147,14 +147,19 @@ export function relayToChat(task: Session, text: string): void {
 // What a new task learns from an earlier related one (orchestrator-006): its goal and final reply, not its
 // whole conversation, so it skips rediscovering the earlier work.
 // Its setup items carry over in startFromSession.
-function handoff(projectId: string, id: string): string {
+/** Where the earlier task's context starts in a goal ("
+
+Context from an earlier related task"). */
+const BASED_ON_MARK = REGISTRY['message.task-start'].variants.basedOn.text.slice('{goal}'.length).split(' (')[0]!;
+
+function handoff(projectId: string, id: string) {
   const earlier = loadSession(id);
   if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
   const ts = turns(readEvents(id), turnRunning(id));
   const result = ts.findLast((t) => t.text)?.text ?? '(no reply yet)';
   // Its own goal only: a goal based on a task before it ends with that one's context, which would nest at every link.
-  const goal = (ts[0]?.user ?? '').split(`\n\n${agentText('task.based-on', { task: '', status: '', goal: '', reply: '' }).split(' (')[0]}`)[0]!;
-  return agentText('task.based-on', { task: id, status: taskStatus(earlier, ts), goal: goal.slice(0, 4000), reply: result.slice(-4000) });
+  const goal = (ts[0]?.user ?? '').split(BASED_ON_MARK)[0]!;
+  return { task: id, status: taskStatus(earlier, ts), earlierGoal: goal.slice(0, 4000), reply: result.slice(-4000) };
 }
 
 // Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).
@@ -187,8 +192,8 @@ export function cancelTask(id: string): Session {
 
 // Continues a paused, interrupted or finished task, optionally with a new budget. An interrupted attempt's
 // marker goes with the message, so the agent checks the project before repeating anything (sessions-009).
-const RESUME = agentText('task.resume');
-export function resumeTask(id: string, tokenBudget?: number, text = RESUME): Session {
+const RESUME = agentText('message.continue');
+export function resumeTask(id: string, tokenBudget?: number, text: string = RESUME): Session {
   const s = taskOf(id);
   if (sessionWorking(id)) throw new Error('Task is already running');
   if (tokenBudget !== undefined) s.task.tokenBudget = tokenBudget;
