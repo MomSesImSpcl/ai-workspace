@@ -79,6 +79,31 @@ test('the token cap ends the agent at once from streamed usage and pauses the ta
   assert.match(last(t.id).text, /token budget 500 reached.*Continue the task\.$/s);
 });
 
+test('the workspace ends a task turn after request_setup and continues it with the items (agent-interface-008)', async () => {
+  const { saveInventory } = await import('../src/setup.ts');
+  const { requestSetup } = await import('../src/tasks.ts');
+  saveInventory('claude-code', [{ id: 'tool:Edit', kind: 'tool', title: 'Edit' }]);
+  const t = task('change a file');
+  let reason: unknown;
+  const prompts: string[] = [];
+  // The agent keeps going after the call; the host interrupts it once the call has finished.
+  const agent = fake(({ emit: say, signal, prompt }) => new Promise((r) => {
+    prompts.push(prompt);
+    if (prompts.length > 1) { say({ type: 'text', text: 'edited' }); return r({}); }
+    say({ type: 'activity', id: 'a1', label: 'request_setup' });
+    requestSetup(t.id, ['tool:Edit'], 'needs to edit');
+    say({ type: 'activity-done', id: 'a1' });
+    signal.addEventListener('abort', () => { reason = signal.reason; r({}); });
+  }));
+  await runTurn(t.id, agent);
+  assert.equal(reason, 'interrupt'); // the process is kept, not killed
+  assert.equal(last(t.id).state, 'done'); // not shown as stopped by the user
+  await runTurn(t.id, agent);
+  assert.ok(isSetupContinue(prompts[1]!), prompts[1]);
+  assert.equal(last(t.id).text, 'edited');
+  assert.equal(status(t.id), 'completed');
+});
+
 test('cancel ends a working Claude Code task at once, not after the interrupt grace period', async () => {
   const t = task('slow work');
   const run = runTurn(t.id);
@@ -276,7 +301,7 @@ test('list_agents distinguishes setup switches from capabilities; implementation
     assert.throws(() => requestSetup(t.id, ['tool:Bash'], 'run tests'), /Unknown setup items/);
     setItemState('Implementation', 'codex', 'feature:shell_tool', 'decide');
     assert.deepEqual(setupStatus('codex').alwaysOn, []);
-    assert.match(requestSetup(t.id, ['feature:shell_tool'], 'run tests'), /End your turn/);
+    assert.match(requestSetup(t.id, ['feature:shell_tool'], 'run tests'), /The workspace ends this turn/);
     assert.equal(loadSession(t.id).integration, 'codex');
     setItemState('Implementation', 'codex', 'feature:shell_tool', 'off');
     assert.throws(() => requestSetup(t.id, ['feature:shell_tool'], 'run tests'), /switched these off/);
@@ -351,7 +376,7 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   assert.throws(() => requestSetup(lacking.id, ['tool:Nope'], 'x'), /Unknown setup items/);
   setItemState('Implementation', 'claude-code', 'tool:Bash', 'off');
   assert.throws(() => requestSetup(lacking.id, ['tool:Bash'], 'x'), /switched these off/);
-  assert.match(requestSetup(lacking.id, ['tool:Edit'], 'needs to change a file'), /End your turn/);
+  assert.match(requestSetup(lacking.id, ['tool:Edit'], 'needs to change a file'), /The workspace ends this turn/);
   assert.ok(readEvents(lacking.id).some((e) => e.type === 'notice' && /Asked for Edit: needs to change a file/.test(e.text)));
   assert.ok(readEvents(orch.id).some((e) => e.type === 'relay' && /Asked for Edit/.test(e.text))); // shown in the chat too
   await runTurn(lacking.id);

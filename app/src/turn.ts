@@ -107,8 +107,15 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
     if (Date.now() - shownAt > 2000) { shownAt = Date.now(); say({ type: 'live-usage', usage: u }); }
     if (budget !== undefined && committed + used(u) >= budget) halt(true, `token budget ${budget.toLocaleString('en')} reached`);
   };
+  // A task that called request_setup is continued in a new process with the items (orchestrator-005): its turn ends
+  // here once that call has finished, instead of the agent being told to end it (agent-interface-008).
+  let forSetup = false;
   const watch = setInterval(() => {
     if (stopRequested(id)) halt(!!task && !!loadSession(id).task?.cancelled, task && !loadSession(id).task?.cancelled ? 'paused' : undefined);
+    else if (task && !forSetup && loadSession(id).task?.setupAdded?.length && turns(readEvents(id), true).at(-1)!.activity.every((a) => a.done)) {
+      forSetup = true;
+      halt(false);
+    }
     if (!task) startPendingTasks(id); // tasks its agent started with start_task
   }, 300);
   try {
@@ -132,7 +139,8 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
       if (r.vendorSessionId) s.vendorSessionId = r.vendorSessionId;
       saveSession(s);
     }
-    if (r.stopped) say({ type: 'stopped', reason: r.stopped });
+    if (forSetup && !stopped) say({ type: 'done' }); // ended for request_setup, not by the user
+    else if (r.stopped) say({ type: 'stopped', reason: r.stopped });
     else if (stop.signal.aborted) say({ type: 'stopped', reason: stopped });
     else if (r.error) say({ type: 'error', message: r.error });
     else say({ type: 'done' });
