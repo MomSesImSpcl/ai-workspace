@@ -5,6 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { agentText } from './registry.ts';
 import { home } from './store.ts';
 
 /** What the agent passes to request_merge: its check results, and a title and body if the pull request is new. */
@@ -41,7 +42,7 @@ export function mergedPr(branch: string, cwd: string, prs = branchPrs(branch, cw
 }
 
 /** What the agent is told when its branch's pull request is already merged: why, and the supported way on (#62). */
-const mergedText = (pr: Pr, branch: string) => `Pull request #${pr.number} of branch ${branch} is already merged (${pr.url}), and this branch contains its commits, so nothing more can be published from it. Do not switch this worktree to another branch to publish: request_merge publishes only this session's branch. Tell the user to continue the conversation in a new chat ("Continue in a new chat" in the workspace), on a new branch from origin/main or on an existing branch they pick.`;
+const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { number: pr.number, branch, url: pr.url });
 
 /**
  * Merges the worktree branch `branch` into main after the user's approval. `ask` shows the card and returns the
@@ -61,35 +62,35 @@ export async function requestMerge(branch: string, cwd: string, args: MergeArgs,
   const merged = mergedPr(branch, cwd, prs);
   if (merged) throw new Error(mergedText(merged, branch));
   const open = prs.find((p) => p.state === 'OPEN');
-  if (!open && !args.title) throw new Error(`Branch ${branch} has no open pull request. Call request_merge again with a title (and a body) for it.`);
+  if (!open && !args.title) throw new Error(agentText('reply.request_merge', { branch }, 'noTitle'));
   const what = open ? `pull request #${open.number} "${open.title}"` : `a new pull request "${args.title}"`;
   const allow = await ask(`Push branch ${branch} and squash-merge ${what} into main once the required checks pass. Checks the agent reports: ${args.checks}`.slice(0, 1000));
-  if (allow === null) return 'The user stopped the turn; nothing was pushed or merged.';
-  if (!allow) return 'The user did not approve the merge; nothing was pushed or merged. Ask the user what to change.';
+  if (allow === null) return agentText('reply.request_merge', {}, 'stopped');
+  if (!allow) return agentText('reply.request_merge', {}, 'denied');
   const stale = check();
-  if (stale) return `Nothing was pushed or merged: the binding changed while the card waited. ${stale}`;
+  if (stale) return agentText('reply.request_merge', { binding: stale }, 'stale');
   const mergedMeanwhile = mergedPr(branch, cwd);
-  if (mergedMeanwhile) return `Nothing was pushed or merged. ${mergedText(mergedMeanwhile, branch)}`;
+  if (mergedMeanwhile) return agentText('reply.request_merge', { merged: mergedText(mergedMeanwhile, branch) }, 'mergedMeanwhile');
   // main's ruleset merges only branches that are up to date with main (ADR 0016), so main comes in first.
   const fetched = git(['fetch', 'origin', 'main'], cwd);
-  if (!fetched.ok) return `Fetching main failed; nothing was pushed or merged: ${fetched.out}`;
+  if (!fetched.ok) return agentText('reply.request_merge', { output: fetched.out }, 'fetch');
   const updated = git(['merge', '--no-edit', 'origin/main'], cwd);
   if (!updated.ok) {
     git(['merge', '--abort'], cwd);
-    return `Bringing ${branch} up to date with main failed (a merge conflict, most likely); nothing was pushed or merged. Merge origin/main into the branch yourself, resolve the conflicts, run the checks again, commit, and call request_merge again. Git said: ${updated.out}`;
+    return agentText('reply.request_merge', { branch, output: updated.out }, 'conflict');
   }
   const pushed = git(['push', '-u', 'origin', branch], cwd);
-  if (!pushed.ok) return `Pushing branch ${branch} failed; nothing was merged: ${pushed.out}`;
+  if (!pushed.ok) return agentText('reply.request_merge', { branch, output: pushed.out }, 'push');
   let pr = open;
   if (!pr) {
     const created = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', args.title!, '--body', args.body ?? ''], cwd);
-    if (!created.ok) return `Opening the pull request failed; nothing was merged: ${created.out}`;
+    if (!created.ok) return agentText('reply.request_merge', { output: created.out }, 'create');
     pr = branchPrs(branch, cwd)?.find((p) => p.state === 'OPEN');
-    if (!pr) return 'The pull request was opened but cannot be read; nothing was merged.';
+    if (!pr) return agentText('reply.request_merge', {}, 'unreadable');
   }
   const auto = gh(['pr', 'merge', String(pr.number), '--squash', '--auto'], cwd);
-  if (!auto.ok) return `Turning on auto-merge for #${pr.number} failed: ${auto.out}`;
-  return `Pushed ${branch}; auto-merge is on for #${pr.number} (${pr.url}): GitHub squash-merges it into main when the required checks pass. If a check fails, nothing is merged: fix it, commit, and call request_merge again.`;
+  if (!auto.ok) return agentText('reply.request_merge', { number: pr.number, output: auto.out }, 'autoMerge');
+  return agentText('reply.request_merge', { branch, number: pr.number, url: pr.url });
 }
 
 /**
@@ -110,4 +111,4 @@ export function mergeCommand(command: string): boolean {
 }
 
 /** What agents in the app project are told (selfdev-003/004). */
-export const MERGE_NOTE = 'This session works in its own git worktree and branch of the workspace\'s own repository. Writes outside this worktree are blocked: keep your shell in this folder (elsewhere only read, e.g. ls, cat, grep, git log), write file contents with your edit tools rather than shell heredocs or scripts, and keep merge commands out of shell command text, even as quoted data. Before you ask to merge, run `npm run typecheck` and `npm test` in app/ (on Windows `npm.cmd`) and report both results in the chat. To merge into main, commit your work and call the workspace tool request_merge with those results (and a title and body if the branch has no pull request yet): after the user approves, it pushes the branch, opens the pull request if needed, and merges it once the required checks pass. You need not push yourself. Never merge into main in any other way: not with `gh pr merge` (blocked), the GitHub API, curl or a push to main. Merging always needs the user\'s approval through request_merge. Keep this worktree on its branch: request_merge publishes only this session\'s branch, and the workspace runs and publishes nothing here while the worktree has another branch checked out or the branch\'s pull request is merged; then the user continues the conversation in a new chat. To read pull requests, checks or issues, use the workspace tool read_repo.';
+export const MERGE_NOTE = agentText('merge.note');

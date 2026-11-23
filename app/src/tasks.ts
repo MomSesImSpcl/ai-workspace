@@ -8,6 +8,7 @@ import { addMessage, addUsage, allSessions, createSession, emit, loadSession, qu
 import { appendJsonl, audit, placeIn, readJson, storageDirs, writeJson } from './store.ts';
 import { checkRequest, setupRole, toolsFor } from './setup.ts';
 import { agentChoice, pending, sessionAgent, startTurn } from './turn.ts';
+import { agentText } from './registry.ts';
 
 export type TaskStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'paused' | 'interrupted' | 'cancelled';
 
@@ -43,7 +44,7 @@ export function createTask(f: NewTask): Session {
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   // A chat's task without a built-in tool could only talk: the orchestrator must pick them (orchestrator-005).
-  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(`No built-in tool picked for this task: pass in setup the tools the goal needs (ids from setupStatus.builtInTools in list_agents)`);
+  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(agentText('reply.start_task', {}, 'noTool'));
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
   // A chat's tasks and their subtasks work on the chat's branch, so one change is reviewed and merged once (selfdev-001).
@@ -65,7 +66,7 @@ export function createTask(f: NewTask): Session {
 // servers in a Windows job that is closed with the agent).
 export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId'>): Session {
   const chat = loadSession(sessionId);
-  if (chat.task) throw new Error('Tasks do not start tasks: name the follow-up work in your result, and the chat starts it');
+  if (chat.task) throw new Error(agentText('reply.start_task', {}, 'fromTask'));
   // A task based on an earlier one keeps that one's setup items.
   const setup = [...new Set([...(f.basedOn ? loadSession(f.basedOn).task?.setup ?? [] : []), ...(f.setup ?? [])])];
   const t = createTask({ ...f, setup, goal: f.basedOn ? `${f.goal}\n\n${handoff(chat.projectId, f.basedOn)}` : f.goal, tokenBudget: f.tokenBudget ?? chat.taskCap, defaultMode: chat.taskMode ?? assignmentFor('Implementation').permissionMode ?? DEFAULT_TASK_MODE, projectId: chat.projectId, sessionId });
@@ -85,7 +86,7 @@ export function replyFromSession(sessionId: string, taskId: string, text: string
   if (!t) throw new Error(`Unknown task in this chat: ${taskId}`);
   // A finished task is continued only by the user, from the reply field under it (orchestrator-006).
   const status = taskStatus(t, turns(readEvents(taskId), turnRunning(taskId)));
-  if (status !== 'running' && status !== 'waiting' && status !== 'paused') throw new Error(`Task ${taskId} is ${status}; start a new task with basedOn: ${taskId}`);
+  if (status !== 'running' && status !== 'waiting' && status !== 'paused') throw new Error(agentText('reply.reply_task', { task: taskId, status }, 'finished'));
   if (status === 'paused') queueReply(taskId, text); // sent with Resume
   else replyTask(taskId, text);
   // The chat shows the task again in this turn, where its new cards and result appear.
@@ -125,7 +126,7 @@ export function requestSetup(id: string, ids: string[], reason: string): string 
   const text = `Asked for ${items.map((i) => i.title).join(', ')}: ${reason}. The workspace restarts the agent with them and continues.`;
   emit(id, turns(readEvents(id), true).at(-1)?.n ?? 0, { type: 'notice', text });
   relayToChat(s, text);
-  return `Enabled ${ids.join(', ')}. End your turn now in one line; the workspace continues the task with them.`;
+  return agentText('reply.request_setup', { ids: ids.join(', ') });
 }
 
 export function relayToChat(task: Session, text: string): void {
@@ -144,7 +145,7 @@ function handoff(projectId: string, id: string): string {
   if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
   const ts = turns(readEvents(id), turnRunning(id));
   const result = ts.findLast((t) => t.text)?.text ?? '(no reply yet)';
-  return `Context from an earlier related task (${id}, ${taskStatus(earlier, ts)}).\nIts goal: ${ts[0]?.user.slice(0, 4000)}\nIts last reply: ${result.slice(-4000)}`;
+  return agentText('task.based-on', { task: id, status: taskStatus(earlier, ts), goal: ts[0]?.user.slice(0, 4000) ?? '', reply: result.slice(-4000) });
 }
 
 // Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).
@@ -177,7 +178,7 @@ export function cancelTask(id: string): Session {
 
 // Continues a paused, interrupted or finished task, optionally with a new budget. An interrupted attempt's
 // marker goes with the message, so the agent checks the project before repeating anything (sessions-009).
-const RESUME = 'Continue the task.';
+const RESUME = agentText('task.resume');
 export function resumeTask(id: string, tokenBudget?: number, text = RESUME): Session {
   const s = taskOf(id);
   if (sessionWorking(id)) throw new Error('Task is already running');

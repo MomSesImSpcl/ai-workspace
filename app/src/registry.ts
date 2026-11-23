@@ -1,0 +1,246 @@
+// The one registry of every text the workspace sends an agent (agent-interface-007, ADR 0023): role notes, text in
+// the messages it receives, workspace tool and parameter descriptions, and the tool replies and refusals that tell it
+// what to do next. Code sends these only through `agentText` and `toolParam`, so no instruction exists outside this
+// file, and the Agent instructions tab (app/src/instructions.ts) lists exactly what is here. Plain validation errors
+// that only name a bad value are not instructions and stay in their code. This module imports nothing from the app,
+// so every module can use it.
+
+/** The roles an entry can go to: plain chats, orchestrator chats and tasks (the Implementer role, whatever role a task started with). */
+export const ROLES = ['Chat', 'Orchestrator', 'Implementer'] as const;
+export type Role = (typeof ROLES)[number];
+/** Purpose groups, in list order. */
+export const GROUPS = ['Role notes', 'Messages and continuation', 'Workspace tools', 'Tool replies and refusals'] as const;
+
+/** Capabilities an entry can need (`Capabilities` in app/src/sessions.ts); only agents that report it get the entry. */
+type Need = 'approvalTool' | 'refusalText';
+
+export interface Entry {
+  group: (typeof GROUPS)[number];
+  title: string;
+  purpose: string;
+  text: string; // `{name}` marks a value filled in when it is sent, explained in `placeholders`
+  variants?: Record<string, { label: string; text: string }>; // other forms of the same message and when each is used
+  params?: Record<string, string>; // a workspace tool's parameter descriptions, as the agent sees them
+  roles: readonly Role[];
+  when: string; // the condition that includes it
+  channel: string; // how it reaches the agent
+  placeholders?: Record<string, string>;
+  needs?: Need;
+}
+
+const ALL = ROLES;
+const CHATS = ['Chat', 'Orchestrator'] as const;
+const WORKERS = ['Chat', 'Implementer'] as const; // plain chats and tasks
+const PROMPT = "The agent's system instructions";
+const MESSAGE = 'Part of the user message the agent receives';
+const TOOL = "Tool description in the workspace tools, listed with the agent's tools";
+const REPLY = 'Tool result the agent reads after calling the tool';
+const GUARD = 'Reason of the write guard that refuses the call';
+
+/** Opens every write guard refusal; the chat recognises a guard notice by it. */
+export const GUARD_MARK = 'Blocked by the write guard (selfdev-002)';
+
+export const REGISTRY = {
+  // --- Role notes: the system or developer prompt each role starts with (built by agentInstructions, app/src/prompt.ts).
+  'session-note': { group: 'Role notes', title: 'Effort level note', purpose: 'Opens the instructions of every chat and task: tells the agent its effort level, so rules that depend on it (such as an effort check) can read it, and that the note stays current.',
+    text: "AI Workspace {kind}: effort level {effort}. This note is always current: when the user changes the level in the workspace's composer, the agent is restarted with the new level and an updated note.",
+    roles: ALL, when: 'Every agent start; it opens the instructions.', channel: PROMPT,
+    placeholders: { kind: '"task" for tasks, "session" for chats', effort: 'the session\'s effort level, or "not set by the workspace (the agent\'s own default)"' } },
+  'chat.start-task': { group: 'Role notes', title: 'Start tasks from a chat', purpose: 'Points a plain chat to start_task for background work.',
+    text: 'To run self-contained work in the background as a task, use the workspace start_task tool.', roles: ['Chat'], when: 'Plain chats.', channel: PROMPT },
+  'task.note': { group: 'Role notes', title: 'Background task note', purpose: 'Tells a task that nobody answers until it ends, so it does the work instead of stopping to ask about effort.',
+    text: 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.',
+    roles: ['Implementer'], when: 'Every task.', channel: PROMPT },
+  'read-repo.note': { group: 'Role notes', title: 'Use read_repo', purpose: 'Makes chats and tasks try read_repo for history, pull requests, checks and issues (#31).',
+    text: 'For commit history, pull requests, checks and issues of a workspace project, use the workspace tool read_repo.',
+    roles: WORKERS, when: 'Plain chats and tasks; the orchestrator note names read_repo itself.', channel: PROMPT },
+  'orchestrator.note': { group: 'Role notes', title: 'Orchestrator rules', purpose: 'How the orchestrator routes every message: reply to a running task, start a new task, or answer a question itself; how it picks agent, model, effort and setup items.',
+    text: "You are the workspace orchestrator. You never do the work yourself and cannot edit files; any command you run may only read. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Read list_agents for the current roles. For implementation tasks, use role Implementation and its currently configured agent and model; omit agent and model in start_task to inherit them unless the user explicitly overrides them. Only an explicit user override permits a different implementer or model. Never switch integration because another agent exposes more setup items or tools. Choose a supported effort from the selected model's catalog and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files, task_status, and read_repo for commit history, pull requests, checks and issues of any workspace project. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task. A task starts with its role's always-on items and the agent's capabilities that have no setup switch. list_agents.setup lists only decidable items; setupStatus lists alwaysOn ids and whether requiresBuiltInTool applies. Pass in setup only ids listed for the selected agent that the goal needs. When requiresBuiltInTool is true, ensure at least one of the agent's builtInTools is enabled (in alwaysOn or passed in setup). Do not invent ids list_agents does not list or treat a shorter setup list as missing capabilities. prompt selects the agent's own guidance, not tools. A task that finds setup missing must request it with request_setup and continue on the same agent; if setup is unavailable or switched off by the user, report a blocker rather than switch agents or bypass permissions; a task based on an earlier one keeps that one's items.",
+    roles: ['Orchestrator'], when: 'Every orchestrator chat. The workspace also blocks its edit tools in code, so this text is not the only guard.', channel: PROMPT },
+  'orchestrator.storage': { group: 'Role notes', title: 'Where past work is stored', purpose: 'Lets the orchestrator answer questions about past chats and tasks by reading storage itself instead of starting a task.',
+    text: "Workspace storage, with every chat's and task's history (projects/<project>/sessions/*.jsonl, global/sessions for chats outside a project) and the audit log (audit.jsonl), is in {storage}; read it yourself to answer questions about past work.",
+    roles: ['Orchestrator'], when: 'Every orchestrator chat, right after the orchestrator rules.', channel: PROMPT, placeholders: { storage: 'the workspace storage folder on this computer' } },
+  'own-instructions': { group: 'Role notes', title: "Wrapper for the user's own instructions", purpose: "Adds the role's Instructions field from Settings → Agents and says it outranks the notes before it.",
+    text: "The user's own instructions for you, which take precedence over the notes above where they conflict: {instructions}", roles: ALL,
+    when: "The role's Instructions field is not empty: Chat for plain chats, Orchestrator for orchestrator chats, Implementer for tasks (whatever role they started with). It comes after the role notes; the merge note and the workspace rules still follow it.", channel: PROMPT,
+    placeholders: { instructions: "the text of the role's Instructions field (Settings → Agents)" } },
+  'merge.note': { group: 'Role notes', title: 'Worktree and merge rules', purpose: 'Tells app-project sessions to stay in their worktree, run the checks and merge only through request_merge after the user approves (selfdev-002–004).',
+    text: "This session works in its own git worktree and branch of the workspace's own repository. Writes outside this worktree are blocked: keep your shell in this folder (elsewhere only read, e.g. ls, cat, grep, git log), write file contents with your edit tools rather than shell heredocs or scripts, and keep merge commands out of shell command text, even as quoted data. Before you ask to merge, run `npm run typecheck` and `npm test` in app/ (on Windows `npm.cmd`) and report both results in the chat. To merge into main, commit your work and call the workspace tool request_merge with those results (and a title and body if the branch has no pull request yet): after the user approves, it pushes the branch, opens the pull request if needed, and merges it once the required checks pass. You need not push yourself. Never merge into main in any other way: not with `gh pr merge` (blocked), the GitHub API, curl or a push to main. Merging always needs the user's approval through request_merge. Keep this worktree on its branch: request_merge publishes only this session's branch, and the workspace runs and publishes nothing here while the worktree has another branch checked out or the branch's pull request is merged; then the user continues the conversation in a new chat. To read pull requests, checks or issues, use the workspace tool read_repo.",
+    roles: WORKERS, when: "Plain chats and top-level tasks in the app project's own worktrees; not orchestrator chats. The write guard and the blocked gh login enforce the same limits in code.", channel: PROMPT },
+  'workspace-rules': { group: 'Role notes', title: "The workspace folder's AGENTS.md", purpose: "Adds the workspace folder's own rules, which no agent loads by itself above a project's git root.",
+    text: "The workspace's own rules (its AGENTS.md), which apply to every project in it:\n{rules}", roles: ['Orchestrator', 'Implementer'],
+    when: 'Orchestrator chats and tasks of a project inside the workspace folder, when that folder has a non-empty AGENTS.md. Plain chats do not get it. It comes last.', channel: PROMPT,
+    placeholders: { rules: "the workspace folder's AGENTS.md, as it is when the agent starts" } },
+  'minimal-prompt': { group: 'Role notes', title: "Short system prompt instead of the agent's own", purpose: "Replaces the agent's own system prompt when it is switched off for a run, about 3k to 4k tokens less per call.",
+    text: 'You are a coding agent working in {root} on {platform}. Today is {date}.', roles: ['Orchestrator', 'Implementer'],
+    when: "The run's \"own instructions\" setup item (prompt) is off: the orchestrator's default, and tasks whose orchestrator did not pick it (Settings → Agent setup).", channel: "Replaces the agent's own system prompt",
+    placeholders: { root: 'the folder the agent runs in', platform: 'the operating system (win32, darwin, linux)', date: "today's date, YYYY-MM-DD" } },
+
+  // --- Messages and continuation: text the workspace puts into the message the agent receives.
+  'history.prefix': { group: 'Messages and continuation', title: 'Earlier conversation', purpose: 'Gives an agent that cannot resume its own conversation the conversation so far from workspace history.',
+    text: 'Earlier in this conversation:\n\n{history}\n\nUser: {message}', roles: ALL,
+    when: "The agent starts without a conversation of its own to resume and the session has earlier turns: after an agent switch, in a chat continued in a new chat, or when the agent's own session or thread is gone.", channel: MESSAGE,
+    placeholders: { history: 'the earlier turns, written as the transcript entry shows', message: 'the new message' } },
+  'history.transcript': { group: 'Messages and continuation', title: 'Transcript of a turn', purpose: 'How each earlier turn is written in the earlier conversation; its parts are joined by a blank line.',
+    text: 'User: {message}', variants: { reply: { label: 'The reply, when the turn has one', text: 'You: {reply}' }, marker: { label: 'How it ended, when it did not finish', text: '[{marker}]' } },
+    roles: ALL, when: 'Inside the earlier conversation.', channel: MESSAGE,
+    placeholders: { message: "the user's message of that turn", reply: "the agent's reply", marker: 'the unfinished-turn marker' } },
+  'turn.marker': { group: 'Messages and continuation', title: 'Unfinished-turn marker', purpose: 'Says where an unfinished turn stopped, so user and agent see the same last step (sessions-008/009).',
+    text: '{outcome} after step {n}: {step}', variants: { first: { label: 'No step finished', text: '{outcome} before the first step' }, reason: { label: 'The workspace stopped it (a token budget, a possible repeat, paused)', text: '{marker} ({reason})' } },
+    roles: ALL, when: 'A turn that was interrupted, stopped or failed.', channel: MESSAGE,
+    placeholders: { outcome: 'Interrupted, Stopped or Failed', n: 'the number of finished steps', step: 'the last finished step, as the activity list shows it', marker: 'the marker above', reason: 'why the workspace stopped it' } },
+  'turn.unfinished': { group: 'Messages and continuation', title: 'Check before repeating', purpose: 'Asks the agent to check the project before it repeats work an unfinished turn may have done.',
+    text: '[{marker}. Check the current project state before repeating anything.]', roles: ALL, when: 'The message after a turn that did not finish; it comes before the message.', channel: MESSAGE,
+    placeholders: { marker: 'the unfinished-turn marker of the previous turn' } },
+  'turn.relay': { group: 'Messages and continuation', title: 'What the user wrote to a task', purpose: "Tells a chat's agent what the user wrote directly to one of its tasks since its last reply.",
+    text: '[Since your last reply the user wrote directly to task {task}: "{text}"]', roles: CHATS, when: "The next chat message after the user used a task's reply field.", channel: MESSAGE,
+    placeholders: { task: 'the task id', text: 'what the user wrote' } },
+  'task.resume': { group: 'Messages and continuation', title: 'Resume', purpose: 'The message that continues a paused, interrupted or finished task.',
+    text: 'Continue the task.', roles: ['Implementer'], when: 'Resume on a task.', channel: MESSAGE },
+  'task.setup-continue': { group: 'Messages and continuation', title: 'Continue after request_setup', purpose: 'Continues a task in a new process with the setup items it asked for (orchestrator-005).',
+    text: 'The workspace enabled {ids}. Continue the task.', roles: ['Implementer'], when: 'After a task called request_setup and its turn ended.', channel: MESSAGE,
+    placeholders: { ids: 'the setup item ids it asked for' } },
+  'task.based-on': { group: 'Messages and continuation', title: 'Context from an earlier task', purpose: 'Gives a new task the goal and result of an earlier related one, not its whole conversation, so it skips rediscovering that work.',
+    text: 'Context from an earlier related task ({task}, {status}).\nIts goal: {goal}\nIts last reply: {reply}', roles: ['Implementer'],
+    when: 'A task started with basedOn; it follows the goal after a blank line. The earlier goal is cut to its first and the reply to its last 4,000 characters.', channel: MESSAGE,
+    placeholders: { task: 'the earlier task id', status: 'its status (completed, failed, …)', goal: 'its first message', reply: 'its last reply, or "(no reply yet)"' } },
+
+  // --- Workspace tools: descriptions the agent reads in its tool list (app/src/approval-server.ts).
+  'tool.approve': { group: 'Workspace tools', title: 'approve', purpose: 'The permission prompt an agent with the approval tool calls for every "ask"; it shows an approval card and waits for the user.',
+    text: 'Asks the user in the workspace chat whether a tool call may run', roles: ALL, needs: 'approvalTool',
+    when: 'Every session and task with the workspace server, for agents that call a permission tool; other agents send their approvals themselves.', channel: TOOL },
+  'tool.read_repo': { group: 'Workspace tools', title: 'read_repo', purpose: "Reads a workspace project's commits, branches, status, pull requests, checks and issues without changing anything.",
+    text: "Reads a workspace project's repository, never changes it: log (recent commits; ref, path, limit), show (one commit with its diff; ref), branches (every local and remote branch with its worktree and ahead/behind counts against main), status (git status --short of the project checkout, or of a worktree of the project given as path), prs and issues (lists; state, limit), pr (one pull request with its checks; number, logs for the failed lines of failed checks), issue (one issue with comments; number). project defaults to this session's project.",
+    params: { project: "A workspace project id; default: this session's project" }, roles: ALL, when: 'Every session and task with the workspace server.', channel: TOOL },
+  'tool.request_setup': { group: 'Workspace tools', title: 'request_setup', purpose: 'Lets a task ask for setup items it is missing and continue with them in a new process (orchestrator-005).',
+    text: 'Asks the workspace to enable built-in tools or setup items this task is missing, then continues the task with them in a new process. End your turn right after calling it. Ids: {ids}',
+    params: { reason: 'One line: why the task needs them' }, roles: ['Implementer'], when: 'Every task.', channel: TOOL, placeholders: { ids: "every setup item id listed for the task's agent" } },
+  'tool.start_task': { group: 'Workspace tools', title: 'start_task', purpose: 'Starts a background task from a chat (sessions-002); the orchestrator uses it for all work.',
+    text: "Starts a background task in this project and returns at once. Agent, model and effort default to the role's assignment (default role Implementation); list_agents shows the choices. The task runs uncapped unless tokenBudget is given or the chat has a cap. Its approval cards, replies and result appear in this chat; the user answers them there.",
+    params: {
+      title: 'A short title of what the task does, a few words',
+      goal: 'Self-contained instructions for the task',
+      agent: "Omit to use the role's configured agent; a different implementer requires an explicit user override",
+      model: "Omit to use the role's configured model; change only for an explicit user override",
+      effort: "One of the model's effort levels",
+      reason: 'One line: why this agent, model and effort',
+      tokenBudget: 'Token cap at real cost; only when the user asked for one',
+      basedOn: 'Id of an earlier related task; the new task starts with its goal and result',
+      permissionMode: "One of the agent's own permission modes; omit for the agent's settings",
+      setup: "Ids from the selected agent's list_agents setup list that the task needs; setupStatus shows always-on items and whether a built-in tool must be selected. Never use another agent's ids",
+    }, roles: CHATS, when: 'Plain chats and orchestrator chats.', channel: TOOL },
+  'tool.reply_task': { group: 'Workspace tools', title: 'reply_task', purpose: 'Sends a change or correction to a running task of the chat (orchestrator-006).',
+    text: 'Sends a change or correction to a running task of this chat; it gets the message when its current step ends. A finished task is not continued this way: start a new one with basedOn.', roles: CHATS, when: 'Plain chats and orchestrator chats.', channel: TOOL },
+  'tool.task_status': { group: 'Workspace tools', title: 'task_status', purpose: "Lists the chat's tasks with their state and last reply.",
+    text: 'Lists the tasks started in this chat: goal, status, agent, tokens used and the last reply.', roles: CHATS, when: 'Plain chats and orchestrator chats.', channel: TOOL },
+  'tool.rename_task': { group: 'Workspace tools', title: 'rename_task', purpose: 'Renames a task of the chat.',
+    text: 'Changes the title of a task started in this chat, as the workspace lists it.', roles: CHATS, when: 'Plain chats and orchestrator chats.', channel: TOOL },
+  'tool.list_agents': { group: 'Workspace tools', title: 'list_agents', purpose: 'Role assignments, agent catalogs and decidable setup items, so the orchestrator can choose for a task.',
+    text: "Current role assignments (agent, model, effort), each agent's catalog, decidable setup items and setupStatus (alwaysOn ids, requiresBuiltInTool, builtInTools). Use the configured Implementation agent and model unless the user explicitly overrides them. Setup lists are switches, not complete capability catalogs; a missing built-in tool id is not a reason to switch agents.",
+    roles: CHATS, when: "Plain chats and orchestrator chats. Its result also carries each setup item's title and description: the workspace writes those of built-in tools, agent features and the agents' own prompts; plugins and MCP servers report their own.", channel: TOOL },
+  'tool.request_merge': { group: 'Workspace tools', title: 'request_merge', purpose: "Publishes the session's branch after the user approves one card (selfdev-004, ADR 0017).",
+    text: "Merges this session's branch into main after the user approves a card in the chat: pushes the branch, opens its pull request if there is none (then title, and optionally body, are needed), and squash-merges it once the required checks pass. Commit first; no need to push. Blocks until the user answers.",
+    params: {
+      checks: 'Your typecheck and test results, in one or two lines (for example: typecheck clean; npm test 70/70)',
+      title: 'Pull request title, if the branch has none yet',
+      body: 'Pull request description, if the branch has none yet',
+    }, roles: WORKERS, when: "Plain chats and top-level tasks in the app project's own worktrees.", channel: TOOL },
+
+  // --- Tool replies and refusals that tell the agent what to do next.
+  'reply.approve': { group: 'Tool replies and refusals', title: 'Approval answered', purpose: 'What the agent is told when the user denies an approval card or stops the turn.',
+    text: 'The user denied this in the workspace.', variants: { stopped: { label: 'The turn was stopped while the card waited', text: 'The user stopped the turn.' } },
+    roles: ALL, when: 'An approval card is denied, or the turn is stopped while it waits.', channel: REPLY, needs: 'approvalTool' },
+  'reply.start_task': { group: 'Tool replies and refusals', title: 'start_task replies', purpose: 'Confirms a started task, or says what is missing.',
+    text: 'task {task} started ({choice}); it runs in the background and shows in this chat', variants: {
+      noTool: { label: 'Refused: the chosen agent lists built-in tools and none is on or picked', text: 'No built-in tool picked for this task: pass in setup the tools the goal needs (ids from setupStatus.builtInTools in list_agents)' },
+      fromTask: { label: 'Refused: a task called it', text: 'Tasks do not start tasks: name the follow-up work in your result, and the chat starts it' },
+    }, roles: CHATS, when: 'After start_task.', channel: REPLY, placeholders: { task: 'the new task id', choice: 'its agent, model and effort' } },
+  'reply.reply_task': { group: 'Tool replies and refusals', title: 'reply_task replies', purpose: 'Confirms a sent reply, or points to basedOn for a finished task.',
+    text: 'sent to task {task}', variants: { finished: { label: 'Refused: the task is not running, waiting or paused', text: 'Task {task} is {status}; start a new task with basedOn: {task}' } },
+    roles: CHATS, when: 'After reply_task.', channel: REPLY, placeholders: { task: 'the task id', status: 'its status' } },
+  'reply.rename_task': { group: 'Tool replies and refusals', title: 'rename_task reply', purpose: 'Confirms a new task title.',
+    text: 'task {task} is now titled "{title}"', roles: CHATS, when: 'After rename_task.', channel: REPLY, placeholders: { task: 'the task id', title: 'the new title, up to 200 characters' } },
+  'reply.request_setup': { group: 'Tool replies and refusals', title: 'request_setup replies', purpose: 'Tells the task to end its turn so it continues with the new items, or why they cannot be added.',
+    text: 'Enabled {ids}. End your turn now in one line; the workspace continues the task with them.', variants: {
+      unknown: { label: 'Refused: ids the agent does not list', text: 'Unknown setup items for {agent}: {ids}' },
+      off: { label: 'Refused: items the user switched off for the role', text: 'The user switched these off for this role: {ids}' },
+    }, roles: ['Implementer'], when: 'After request_setup.', channel: REPLY, placeholders: { ids: 'the setup item ids', agent: "the task's agent" } },
+  'reply.read_repo': { group: 'Tool replies and refusals', title: 'read_repo in a global session', purpose: 'Asks a session outside any project to name one.',
+    text: 'This is a global session: name a project. Projects: {projects}', roles: ALL, when: 'read_repo without project in a session outside any project.', channel: REPLY,
+    placeholders: { projects: 'the ids of the workspace projects' } },
+  'reply.request_merge': { group: 'Tool replies and refusals', title: 'request_merge replies', purpose: 'What happened with a merge request and what to do next: retry with a title, ask the user, resolve a conflict, or fix a failing check.',
+    text: 'Pushed {branch}; auto-merge is on for #{number} ({url}): GitHub squash-merges it into main when the required checks pass. If a check fails, nothing is merged: fix it, commit, and call request_merge again.', variants: {
+      noTitle: { label: 'No open pull request and no title given', text: 'Branch {branch} has no open pull request. Call request_merge again with a title (and a body) for it.' },
+      stopped: { label: 'The turn was stopped while the card waited', text: 'The user stopped the turn; nothing was pushed or merged.' },
+      denied: { label: 'The user denied the card', text: 'The user did not approve the merge; nothing was pushed or merged. Ask the user what to change.' },
+      stale: { label: 'The binding changed while the card waited', text: 'Nothing was pushed or merged: the binding changed while the card waited. {binding}' },
+      mergedMeanwhile: { label: 'The pull request merged while the card waited', text: 'Nothing was pushed or merged. {merged}' },
+      fetch: { label: 'Fetching main failed', text: 'Fetching main failed; nothing was pushed or merged: {output}' },
+      conflict: { label: 'Main does not merge into the branch', text: 'Bringing {branch} up to date with main failed (a merge conflict, most likely); nothing was pushed or merged. Merge origin/main into the branch yourself, resolve the conflicts, run the checks again, commit, and call request_merge again. Git said: {output}' },
+      push: { label: 'Pushing failed', text: 'Pushing branch {branch} failed; nothing was merged: {output}' },
+      create: { label: 'Opening the pull request failed', text: 'Opening the pull request failed; nothing was merged: {output}' },
+      unreadable: { label: 'The new pull request cannot be read', text: 'The pull request was opened but cannot be read; nothing was merged.' },
+      autoMerge: { label: 'Auto-merge could not be turned on', text: 'Turning on auto-merge for #{number} failed: {output}' },
+    }, roles: WORKERS, when: 'After request_merge; the main text is the success reply.', channel: REPLY,
+    placeholders: { branch: "the session's branch", binding: 'the binding refusal', merged: 'the branch-already-merged reply', output: "git's or gh's output", number: 'the pull request number', url: 'its address' } },
+  'reply.merged-pr': { group: 'Tool replies and refusals', title: 'Branch already merged', purpose: 'Stops publishing from a branch whose pull request already merged and points to "Continue in a new chat" (#62).',
+    text: 'Pull request #{number} of branch {branch} is already merged ({url}), and this branch contains its commits, so nothing more can be published from it. Do not switch this worktree to another branch to publish: request_merge publishes only this session\'s branch. Tell the user to continue the conversation in a new chat ("Continue in a new chat" in the workspace), on a new branch from origin/main or on an existing branch they pick.',
+    roles: WORKERS, when: 'request_merge on a branch whose merged pull request is in its history, before the card or after Allow.', channel: REPLY,
+    placeholders: { number: 'the pull request number', branch: "the session's branch", url: 'its address' } },
+  'reply.binding': { group: 'Tool replies and refusals', title: 'Binding refusal', purpose: 'Why the workspace will not publish from a session whose stored worktree and branch no longer match git, and how to go on (#62, ADR 0019).',
+    text: '{reason} {who} {id} of project {project} is bound to branch {branch} in {path}. {kept} {next}', variants: {
+      kept: { label: 'Kept work', text: 'Its worktree keeps {files} and {commits} on no remote branch, untouched.' },
+      unreadable: { label: 'Kept work, when git cannot read the worktree', text: 'Its worktree could not be read; nothing in it was touched.' },
+      removed: { label: 'Reason: the project was removed', text: 'Project {project} is no longer in the workspace.' },
+      notApp: { label: 'Reason: not the app project', text: 'Project {project} is not the app project, the only one whose sessions work in worktrees.' },
+      foreign: { label: 'Reason: a foreign folder', text: 'The folder {path} is not a worktree the workspace keeps for project {project}.' },
+      gone: { label: 'Reason: the worktree is gone', text: "This session's worktree is gone ({path}, branch {branch})." },
+      notWorktree: { label: 'Reason: not a worktree of the repository', text: 'The folder {path} is not a worktree of the repository {repo}.' },
+      otherBranch: { label: 'Reason: another branch or a detached HEAD', text: 'The worktree has {checkedOut} checked out (HEAD {head}), not the bound branch {branch}.{branchGone}' },
+      branchGone: { label: 'Added when the bound branch no longer exists', text: ' Branch {branch} no longer exists.' },
+      merged: { label: 'Reason: its pull request merged', text: 'Pull request #{number} ({url}) of branch {branch} is already merged, and the branch contains its commits: its work is published.' },
+      nextChat: { label: 'Next, for a chat', text: 'The workspace runs no agent and publishes nothing for this chat until the binding matches; it switched, reset and deleted nothing. To keep working, continue this conversation in a new chat ("Continue in a new chat" below), on a new branch from freshly fetched origin/main or on an existing branch you pick.' },
+      nextTask: { label: 'Next, for a task', text: 'The workspace runs no agent and publishes nothing for it until the binding matches; continue the work from its chat.' },
+    }, roles: WORKERS,
+    when: 'request_merge, before the card and again after Allow. A turn refused for the same reason shows it to the user instead; the agent does not run then.', channel: REPLY,
+    placeholders: { reason: 'one of the reasons below', who: 'Chat or Task', id: 'the session id', project: 'the project id', branch: 'the stored branch', path: 'the stored worktree folder', kept: 'one of the kept-work sentences below, or nothing when the folder is gone', files: 'the uncommitted files, for example "2 uncommitted files"', commits: 'the commits on no remote branch, for example "1 commit"', next: 'the next step below for a chat or a task', repo: "the project's repository folder", checkedOut: 'the branch or "a detached HEAD"', branchGone: 'the sentence below when the bound branch is gone, else nothing', head: 'the short commit id', number: 'the pull request number', url: 'its address' } },
+  'guard.notice': { group: 'Tool replies and refusals', title: 'Write guard refusal', purpose: "Why a write into the running app's checkout or the workspace storage was refused (selfdev-002, ADR 0015); also the chat's notice.",
+    text: `${GUARD_MARK}: writing {file} would change {folder}.`, variants: { command: { label: 'A command', text: `${GUARD_MARK}: the command \`{command}\` would run in or name {folder}. If it only reads, add its program to the read list (\`READERS\` or \`GIT_READERS\` in app/src/worktrees.ts).` } },
+    roles: WORKERS, needs: 'refusalText', when: 'An edit or command that would write there, for agents whose refusals carry text; the first paragraph of the refusal is also shown in the chat. Other agents get the request declined and the chat shows the notice.', channel: GUARD,
+    placeholders: { file: 'the file it would write', folder: 'the guarded folder', command: 'the command' } },
+  'guard.instead': { group: 'Tool replies and refusals', title: 'Write guard: what to do instead', purpose: 'Tells the agent where to work and how to only read.',
+    text: "The running app's checkout and the workspace's storage must stay untouched. Work in {worktree}; to only read there, use the Read tool or a command that only reads (such as ls, cat, grep, git log or git diff, without writing output to a file).",
+    roles: WORKERS, needs: 'refusalText', when: 'After the write guard refusal, in the same refusal.', channel: GUARD, placeholders: { worktree: 'the folder the session works in' } },
+  'guard.merge': { group: 'Tool replies and refusals', title: 'Merge command refused', purpose: 'Sends a merge attempt in a command back to request_merge (selfdev-004).',
+    text: `${GUARD_MARK}: \`{command}\` would merge without the user's approval.\n\nMerging goes through the workspace: report your typecheck and test results, then call the workspace tool request_merge.`,
+    roles: WORKERS, needs: 'refusalText', when: 'A command in an app-project worktree that merges a pull request (gh pr merge or the merge API), for agents whose refusals carry text.', channel: GUARD, placeholders: { command: 'the command' } },
+} as const satisfies Record<string, Entry>;
+
+export type InstructionId = keyof typeof REGISTRY;
+type Values = Record<string, string | number>;
+
+const fill = (id: string, text: string, values: Values) => text.replace(/\{(\w+)\}/g, (_, k: string) => {
+  if (!(k in values)) throw new Error(`${id}: no value for {${k}}`);
+  return String(values[k]);
+});
+
+/** The text of a registry entry, or one of its variants, with its placeholders filled in. A missing value throws. */
+export function agentText(id: InstructionId, values: Values = {}, variant?: string): string {
+  const e: Entry = REGISTRY[id];
+  const v = variant === undefined ? e.text : e.variants?.[variant]?.text;
+  if (v === undefined) throw new Error(`${id}: no variant ${variant}`);
+  return fill(id, v, values);
+}
+
+/** A workspace tool's parameter description. */
+export function toolParam(tool: Extract<InstructionId, `tool.${string}`>, name: string): string {
+  const p = (REGISTRY[tool] as Entry).params?.[name];
+  if (p === undefined) throw new Error(`${tool}: no parameter ${name}`);
+  return p;
+}
+
+/** Whether `text` is this entry's text with any values filled in, for code that recognises its own message. */
+export function isAgentText(id: InstructionId, text: string): boolean {
+  const parts = REGISTRY[id].text.split(/\{\w+\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${parts.join('.+')}$`, 's').test(text);
+}

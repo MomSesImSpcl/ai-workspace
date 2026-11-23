@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { home, listProjects, registerProject, type Project } from './store.ts';
+import { agentText } from './registry.ts';
 
 /**
  * A session's own worktree and branch, planned when the session is created and made at its first turn.
@@ -302,15 +303,14 @@ export function commitRoots(path: string): string[] {
 }
 
 /** Starts every notice of a blocked write, so the Claude Code adapter finds it in the hook's deny reason. */
-export const GUARD_MARK = 'Blocked by the write guard (selfdev-002)';
+export { GUARD_MARK } from './registry.ts';
 
 /**
  * The chat notice for a blocked write (selfdev-002): what was blocked and, for a command, how a reading one is let
  * through, so the user can check it and extend the read list.
  */
 export function guardNotice(hit: string, what: { command?: string; file?: string }): string {
-  if (what.file) return `${GUARD_MARK}: writing ${what.file} would change ${hit}.`;
-  return `${GUARD_MARK}: the command \`${what.command}\` would run in or name ${hit}. If it only reads, add its program to the read list (\`READERS\` or \`GIT_READERS\` in app/src/worktrees.ts).`;
+  return what.file ? agentText('guard.notice', { file: what.file, folder: hit }) : agentText('guard.notice', { command: what.command ?? '', folder: hit }, 'command');
 }
 
 /** Programs that only read, so a command of them alone may name or run in a guarded folder (user, 2026-10-19). */

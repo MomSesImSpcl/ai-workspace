@@ -1,41 +1,56 @@
-// The Agent Instructions catalog (agent-instructions-001–005): every copied text still matches the code that sends it,
-// every workspace tool is listed, placeholders are explained, and the tab exists only in a development environment.
+// The instruction registry and the Agent Instructions catalog (agent-interface-007, agent-instructions-001–005): every
+// instruction is defined only in app/src/registry.ts and sent from the code, no copy of one is written anywhere else,
+// workspace tools take their descriptions from it, placeholders are explained, and the tab exists only in a
+// development environment.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable } from '../src/instructions.ts';
-import { GUARD_MARK } from '../src/worktrees.ts';
+import { agentText, isAgentText, REGISTRY } from '../src/registry.ts';
 import { sessionAgents } from '../src/turn.ts';
 
-const repo = fileURLToPath(new URL('../../', import.meta.url));
-// Source text as a reader sees it: string escapes undone and the block notice's mark filled in, so a copy can be found in it.
-const source = (file: string) => readFileSync(repo + file, 'utf8').replace(/\\(['"`])/g, '$1').replaceAll('${GUARD_MARK}', GUARD_MARK);
-// The fixed parts of a text: split at placeholders, line breaks and code quotes, short joins ignored.
-const fragments = (text: string) => text.split(/\{\w+\}|\n|`/).map((f) => f.trim()).filter((f) => f.length >= 8);
+const src = fileURLToPath(new URL('../src/', import.meta.url));
+const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : d.name.endsWith('.ts') ? [join(dir, d.name)] : []));
+// Source text as a reader sees it, string escapes undone and comment lines dropped, for every file but the registry.
+const code = files(src).filter((f) => !/[\\/]registry\.ts$/.test(f)).map((f) => ({ f, text: readFileSync(f, 'utf8').replace(/^\s*(\/\/|\/?\*).*$/gm, '').replace(/\\(['"`])/g, '$1') }));
+// The fixed parts of a text: split at placeholders, line breaks and code quotes; short joins ignored.
+const fragments = (text: string) => text.split(/\{\w+\}|\n|`/).map((f) => f.trim()).filter((f) => f.length >= 24);
 const texts = (e: (typeof CATALOG)[number]) => [e.text, ...(e.variants ?? []).map((v) => v.text)];
 
-test('every copied text is still in its source files', () => {
-  for (const e of CATALOG.filter((x) => x.from === 'copy')) {
-    const code = e.sources.map((s) => source(s.file)).join('\n');
-    for (const t of texts(e)) for (const f of fragments(t)) assert.ok(code.includes(f), `${e.id}: "${f}" not found in ${e.sources.map((s) => s.file).join(', ')}`);
+test('every registry entry is sent from the code', () => {
+  for (const e of CATALOG) assert.ok(e.sources.length, `${e.id} is defined but never sent`);
+  // Each variant key is named next to its entry somewhere in the code.
+  for (const [id, e] of Object.entries(REGISTRY)) for (const v of Object.keys((e as { variants?: object }).variants ?? {})) {
+    assert.ok(code.some((c) => c.text.includes(`'${v}'`) && c.text.includes(`'${id}'`)), `${id}: variant ${v} is never sent`);
   }
 });
 
-test('every source names a definition that exists in its file', () => {
-  for (const e of CATALOG) for (const s of e.sources) {
-    const name = s.symbol.split('.').pop()!;
-    assert.match(source(s.file), new RegExp(`\\b${name}\\b`), `${e.id}: ${s.symbol} not in ${s.file}`);
+test('no instruction is written outside the registry', () => {
+  for (const e of CATALOG) for (const t of [...texts(e), ...(e.params ?? []).map((p) => p.text)]) for (const f of fragments(t)) {
+    const hit = code.find((c) => c.text.includes(f));
+    assert.ok(!hit, `${e.id}: "${f}" is also written in ${hit?.f}; send it with agentText instead`);
   }
 });
 
-test('every tool of the workspace server is listed with its description and parameters', () => {
-  const server = source('app/src/approval-server.ts');
+test('workspace tools take their descriptions and parameter descriptions from the registry', () => {
+  const server = readFileSync(join(src, 'approval-server.ts'), 'utf8');
   const names = [...server.matchAll(/registerTool\(\s*'(\w+)'/g)].map((m) => m[1]);
   assert.ok(names.length >= 9);
   assert.deepEqual(CATALOG.filter((e) => e.group === 'Workspace tools').map((e) => e.id.slice('tool.'.length)).sort(), [...names].sort());
-  const described = [...server.matchAll(/(\w+): z\.[\w.()]*?\.describe\((['"])(.*?)\2\)/g)].map((m) => `${m[1]}: ${m[3]}`);
-  for (const e of CATALOG.filter((x) => x.group === 'Workspace tools')) for (const p of e.params ?? []) assert.ok(described.includes(`${p.name}: ${p.text}`), `${e.id}: parameter ${p.name} differs from the server`);
+  for (const m of server.matchAll(/description: ([^,\n]+)/g)) assert.match(m[1]!, /^agentText\('tool\./, `description not from the registry: ${m[1]}`);
+  for (const m of server.matchAll(/\.describe\(([^)]*)\)/g)) assert.match(m[1]!, /^toolParam\('tool\./, `parameter description not from the registry: ${m[1]}`);
+});
+
+test('agentText fills placeholders and refuses a missing value', () => {
+  assert.equal(agentText('reply.rename_task', { task: 't1', title: 'Fix' }), 'task t1 is now titled "Fix"');
+  assert.equal(agentText('reply.reply_task', { task: 't1', status: 'completed' }, 'finished'), 'Task t1 is completed; start a new task with basedOn: t1');
+  assert.throws(() => agentText('reply.rename_task', { task: 't1' }), /no value for \{title\}/);
+  assert.throws(() => agentText('reply.rename_task', { task: 't1', title: 'x' }, 'nope'), /no variant nope/);
+  assert.equal(agentText('reply.rename_task', { task: '{title}', title: 'x' }), 'task {title} is now titled "x"'); // values are not filled again
+  assert.ok(isAgentText('task.setup-continue', agentText('task.setup-continue', { ids: 'tool:Bash, mcp:x' })));
+  assert.ok(!isAgentText('task.setup-continue', 'Continue the task.'));
 });
 
 test('every placeholder is explained, ids are unique, groups and roles are known', () => {

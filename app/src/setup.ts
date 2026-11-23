@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, relative } from 'node:path';
 import { getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
+import { agentText } from './registry.ts';
 import { ORCHESTRATION, type Session } from './sessions.ts';
 
 // What an agent loads (onboarding-010): each item can be switched on or off for one run. Skills that do not come
@@ -119,13 +120,11 @@ export function checkRequest(agent: string, role: string, ids: string[]): SetupI
   const setup = getAgentSetup();
   const items = ids.map((id) => (setup.inventory?.[agent] ?? []).find((i) => i.id === id) ?? id);
   const unknown = items.filter((i) => typeof i === 'string');
-  if (unknown.length) throw new Error(`Unknown setup items for ${agent}: ${unknown.join(', ')}`);
+  if (unknown.length) throw new Error(agentText('reply.request_setup', { agent, ids: unknown.join(', ') }, 'unknown'));
   const off = ids.filter((id) => stateOf(setup, role, agent, id) === 'off');
-  if (off.length) throw new Error(`The user switched these off for this role: ${off.join(', ')}`);
+  if (off.length) throw new Error(agentText('reply.request_setup', { ids: off.join(', ') }, 'off'));
   return items as SetupItem[];
 }
 
 // A short system prompt for a run without the agent's own (the `prompt` item off).
-export const minimalPrompt = (root: string) => `You are a coding agent working in ${root} on ${process.platform}. Today is ${new Date().toISOString().slice(0, 10)}.`;
-
-export const WORKSPACE_RULES = "The workspace's own rules (its AGENTS.md), which apply to every project in it:";
+export const minimalPrompt = (root: string) => agentText('minimal-prompt', { root, platform: process.platform, date: new Date().toISOString().slice(0, 10) });

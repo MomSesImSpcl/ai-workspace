@@ -7,6 +7,7 @@ import { mergedPr } from './merge.ts';
 import { createSession, emit, loadSession, readEvents, saveSession, sessionFile, sessionWorking, turns, type Session } from './sessions.ts';
 import { audit, getProject } from './store.ts';
 import { branchExists, checkedOut, git, isAppProject, ownWorktreePath, planWorktree, type WorktreeChoice } from './worktrees.ts';
+import { agentText } from './registry.ts';
 
 /** A turn refused because its session's binding does not match git; the chat then offers "Continue in a new chat". */
 export class BindingError extends Error {}
@@ -27,8 +28,8 @@ function keptWork(path: string): string {
   try {
     const files = git(path, ['status', '--porcelain']).split('\n').filter(Boolean).length;
     const commits = Number(git(path, ['rev-list', '--count', 'HEAD', '--not', '--remotes']));
-    return `Its worktree keeps ${files} uncommitted file${files === 1 ? '' : 's'} and ${commits} commit${commits === 1 ? '' : 's'} on no remote branch, untouched.`;
-  } catch { return 'Its worktree could not be read; nothing in it was touched.'; }
+    return agentText('reply.binding', { files: `${files} uncommitted file${files === 1 ? '' : 's'}`, commits: `${commits} commit${commits === 1 ? '' : 's'}` }, 'kept');
+  } catch { return agentText('reply.binding', {}, 'unreadable'); }
 }
 
 /**
@@ -44,24 +45,25 @@ function keptWork(path: string): string {
 export function bindingProblem(s: Pick<Session, 'id' | 'projectId' | 'worktree' | 'task'>, opts: { merged?: boolean } = {}): string | undefined {
   const wt = s.worktree;
   if (!wt) return undefined;
-  const who = `${s.task ? 'Task' : 'Chat'} ${s.id} of project ${s.projectId} is bound to branch ${wt.branch} in ${wt.path}.`;
-  const next = s.task ? 'The workspace runs no agent and publishes nothing for it until the binding matches; continue the work from its chat.'
-    : 'The workspace runs no agent and publishes nothing for this chat until the binding matches; it switched, reset and deleted nothing. To keep working, continue this conversation in a new chat ("Continue in a new chat" below), on a new branch from freshly fetched origin/main or on an existing branch you pick.';
-  const say = (reason: string) => `${reason} ${who} ${existsSync(wt.path) ? keptWork(wt.path) : ''} ${next}`.replace(/ {2,}/g, ' ');
+  const at = { project: s.projectId, path: wt.path, branch: wt.branch };
+  const say = (reason: string, values: Record<string, string | number> = {}) => agentText('reply.binding', {
+    reason: agentText('reply.binding', { ...at, ...values }, reason), who: s.task ? 'Task' : 'Chat', id: s.id, ...at,
+    kept: existsSync(wt.path) ? keptWork(wt.path) : '', next: agentText('reply.binding', {}, s.task ? 'nextTask' : 'nextChat'),
+  }).replace(/ {2,}/g, ' ');
   let project;
-  try { project = getProject(s.projectId); } catch { return say(`Project ${s.projectId} is no longer in the workspace.`); }
-  if (!isAppProject(project)) return say(`Project ${s.projectId} is not the app project, the only one whose sessions work in worktrees.`);
-  if (!ownWorktreePath(project, wt.path)) return say(`The folder ${wt.path} is not a worktree the workspace keeps for project ${s.projectId}.`);
-  if (!existsSync(wt.path)) return wt.ready ? say(`This session's worktree is gone (${wt.path}, branch ${wt.branch}).`) : undefined;
+  try { project = getProject(s.projectId); } catch { return say('removed'); }
+  if (!isAppProject(project)) return say('notApp');
+  if (!ownWorktreePath(project, wt.path)) return say('foreign');
+  if (!existsSync(wt.path)) return wt.ready ? say('gone') : undefined;
   const actual = checkedOut(project.root, wt.path);
-  if (!actual) return say(`The folder ${wt.path} is not a worktree of the repository ${project.root}.`);
+  if (!actual) return say('notWorktree', { repo: project.root });
   if (actual.branch !== wt.branch) {
-    const now = actual.branch ? `branch ${actual.branch}` : 'a detached HEAD';
-    return say(`The worktree has ${now} checked out (HEAD ${actual.head.slice(0, 7)}), not the bound branch ${wt.branch}.${branchExists(project.root, wt.branch) ? '' : ` Branch ${wt.branch} no longer exists.`}`);
+    const branchGone = branchExists(project.root, wt.branch) ? '' : agentText('reply.binding', at, 'branchGone');
+    return say('otherBranch', { checkedOut: actual.branch ? `branch ${actual.branch}` : 'a detached HEAD', head: actual.head.slice(0, 7), branchGone });
   }
   if (opts.merged !== false && published(project.root, wt.branch)) {
     const pr = mergedPr(wt.branch, wt.path);
-    if (pr) return say(`Pull request #${pr.number} (${pr.url}) of branch ${wt.branch} is already merged, and the branch contains its commits: its work is published.`);
+    if (pr) return say('merged', { number: pr.number, url: pr.url });
   }
   return undefined;
 }

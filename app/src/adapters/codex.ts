@@ -10,6 +10,7 @@ import { agentInstructions } from '../prompt.ts';
 import { commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
 import { commandFile, minimalPrompt, onPath, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION } from '../sessions.ts';
+import { agentText } from '../registry.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
 // config, rules, plugins and sign-in (ADR 0004). JSON-RPC over stdio: approvals arrive as requests and
@@ -346,7 +347,7 @@ export class CodexProcess implements AgentProcess {
     const threadId = this.threadId!;
     emit({ ...this.info!, mcp: [...this.mcp].map(([name, status]) => ({ name, status })) } as Body);
     for (const text of this.notes.splice(0)) emit({ type: 'notice', text });
-    const prompt = this.fresh && input.history ? `Earlier in this conversation:\n\n${input.history}\n\nUser: ${input.prompt}` : input.prompt;
+    const prompt = this.fresh && input.history ? agentText('history.prefix', { history: input.history, message: input.prompt }) : input.prompt;
     this.fresh = false;
     let text = '';
     let turnId: string | undefined;

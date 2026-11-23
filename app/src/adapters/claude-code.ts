@@ -10,6 +10,7 @@ import { forget, guardServer, guardToken } from '../guard.ts';
 import { agentInstructions } from '../prompt.ts';
 import { commandFile, minimalPrompt, onPath, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_TOOLS } from '../sessions.ts';
+import { agentText } from '../registry.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
 // workspace server, which shows them as approval cards (sessions-019).
@@ -355,7 +356,7 @@ export class ClaudeProcess implements AgentProcess {
     if (!this.alive) this.start(this.session.vendorSessionId);
     const { emit, signal } = input;
     const resumed = !this.fresh;
-    const prompt = this.fresh && input.history ? `Earlier in this conversation:\n\n${input.history}\n\nUser: ${input.prompt}` : input.prompt;
+    const prompt = this.fresh && input.history ? agentText('history.prefix', { history: input.history, message: input.prompt }) : input.prompt;
     this.fresh = false;
     let text = '';
     let sawText = false;

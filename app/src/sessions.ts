@@ -5,6 +5,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, r
 import { join } from 'node:path';
 import { appendJsonl, audit, getProject, getWorkspaceRoot, home, placeIn, projectStorage, readJson, storageDir, storageDirs, writeJson } from './store.ts';
 import { planWorktree, type Worktree, type WorktreeChoice } from './worktrees.ts';
+import { agentText, isAgentText } from './registry.ts';
 
 export interface Usage {
   inputTokens: number; // includes cachedInputTokens and cacheWriteTokens
@@ -39,14 +40,14 @@ export function addUsage(a: Usage, b: Usage): Usage {
 
 // Background tasks have no one to answer a user rule that waits for a reply, such as an effort suggestion.
 // Plain chats and tasks see read_repo only in their tool list; this sentence makes them try it (#31).
-export const READ_REPO_NOTE = 'For commit history, pull requests, checks and issues of a workspace project, use the workspace tool read_repo.';
-export const TASK_NOTE = 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.';
+export const READ_REPO_NOTE = agentText('read-repo.note');
+export const TASK_NOTE = agentText('task.note');
 
 // A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
 // whatever agent the role uses, so this rule is not the only guard.
 export const ORCHESTRATION = 'Orchestration';
 export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task', 'read_repo']; // its workspace tools, run without a card
-export const ORCHESTRATOR_NOTE = `You are the workspace orchestrator. You never do the work yourself and cannot edit files; any command you run may only read. For every message, apply this rule: (1) It changes or corrects the work of a task of this chat that is still running (task_status): send it to that task with reply_task. (2) It asks for anything to be done (create, change, fix, run, set up, write or research something), including more work like a finished task's, or a correction of a finished task: start a new task with start_task, and tell the user it is a new task. When an earlier task of this chat is related, pass its id as basedOn, so the new task starts with that task's goal and result. Read list_agents for the current roles. For implementation tasks, use role Implementation and its currently configured agent and model; omit agent and model in start_task to inherit them unless the user explicitly overrides them. Only an explicit user override permits a different implementer or model. Never switch integration because another agent exposes more setup items or tools. Choose a supported effort from the selected model's catalog and give a one-line reason and a short title of a few words. Size the goal to the task: one or two sentences for a simple, clear request; add acceptance criteria only when the outcome is not obvious; never ask the task to read rule files or to verify more than the request needs. Pass tokenBudget only when the user asked for a cap or accepted your suggestion of one. (3) It only asks a question (about the code, a task's state or why it failed): answer it yourself, reading files, task_status, and read_repo for commit history, pull requests, checks and issues of any workspace project. Ask back only when you cannot name both what to change and the expected outcome, or when a message could either change a running task or be new work. Choosing each task's effort is your job: do not stop to suggest or confirm an effort level. The user continues a finished task with the reply field under it, not through you. To change a task's title, use rename_task. A task starts with its role's always-on items and the agent's capabilities that have no setup switch. list_agents.setup lists only decidable items; setupStatus lists alwaysOn ids and whether requiresBuiltInTool applies. Pass in setup only ids listed for the selected agent that the goal needs. When requiresBuiltInTool is true, ensure at least one of the agent's builtInTools is enabled (in alwaysOn or passed in setup). Do not invent ids list_agents does not list or treat a shorter setup list as missing capabilities. prompt selects the agent's own guidance, not tools. A task that finds setup missing must request it with request_setup and continue on the same agent; if setup is unavailable or switched off by the user, report a blocker rather than switch agents or bypass permissions; a task based on an earlier one keeps that one's items.`;
+export const ORCHESTRATOR_NOTE = agentText('orchestrator.note');
 
 // The user's own instructions per role (Settings, optional): chat for plain chats, orchestrator for orchestrator
 // chats, implementation for tasks. They apply when the agent starts next.
@@ -57,10 +58,10 @@ export const getSettings = () => readJson<Settings>(settingsPath(), {});
 export const setSettings = (v: Settings) => writeJson(settingsPath(), { ...getSettings(), ...v });
 export function ownInstructions(key: (typeof INSTRUCTIONS)[number]): string {
   const own = getSettings()[key]?.trim();
-  return own ? ` The user's own instructions for you, which take precedence over the notes above where they conflict: ${own}` : '';
+  return own ? ` ${agentText('own-instructions', { instructions: own })}` : '';
 }
 // Where it finds past work itself instead of starting a task for it (user, 2026-10-22).
-export const orchestratorNote = () => `${ORCHESTRATOR_NOTE} Workspace storage, with every chat's and task's history (projects/<project>/sessions/*.jsonl, global/sessions for chats outside a project) and the audit log (audit.jsonl), is in ${home()}; read it yourself to answer questions about past work.` + ownInstructions('orchestratorInstructions');
+export const orchestratorNote = () => `${ORCHESTRATOR_NOTE} ${agentText('orchestrator.storage', { storage: home() })}` + ownInstructions('orchestratorInstructions');
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
@@ -389,8 +390,8 @@ export const clearStop = (id: string) => rmSync(stopPath(id), { force: true });
 
 // The message that continues a task after request_setup (orchestrator-005); the task view counts it as part of
 // the run that asked, not as a reply that reused the task.
-export const setupContinue = (added: string[]) => `The workspace enabled ${added.join(', ')}. Continue the task.`;
-export const isSetupContinue = (text: string) => /^The workspace enabled .+\. Continue the task\.$/.test(text);
+export const setupContinue = (added: string[]) => agentText('task.setup-continue', { ids: added.join(', ') });
+export const isSetupContinue = (text: string) => isAgentText('task.setup-continue', text);
 
 // Ends a session's idle host (Stop while idle ends it), so its worktree can be removed: Windows keeps a running
 // process's folder in use. False while the agent works, or when the host has not ended within `ms`.
@@ -484,8 +485,8 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
 function marker(t: Turn): string {
   const done = t.activity.filter((a) => a.done);
   const what = t.state === 'stopped' ? 'Stopped' : t.state === 'error' ? 'Failed' : 'Interrupted';
-  const at = done.length ? `${what} after step ${done.length}: ${done.at(-1)!.label}` : `${what} before the first step`;
-  return t.reason ? `${at} (${t.reason})` : at;
+  const at = done.length ? agentText('turn.marker', { outcome: what, n: done.length, step: done.at(-1)!.label }) : agentText('turn.marker', { outcome: what }, 'first');
+  return t.reason ? agentText('turn.marker', { marker: at, reason: t.reason }, 'reason') : at;
 }
 
 // Tool calls the previous attempt completed, when it was interrupted (the runner died) or paused: a matching
@@ -500,7 +501,7 @@ export function repeatsFor(ts: Turn[]): Map<string, string> {
 
 // The conversation as text, for agents that cannot resume their own (Codex exec, an expired hint).
 export function transcript(ts: Turn[]): string {
-  return ts.map((t) => `User: ${t.user}${t.text ? `\n\nYou: ${t.text}` : ''}${t.marker ? `\n\n[${t.marker}]` : ''}`).join('\n\n');
+  return ts.map((t) => [agentText('history.transcript', { message: t.user }), t.text && agentText('history.transcript', { reply: t.text }, 'reply'), t.marker && agentText('history.transcript', { marker: t.marker }, 'marker')].filter(Boolean).join('\n\n')).join('\n\n');
 }
 
 // Records the user's message as a new turn. If the last turn did not finish, its marker is recorded
@@ -537,7 +538,7 @@ export function queueReply(id: string, text: string): void {
 // The last turn's message, prefixed with the previous turn's marker when it did not finish.
 export function turnPrompt(ts: Turn[]): string {
   const [prev, cur] = [ts.at(-2), ts.at(-1)!];
-  const relays = prev?.relays.map((r) => `[Since your last reply the user wrote directly to task ${r.taskId}: "${r.text}"]`).join('\n') ?? '';
-  const head = [prev?.marker ? `[${prev.marker}. Check the current project state before repeating anything.]` : '', relays].filter(Boolean).join('\n');
+  const relays = prev?.relays.map((r) => agentText('turn.relay', { task: r.taskId, text: r.text })).join('\n') ?? '';
+  const head = [prev?.marker ? agentText('turn.unfinished', { marker: prev.marker }) : '', relays].filter(Boolean).join('\n');
   return head ? `${head}\n\n${cur.user}` : cur.user;
 }
