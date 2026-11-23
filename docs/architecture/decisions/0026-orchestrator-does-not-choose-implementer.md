@@ -6,12 +6,12 @@ accepted 2026-11-23 (user), implemented 2026-11-23. Amends [ADR 0011](0011-orche
 
 ## Context
 
-start_task let the orchestrator pass an agent, a model and a role, first guarded by a rule in its note and then by an `override` flag. The user decided this goes against the workspace's design: which agent implements is the user's setting, not the orchestrator's choice.
+start_task let the orchestrator pass an agent, a model and a role, first guarded by a rule in its note and then by an `override` flag. The user decided this goes against the workspace's design: which agent implements is the user's setting, not the orchestrator's choice. The model of that agent may still fit the task, so the orchestrator keeps choosing it.
 
 ## Decision
 
-- start_task has no agent, model, role or override parameter. Every task a chat starts runs in the Implementation role on the agent and model set in Settings → Agents.
-- The orchestrator still decides what depends on that implementer: effort (from its model's catalog), setup items, permission mode, title, reason, cap and basedOn.
+- start_task has no agent, role or override parameter. Every task a chat starts runs in the Implementation role on the agent set in Settings → Agents.
+- The orchestrator still decides what depends on that agent: the model (one the agent offers; omitted, the one set in Settings), effort (from that model's catalog), setup items, permission mode, title, reason, cap and basedOn.
 - list_agents describes only that implementer: agent, model, default effort, its models with their effort levels, its permission modes and its setup items.
 - The user can still change one task's agent, model or effort with Change.
 

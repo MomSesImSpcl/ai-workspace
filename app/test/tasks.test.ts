@@ -334,7 +334,7 @@ test('list_agents distinguishes setup switches from capabilities; implementation
     assert.ok(now.setupStatus.builtInTools.includes('tool:Bash'));
     // The schema has no agent, model or role: the orchestrator cannot choose another implementer.
     const listed = (await client.listTools()).tools.find((x) => x.name === 'start_task')!;
-    assert.deepEqual(Object.keys(listed.inputSchema.properties ?? {}).filter((k) => ['agent', 'model', 'role', 'override'].includes(k)), []);
+    assert.deepEqual(Object.keys(listed.inputSchema.properties ?? {}).filter((k) => ['agent', 'role', 'override'].includes(k)), []);
   } finally { await client.close(); }
 });
 
@@ -345,7 +345,10 @@ test('a chat\'s task runs on the implementer set in Settings, with checked setup
   const t = startFromSession(chat.id, { goal: 'x', setup: ['tool:Read'] });
   assert.deepEqual([t.integration, t.model, t.role], ['claude-code', 'sonnet', 'Implementation']);
   assert.throws(() => startFromSession(chat.id, { goal: 'x', setup: ['tool:Invented'] }), /Unknown setup items for claude-code: tool:Invented/);
-  assert.doesNotMatch(ORCHESTRATOR_NOTE, /requiresBuiltInTool|override|integration|agent and model/); // decided by Settings, not told
+  const opus = startFromSession(chat.id, { goal: 'x', model: 'opus', setup: ['tool:Read'] }); // the model is the orchestrator's choice
+  assert.deepEqual([opus.integration, opus.model], ['claude-code', 'opus']);
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', model: 'gpt-x', setup: ['tool:Read'] }), /Unknown model/); // but only one this agent offers
+  assert.doesNotMatch(ORCHESTRATOR_NOTE, /requiresBuiltInTool|override|integration|agent and model/); // the agent is decided by Settings, not told
 });
 
 test('orchestrator chats and tasks load only the chosen setup items, switched for the one run (orchestrator-005)', async () => {

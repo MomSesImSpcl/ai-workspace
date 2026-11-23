@@ -66,11 +66,11 @@ export function createTask(f: NewTask): Session {
 // project in the background, and the chat shows it inline in the turn that started it. The chat's runner
 // starts it (startPendingTasks): a process started inside the agent's tree dies with it (Codex runs its MCP
 // servers in a Windows job that is closed with the agent).
-export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId' | 'role' | 'agent' | 'model'>): Session {
+export function startFromSession(sessionId: string, f: Omit<NewTask, 'projectId' | 'parentId' | 'sessionId' | 'role' | 'agent'>): Session {
   const chat = loadSession(sessionId);
   if (chat.task) throw new Error(agentText('reply.start_task', {}, 'fromTask'));
-  // The Implementation agent and model come from Settings, never from the chat's agent (user, 2026-11-23); the user
-  // changes them for one task with Change. Setup ids must be ones that agent lists and the user did not switch off; a
+  // The Implementation agent comes from Settings, never from the chat's agent (user, 2026-11-23); the model may be any
+  // the agent offers (checked by agentChoice). The user changes a task's agent with Change. Setup ids must be ones that agent lists and the user did not switch off; a
   // task based on an earlier one keeps those of its items that this agent lists.
   const integration = assignmentFor(IMPLEMENTATION).integration;
   if (f.setup?.length) checkRequest(integration, setupRole({ task: {}, role: IMPLEMENTATION }), f.setup);

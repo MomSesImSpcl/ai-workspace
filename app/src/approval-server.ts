@@ -96,6 +96,7 @@ if (!task) {
       inputSchema: {
         title: z.string().describe(toolParam('tool.start_task', 'title')),
         goal: z.string().describe(toolParam('tool.start_task', 'goal')),
+        model: z.string().optional().describe(toolParam('tool.start_task', 'model')),
         effort: z.string().optional().describe(toolParam('tool.start_task', 'effort')),
         reason: z.string().describe(toolParam('tool.start_task', 'reason')),
         tokenBudget: z.number().int().positive().optional().describe(toolParam('tool.start_task', 'tokenBudget')),
@@ -104,7 +105,7 @@ if (!task) {
         setup: z.array(z.string()).optional().describe(toolParam('tool.start_task', 'setup')),
       },
     },
-    tool((a: { title: string; goal: string; effort?: string; reason?: string; tokenBudget?: number; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
+    tool((a: { title: string; goal: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
       const t = startFromSession(sessionId, a);
       return agentText('reply.start_task', { task: t.id, choice: [t.integration, t.model, t.effort].filter(Boolean).join(', ') });
     }),
@@ -132,7 +133,7 @@ if (!task) {
     'list_agents',
     { description: agentText('tool.list_agents'), inputSchema: {} },
     tool(() => {
-      // Only the implementer set in Settings: the orchestrator does not choose the agent or model (user, 2026-11-23).
+      // Only the implementer set in Settings: the orchestrator does not choose the agent (user, 2026-11-23).
       const role = assignmentFor('Implementation');
       const catalog = sessionAgent(role.integration).catalog();
       return JSON.stringify({ implementer: { agent: role.integration, model: role.model, effort: role.effort, models: catalog.models, modes: catalog.modes }, setup: decidable(role.integration), setupStatus: setupStatus(role.integration) });
