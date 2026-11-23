@@ -24,6 +24,7 @@ The tab becomes the place where every default instruction is kept and where the 
 - **agent-instructions-011 — Your instructions per role (not started):** The Instructions fields of Settings → Agents move into this tab as one "Your instructions" entry per role (Chat, Orchestrator, Implementer) with an empty default and Append, sent where the fields are sent today; existing field text is migrated, and the fields are removed from Settings → Agents.
 
 ## Non-goals and open decisions
+- Scope (user, 2026-11-23): the tab lists all fixed text the workspace sends between agents and every rule that shapes it, including what is added around the orchestrator's own messages. What a model writes (a task's goal, a reply) differs each time and is shown per chat and task, not here.
 
 - Deferred: a preview of the exact instructions one session received, which needs runtime tracing.
 - Order (user, 2026-11-23): 007 first, then [agent-interface-008](../agent-interface/SPEC.md#requirements) (rules into code), then 006 and 008–011, so users do not override texts that are about to become code.
