@@ -30,13 +30,11 @@ export interface InstructionEntry {
   id: string; // the registry id, for links and tests
   group: string; // purpose group in the list
   title: string;
-  purpose: string;
+  description: string; // what it is for and when it is sent
   text: string; // exact text; `{name}` marks a value filled in at run time, explained in `placeholders`
   params?: { name: string; text: string }[]; // a tool's parameter descriptions, as the agent sees them
   variants?: { label: string; text: string }[]; // other forms of the same message, each with when it is used
   applies: Applies;
-  when: string; // the condition that includes it
-  channel: string; // how it reaches the agent
   sources: { file: string; symbol: string }[]; // repository-relative file and the line that sends it
   placeholders?: Record<string, string>;
   needs?: keyof Capabilities; // only agents with this capability get it (`withCapabilities`)
@@ -65,11 +63,11 @@ function sendSites(): Map<string, { file: string; symbol: string }[]> {
 export const CATALOG: InstructionEntry[] = (() => {
   const sites = sendSites();
   return Object.entries(REGISTRY as Record<string, Entry>).map(([id, e]) => ({
-    id, group: e.group, title: e.title, purpose: e.purpose, text: e.text,
+    id, group: e.group, title: e.title, description: e.description, text: e.text,
     params: e.params && Object.entries(e.params).map(([name, text]) => ({ name, text })),
     variants: e.variants && Object.values(e.variants),
     applies: Object.fromEntries(e.roles.map((r) => [r, CATALOG_AGENTS])) as Applies,
-    when: e.when, channel: e.channel, sources: sites.get(id) ?? [], placeholders: e.placeholders, needs: e.needs,
+    sources: sites.get(id) ?? [], placeholders: e.placeholders, needs: e.needs,
   }));
 })();
 // Outside sources: some belong to one agent, which loads them itself.

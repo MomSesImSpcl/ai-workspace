@@ -1,6 +1,6 @@
 # Agent instructions browser
 
-**Status:** in-progress: iteration one (read-only browser, development only) built 2026-10-23; editing not specified
+**Status:** in-progress: iteration one (read-only browser, development only) built 2026-10-23; defaults and overrides in every build specified 2026-11-23, not built
 
 A Settings tab that lists every instruction the workspace itself writes for agents (role notes, message and continuation text, its tool descriptions, tool replies and refusals) with its purpose, the roles and agents that get it, when it is included, its source and its placeholders. Outside sources (your instructions, rule files, the agents' own prompts) are listed separately and labelled by what can be inspected. It is a basis for deciding how editing should work later.
 

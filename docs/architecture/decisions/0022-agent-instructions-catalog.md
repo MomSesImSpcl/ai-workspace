@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted 2026-10-23, implemented 2026-10-23 ([agent-instructions-001–005](../../features/agent-instructions/SPEC.md#requirements)).
+accepted 2026-10-23, implemented 2026-10-23 ([agent-instructions-001–005](../../features/agent-instructions/SPEC.md#requirements)). Amended 2026-11-23: copies are replaced by the instruction registry ([agent-interface-007](../../features/agent-interface/SPEC.md#requirements)), and [ADR 0025](0025-instruction-overrides.md) ships the tab in every build with user overrides.
 
 ## Context
 
