@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable } from '../src/instructions.ts';
 import { GUARD_MARK } from '../src/worktrees.ts';
+import { sessionAgents } from '../src/turn.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 // Source text as a reader sees it: string escapes undone and the block notice's mark filled in, so a copy can be found in it.
@@ -67,4 +68,9 @@ test('no workspace-authored text names an agent (agent-interface-003)', () => {
   // Agent ids filled into a placeholder are data; the fixed text must fit every agent.
   const names = /claude|codex|anthropic|openai/i;
   for (const e of CATALOG) for (const t of [...texts(e), ...(e.params ?? []).map((p) => p.text)]) assert.doesNotMatch(t, names, `${e.id} names an agent`);
+});
+
+test('workspace-authored entries go to every registered agent (agent-interface-001)', () => {
+  assert.deepEqual([...CATALOG_AGENTS].sort(), Object.keys(sessionAgents).sort());
+  for (const e of CATALOG) for (const [role, agents] of Object.entries(e.applies)) assert.deepEqual([...agents!].sort(), [...CATALOG_AGENTS].sort(), `${e.id} (${role})`);
 });

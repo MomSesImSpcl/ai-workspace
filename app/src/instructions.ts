@@ -21,9 +21,9 @@ import { appRepo, guardNotice } from './worktrees.ts';
 /** The roles the catalog tells apart: plain chats, orchestrator chats and tasks (the Implementer role, whatever role a task started with). Tasks do not start tasks (ADR 0024). */
 export const CATALOG_ROLES = ['Chat', 'Orchestrator', 'Implementer'] as const;
 export type CatalogRole = (typeof CATALOG_ROLES)[number];
-/** The agent integrations an entry can apply to, as named in `sessionAgents` (app/src/turn.ts). */
-export const CATALOG_AGENTS = ['claude-code', 'codex'] as const;
-type Agent = (typeof CATALOG_AGENTS)[number];
+/** The agent integrations an entry can apply to: the registered adapters (`sessionAgents`, app/src/turn.ts), so a new agent needs no edit here. */
+export const CATALOG_AGENTS = Object.keys(sessionAgents);
+type Agent = string;
 /** Which agents get the entry in each role; a role that is missing gets it with no agent. */
 type Applies = Partial<Record<CatalogRole, Agent[]>>;
 
@@ -45,7 +45,7 @@ export interface InstructionEntry {
   needs?: keyof Capabilities; // only agents with this capability get it (`withCapabilities`)
 }
 
-const BOTH: Agent[] = ['claude-code', 'codex'];
+const BOTH: Agent[] = CATALOG_AGENTS; // every workspace-authored entry goes to every agent (agent-interface-001)
 const CLAUDE: Agent[] = ['claude-code'];
 const CODEX: Agent[] = ['codex'];
 const ALL: Applies = { Chat: BOTH, Orchestrator: BOTH, Implementer: BOTH };

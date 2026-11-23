@@ -1,6 +1,6 @@
 # One agent interface
 
-**Status:** in-progress: iteration one partly built (interface, instruction builder, capability report, no agent named in instruction text); agent-interface-004–008 not started
+**Status:** in-progress: iteration one partly built (interface with derived agent list, instruction builder, capability report, no agent named in instruction text); agent-interface-004–008 not started
 
 Every agent integration implements one shared adapter interface, and the workspace builds one set of instructions and tools per role for all agents ([ADR 0023](../../architecture/decisions/0023-one-agent-interface.md)). The instructions belong to the workspace, not to an agent: any agent with an adapter runs with the same setup, and an agent appears in Settings only where it lacks a capability. This spec covers iteration one (interface and instruction builder); capability parity, rules into code and editing follow as later iterations.
 
