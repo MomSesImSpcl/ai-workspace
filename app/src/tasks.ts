@@ -152,7 +152,9 @@ function handoff(projectId: string, id: string): string {
   if (!earlier.task || earlier.projectId !== projectId) throw new Error(`Unknown task in this project: ${id}`);
   const ts = turns(readEvents(id), turnRunning(id));
   const result = ts.findLast((t) => t.text)?.text ?? '(no reply yet)';
-  return agentText('task.based-on', { task: id, status: taskStatus(earlier, ts), goal: ts[0]?.user.slice(0, 4000) ?? '', reply: result.slice(-4000) });
+  // Its own goal only: a goal based on a task before it ends with that one's context, which would nest at every link.
+  const goal = (ts[0]?.user ?? '').split(`\n\n${agentText('task.based-on', { task: '', status: '', goal: '', reply: '' }).split(' (')[0]}`)[0]!;
+  return agentText('task.based-on', { task: id, status: taskStatus(earlier, ts), goal: goal.slice(0, 4000), reply: result.slice(-4000) });
 }
 
 // Pause interrupts a running task's turn; the agent keeps its conversation and Resume continues it (runtime-006).

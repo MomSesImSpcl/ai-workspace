@@ -466,6 +466,10 @@ test('reply_task queues for a running task of this chat; a finished one gets a n
   assert.throws(() => renameTask(chat.id, task('other').id, 'x'), /Unknown task in this chat/);
   const next = startFromSession(chat.id, { goal: 'same again', basedOn: t.id });
   assert.match(turns(readEvents(next.id), false)[0]!.user, /^same again\n\nContext from an earlier related task .*completed[\s\S]*first delay[\s\S]*turn 2/);
+  // A chain does not nest: the third task gets the second one's own goal, not the context the second one carried.
+  const third = turns(readEvents(startFromSession(chat.id, { goal: 'once more', basedOn: next.id }).id), false)[0]!.user;
+  assert.equal(third.match(/Context from an earlier related task/g)?.length, 1);
+  assert.match(third, /Its goal: same again\nIts last reply/);
   saveSession({ ...loadSession(chat.id), taskMode: '' });
   assert.equal(startFromSession(chat.id, { goal: 'x', setup: ['tool:Read'] }).permissionMode, undefined);
 });
