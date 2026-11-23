@@ -8,6 +8,6 @@
 
 **Checks:** `npm run typecheck` clean; `npm test` 123/123 on Windows; `app/test/agents.test.ts` checks both adapters tag the workspace tool. New test in `app/test/tasks.test.ts`: a fake agent keeps working after request_setup; the host interrupts it (reason `interrupt`), the turn is done, and the next run continues it with the setup-continue message to completion. Existing request_setup tests updated to the new reply.
 
-**Not verified:** real Claude Code and Codex tasks. The interrupt is sent from inside the adapter's own event handler; it relies on each adapter reporting the request_setup call finished; a turn interrupted before the agent reads the tool result is covered by the continue message, but should be seen once in a test instance.
+**Verified (user, 2026-11-23):** a real Claude Code task (asked for tool:Write) and a real Codex task (asked for the shell tool) in a test instance each ended the turn and continued with the item. Before that: The interrupt is sent from inside the adapter's own event handler; it relies on each adapter reporting the request_setup call finished; a turn interrupted before the agent reads the tool result is covered by the continue message, but should be seen once in a test instance.
 
 **Branch:** `agent-instructions` (this worktree), committed locally, not pushed.
