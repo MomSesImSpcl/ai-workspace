@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseResult, sessionEvents } from '../src/adapters/claude-code.ts';
 import { assignmentFor, getRoles, setRole } from '../src/roles.ts';
 import { addMessage, createSession, emit, isSetupContinue, ORCHESTRATION, ORCHESTRATOR_NOTE, setupContinue, fingerprint, listSessions, loadSession, readEvents, repeatsFor, saveSession, used, sessionWorking, turnRunning, turns, type AgentProcess, type SessionAgent } from '../src/sessions.ts';
-import { stateOf } from '../src/setup.ts';
+import { saveInventory, stateOf } from '../src/setup.ts';
 import { cancelTask, childrenOf, createTask, listTasks, migrateTasks, pauseTask, renameTask, replyFromSession, resumeTask, startFromSession, startPendingTasks, taskStatus, taskUsed } from '../src/tasks.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -204,6 +204,7 @@ test('codex has no pre-run check: a repeated call stops the task and names the e
 });
 
 test('a chat starts a task: the task records the chat, which shows it with its approvals and result, and takes replies', async () => {
+  saveInventory('claude-code', [{ id: 'tool:Read', kind: 'tool', title: 'Read' }]); // setup ids are checked at start
   const chat = createSession('P', 'Chat', { integration: 'claude-code' });
   addMessage(chat.id, 'please start one');
   const t = startFromSession(chat.id, { goal: 'background goal', role: 'Implementation', tokenBudget: 5000, setup: ['tool:Read'] });
@@ -282,11 +283,11 @@ test('tasks run uncapped unless asked; the chat cap applies; the chosen agent, m
   saveSession({ ...loadSession(chat.id), taskCap: 3000 });
   assert.equal(startFromSession(chat.id, { goal: 'b', role: 'Implementation' }).task!.tokenBudget, 3000);
   const effort = sessionAgent('claude-code').catalog().models[0]!.efforts[0]!;
-  const t = startFromSession(chat.id, { goal: 'c', role: 'Implementation', agent: 'codex', effort: undefined, reason: 'small fix' });
+  const t = startFromSession(chat.id, { goal: 'c', role: 'Implementation', agent: 'codex', effort: undefined, reason: 'small fix', override: true });
   assert.deepEqual([t.integration, t.task!.reason], ['codex', 'small fix']);
   assert.equal(startFromSession(chat.id, { goal: 'd', role: 'Implementation', effort }).effort, effort);
   assert.throws(() => startFromSession(chat.id, { goal: 'e', role: 'Implementation', effort: 'warp' }), /Unknown effort/);
-  assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none' }), /Unknown agent/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'f', role: 'Implementation', agent: 'none', override: true }), /Unknown agent/);
 });
 
 test('list_agents distinguishes setup switches from capabilities; implementation defaults and user overrides survive', async () => {
@@ -308,7 +309,7 @@ test('list_agents distinguishes setup switches from capabilities; implementation
     assert.equal(catalog.setupStatus['claude-code'].requiresBuiltInTool, true);
     assert.ok(catalog.setupStatus['claude-code'].builtInTools.includes('tool:Bash'));
     // Only prompt is picked: the Codex shell is already enabled, no invented tool:* id is necessary.
-    const started = await client.callTool({ name: 'start_task', arguments: { goal: 'args', setup: ['prompt'], effort: 'medium' } });
+    const started = await client.callTool({ name: 'start_task', arguments: { goal: 'args', title: 'Args', reason: 'small check', setup: ['prompt'], effort: 'medium' } });
     assert.ok(!started.isError);
     const t = listTasks()[0]!;
     assert.deepEqual([t.integration, t.model, t.effort], ['codex', undefined, 'medium']);
@@ -326,20 +327,24 @@ test('list_agents distinguishes setup switches from capabilities; implementation
     setRole('Implementation', { integration: 'claude-code', model: 'sonnet', effort: 'high' });
     const inherited = startFromSession(chat.id, { goal: 'fix', role: 'Implementation', setup: ['tool:Edit'] });
     assert.deepEqual([inherited.integration, inherited.model], ['claude-code', 'sonnet']);
-    const explicit = startFromSession(chat.id, { goal: 'user chose Codex', role: 'Implementation', agent: 'codex', model: '', effort: 'medium', setup: ['prompt'] });
+    const explicit = startFromSession(chat.id, { goal: 'user chose Codex', role: 'Implementation', agent: 'codex', model: '', effort: 'medium', setup: ['prompt'], override: true });
     assert.deepEqual([explicit.integration, explicit.model], ['codex', undefined]);
     const updated = await client.callTool({ name: 'list_agents', arguments: {} });
     assert.equal(JSON.parse((updated.content as { text: string }[])[0]!.text).roles.Implementation.model, 'sonnet');
   } finally { await client.close(); }
 });
 
-test('orchestrator instructions bind implementation to the configured role and make tool selection agent-specific', () => {
-  assert.match(ORCHESTRATOR_NOTE, /omit agent and model in start_task to inherit them unless the user explicitly overrides them/);
-  assert.match(ORCHESTRATOR_NOTE, /Never switch integration because another agent exposes more setup items or tools/);
-  assert.match(ORCHESTRATOR_NOTE, /When requiresBuiltInTool is true/);
-  assert.match(ORCHESTRATOR_NOTE, /one of the agent's builtInTools is enabled/);
-  assert.match(ORCHESTRATOR_NOTE, /request_setup and continue on the same agent/);
-  assert.match(ORCHESTRATOR_NOTE, /report a blocker rather than switch agents or bypass permissions/);
+test('start_task keeps the role\'s agent and model unless overridden, and checks setup ids (agent-interface-008)', () => {
+  const chat = createSession('P', ORCHESTRATION, { integration: 'claude-code' });
+  setRole('Implementation', { integration: 'claude-code', model: 'sonnet' });
+  saveInventory('claude-code', [{ id: 'tool:Read', kind: 'tool', title: 'Read' }]);
+  saveInventory('codex', [{ id: 'feature:shell_tool', kind: 'feature', title: 'Shell tool' }]);
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', agent: 'codex' }), /Role Implementation uses claude-code with sonnet\. Omit agent and model/);
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', model: 'opus', setup: ['tool:Read'] }), /pass override: true only when the user asked/);
+  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation', model: 'sonnet', setup: ['tool:Read'] }).model, 'sonnet'); // the role's own is fine
+  assert.equal(startFromSession(chat.id, { goal: 'x', role: 'Implementation', agent: 'codex', override: true }).integration, 'codex');
+  assert.throws(() => startFromSession(chat.id, { goal: 'x', role: 'Implementation', setup: ['tool:Invented'] }), /Unknown setup items for claude-code: tool:Invented/);
+  assert.doesNotMatch(ORCHESTRATOR_NOTE, /requiresBuiltInTool|override|integration/); // enforced by start_task, not told
 });
 
 test('orchestrator chats and tasks load only the chosen setup items, switched for the one run (orchestrator-005)', async () => {
@@ -440,6 +445,7 @@ test('pause interrupts a task and keeps its conversation; resume continues it an
 });
 
 test('reply_task queues for a running task of this chat; a finished one gets a new task based on it', async () => {
+  saveInventory('claude-code', [{ id: 'tool:Read', kind: 'tool', title: 'Read' }]); // setup ids are checked at start
   const chat = createSession('P', 'Orchestration', { integration: 'claude-code' });
   addMessage(chat.id, 'go');
   const t = startFromSession(chat.id, { goal: 'first delay', role: 'Implementation', setup: ['tool:Read'] });
@@ -492,6 +498,7 @@ test('ui API: a chat cap is set and cleared, pause and resume a task, a changed 
 });
 
 test('a reply typed under a task goes to it directly; the chat records it and its agent hears it next', async () => {
+  saveInventory('claude-code', [{ id: 'tool:Read', kind: 'tool', title: 'Read' }]); // setup ids are checked at start
   const server = serve(0);
   await new Promise((r) => server.once('listening', r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

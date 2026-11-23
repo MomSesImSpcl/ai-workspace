@@ -94,12 +94,13 @@ if (!task) {
     {
       description: agentText('tool.start_task'),
       inputSchema: {
-        title: z.string().optional().describe(toolParam('tool.start_task', 'title')),
+        title: z.string().describe(toolParam('tool.start_task', 'title')),
         goal: z.string().describe(toolParam('tool.start_task', 'goal')),
         agent: z.string().optional().describe(toolParam('tool.start_task', 'agent')),
         model: z.string().optional().describe(toolParam('tool.start_task', 'model')),
         effort: z.string().optional().describe(toolParam('tool.start_task', 'effort')),
-        reason: z.string().optional().describe(toolParam('tool.start_task', 'reason')),
+        reason: z.string().describe(toolParam('tool.start_task', 'reason')),
+        override: z.boolean().optional().describe(toolParam('tool.start_task', 'override')),
         tokenBudget: z.number().int().positive().optional().describe(toolParam('tool.start_task', 'tokenBudget')),
         basedOn: z.string().optional().describe(toolParam('tool.start_task', 'basedOn')),
         role: z.string().optional(),
@@ -107,7 +108,7 @@ if (!task) {
         setup: z.array(z.string()).optional().describe(toolParam('tool.start_task', 'setup')),
       },
     },
-    tool((a: { title?: string; goal: string; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
+    tool((a: { title: string; goal: string; override?: boolean; agent?: string; model?: string; effort?: string; reason?: string; tokenBudget?: number; role?: string; permissionMode?: string; basedOn?: string; setup?: string[] }) => {
       const t = startFromSession(sessionId, { ...a, role: a.role ?? 'Implementation' });
       return agentText('reply.start_task', { task: t.id, choice: [t.integration, t.model, t.effort].filter(Boolean).join(', ') });
     }),
