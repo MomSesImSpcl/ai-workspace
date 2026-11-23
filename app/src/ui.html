@@ -695,10 +695,10 @@ function pickerValues(s) {
   return state.draft ?? roleDraft('Orchestration');
 }
 function roleDraft(role) {
-  const a = state.roles[role] ?? { integration: 'claude-code' };
-  // The role's defaults from Settings; on the fallback agent its model and effort would not fit.
+  const a = state.roles[role] ?? { integration: '' };
+  // The role's defaults from Settings; on the fallback agent (the first installed, or none) its model and effort would not fit.
   const own = !!state.agents[a.integration];
-  return { role, integration: own ? a.integration : 'claude-code', model: own ? a.model ?? '' : '', effort: own ? a.effort ?? '' : '' };
+  return { role, integration: own ? a.integration : Object.keys(state.agents)[0] ?? '', model: own ? a.model ?? '' : '', effort: own ? a.effort ?? '' : '' };
 }
 // The permission mode next to Send. Tasks run uncapped; a cap is asked of the orchestrator in words (ADR 0011).
 function renderCap(s) {
@@ -744,7 +744,7 @@ function renderPickers(s, force = false) {
   $('#role').value = v.role;
   $('#role').hidden = !!s;
   const catalog = state.agents[v.integration];
-  $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option(v.integration, v.integration, true);
+  $('#agent').innerHTML = Object.keys(state.agents).map((a) => option(a, a, a === v.integration)).join('') || option('', 'No agent installed', true);
   const models = catalog?.models ?? [{ id: '', label: 'Default', efforts: [] }];
   $('#model').innerHTML = models.map((m) => option(m.id, m.label, m.id === v.model)).join('');
   const efforts = (models.find((m) => m.id === v.model) ?? models[0]).efforts;
@@ -1110,16 +1110,18 @@ function renderDrawer() {
     if (tab === 'instructions') renderInstructions();
     renderBranches(tab);
     // Not rebuilt while a field in it is in use, so typing and an open list are kept.
-    if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = Object.entries(state.roles).map(([role, a]) => {
-      const options = [...new Set([...state.integrations, a.integration])];
+    // The app runs without any agent (onboarding-006): the roles then have none and their fields are off.
+    const none = !state.integrations.length;
+    if (!$('#roles').contains(document.activeElement)) $('#roles').innerHTML = (none ? `<p class="meta">No agent is installed on this computer. Install one of the supported agents, then restart the app.</p>` : '') + Object.entries(state.roles).map(([role, a]) => {
+      const options = [...new Set([...state.integrations, a.integration])].filter(Boolean);
       // Model and effort come from the agent's catalog (onboarding-008); the effort list follows the model.
       const models = state.agents[a.integration]?.models ?? [{ id: '', label: 'Default', efforts: [] }];
       const efforts = (models.find((m) => m.id === (a.model ?? '')) ?? models[0]).efforts;
       const key = ROLE_INSTRUCTIONS[role];
       return `<form class="role" data-role="${esc(role)}"><div class="row" style="align-items:baseline;gap:8px"><b>${esc(ROLE_NAMES[role] ?? role)}</b><span class="meta" data-saved role="status"></span></div>
-        <div class="role-grid"><label class="field">Agent<select name="integration">${options.map((i) => option(i, i, i === a.integration)).join('')}</select></label>
-        <label class="field">Default model<select name="model">${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
-        <label class="field">Default effort<select name="effort">${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
+        <div class="role-grid"><label class="field">Agent<select name="integration" ${none ? 'disabled' : ''}>${options.map((i) => option(i, i, i === a.integration)).join('') || option('', 'No agent installed', true)}</select></label>
+        <label class="field">Default model<select name="model" ${none ? 'disabled' : ''}>${models.map((m) => option(m.id, m.label, m.id === (a.model ?? ''))).join('')}</select></label>
+        <label class="field">Default effort<select name="effort" ${none ? 'disabled' : ''}>${option('', 'Default effort', !a.effort) + efforts.map((e) => option(e, EFFORT_LABELS[e] ?? e, e === a.effort)).join('')}</select></label>
         ${role === 'Implementation' ? permissionField(a) : ''}</div>
         ${key ? `<label class="field">Instructions (optional)<textarea data-instr="${key}" rows="3" placeholder="${esc(INSTRUCTION_HINTS[key])}">${esc(state.settings?.[key] ?? '')}</textarea></label>` : ''}
         </form>`;

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { delimiter, isAbsolute, join, relative } from 'node:path';
 import { getWorkspaceRoot, home, readJson, writeJson } from './store.ts';
 import { ORCHESTRATION, type Session } from './sessions.ts';
 
@@ -20,6 +20,12 @@ export function commandFile(command: string): string | undefined {
     if (isAbsolute(p) && existsSync(p) && statSync(p).isFile()) return p;
   }
   return undefined;
+}
+/** Whether a program runs by this name or path: an existing file, or a command on PATH (with .cmd or .exe on Windows). */
+export function onPath(command: string): boolean {
+  if (isAbsolute(command)) return existsSync(command);
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', ''] : [''];
+  return (process.env.PATH ?? '').split(delimiter).some((d) => d && exts.some((x) => existsSync(join(d, command + x))));
 }
 export const SETUP_ROLES = [ORCHESTRATION, 'Implementation']; // roles whose agent runs with a chosen setup
 export const RULE_ROLES = [ORCHESTRATION, 'Implementation']; // the global-rules switch per role

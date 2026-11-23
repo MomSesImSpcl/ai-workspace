@@ -8,7 +8,7 @@ import { codexHookNotices } from '../sandbox-check.ts';
 import { ghBlockArgs, mergeCommand } from '../merge.ts';
 import { agentInstructions } from '../prompt.ts';
 import { commitRoots, GUARD_MARK, guardedCommand, guardedPath, guardedTree, guardFor, guardNotice, type Guard } from '../worktrees.ts';
-import { commandFile, minimalPrompt, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
+import { commandFile, minimalPrompt, onPath, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
 import { awaitAnswer, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION } from '../sessions.ts';
 
 // Codex through `codex app-server` (issue #14): one long-lived process per session with the user's own
@@ -506,6 +506,7 @@ export function codexCatalog(): Catalog {
 
 export const codexSession: SessionAgent = {
   capabilities: { approvalTool: false, refusalText: false },
+  installed: () => onPath(process.env.CODEX_BIN ?? 'codex'),
   open: (session, root) => new CodexProcess(session, root),
   permissions: codexPermissions,
   catalog: codexCatalog,

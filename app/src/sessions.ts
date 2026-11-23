@@ -168,6 +168,7 @@ export const CAPABILITIES: Record<keyof Capabilities, string> = {
 
 export interface SessionAgent {
   capabilities: Capabilities;
+  installed(): boolean; // its program is on this computer; the app ships and runs without any (onboarding-006)
   open(session: Session, root: string): AgentProcess;
   permissions(root: string): { line: string; warn?: string };
   catalog(): Catalog;

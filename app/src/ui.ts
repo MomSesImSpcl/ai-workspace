@@ -8,7 +8,7 @@ import { assignmentFor, getRoles, setRole } from './roles.ts';
 import { CAPABILITIES, addMessage, addUsage, isSetupContinue, forgetSessionList, getSettings, GLOBAL, INSTRUCTIONS, setSettings, turnUsage, used, type Usage, reorderPinned, sessionFile, sessionRoot, setPinned, createSession, deleteSession, emit, listSessions, loadSession, readEvents, requestStop, saveSession, sessionWorking, turnRunning, turns, type Session } from './sessions.ts';
 import { getAgentSetup, itemOn, RULE_ROLES, saveInventory, SETUP_ROLES, setGlobalRules, setItemState, stateOf, type ItemState } from './setup.ts';
 import { claudeHome, fileOr } from './adapters/claude-code.ts';
-import { agentChoice, sessionAgent, sessionAgents, startTurn } from './turn.ts';
+import { agentChoice, installedAgents, sessionAgent, sessionAgents, startTurn } from './turn.ts';
 import { cancelTask, childrenOf, listTasks, pauseTask, relayToChat, replyTask, resumeTask, startedIn, taskStatus, taskUsed, usageOf } from './tasks.ts';
 import { exportStorage, importStorage } from './transfer.ts';
 import { getProject, getWorkspaceRoot, home, listProjects, readJson, writeJson, registerProject, removeProject, setProjectArchived, setWorkspaceRoot, unaddedFolders } from './store.ts';
@@ -25,7 +25,7 @@ const page = fileURLToPath(new URL('./ui.html', import.meta.url));
 const markedJs = join(dirname(createRequire(import.meta.url).resolve('marked')), 'marked.umd.js'); // Markdown in the chat (the browser build, next to the package's main file)
 const prefsPath = () => join(home(), 'ui-prefs.json'); // last view of the window, restored on launch
 // Integrations a role may name: those with a session agent.
-const integrations = Object.keys(sessionAgents);
+const integrations = () => installedAgents(); // only installed agents can be chosen
 
 function tail(path: string, bytes = 8192): string {
   if (!existsSync(path)) return '';
@@ -222,7 +222,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     }
     return agentSetupView();
   }
-  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations, workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home(), testBranch: testBranch() ?? null, instructions: instructionsAvailable() };
+  if (req.method === 'GET' && kind === 'meta') return { settings: getSettings(), projects: listProjects().map((p) => ({ ...p, app: isAppProject(p) || undefined, web: projectWeb(p.root) })), roles: getRoles(), integrations: integrations(), workspaceRoot: getWorkspaceRoot() ?? null, unaddedFolders: unaddedFolders(), storage: home(), testBranch: testBranch() ?? null, instructions: instructionsAvailable() };
   if (req.method === 'GET' && kind === 'tasks' && !id) return listTasks().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(taskView);
   if (req.method === 'GET' && kind === 'tasks') {
     const s = loadSession(id);
@@ -246,7 +246,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   if (req.method === 'POST' && kind === 'roles') {
     const b = await body(req);
     if (typeof b.role !== 'string' || !b.role || typeof b.integration !== 'string' || !b.integration) throw new HttpError(400, 'role and integration are required');
-    if (!sessionAgents[b.integration]) throw new HttpError(400, `integration must be one of ${integrations.join(', ')}`);
+    if (!integrations().includes(b.integration)) throw new HttpError(400, integrations().length ? `integration must be one of ${integrations().join(', ')}` : 'No agent is installed');
     if (!getRoles()[b.role]) throw new HttpError(400, `role must be one of ${Object.keys(getRoles()).join(', ')}`);
     // Model and effort come from the agent's catalog (onboarding-008); '' or unset is the agent's own default.
     const models = sessionAgents[b.integration]!.catalog().models;
@@ -286,7 +286,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
     if (!instructionsAvailable()) throw new HttpError(404, 'Agent instructions are shown only when the app runs from a checkout.');
     return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: withCapabilities(), external: externalSources(), capabilities: CAPABILITIES };
   }
-  if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog()]));
+  if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(installedAgents().map((k) => [k, sessionAgents[k]!.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});
   if (req.method === 'POST' && kind === 'prefs') {
     const b = await body(req);
@@ -373,7 +373,7 @@ export function serve(port: number): Server {
       if (req.method === 'GET' && url.pathname === '/vendor/marked.js') return send(200, 'text/javascript; charset=utf-8', readFileSync(markedJs, 'utf8'));
       send(200, 'application/json', JSON.stringify(await route(req, url)));
     } catch (e) {
-      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^Subtask |^No assignment|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
+      const code = e instanceof HttpError ? e.code : e instanceof SyntaxError ? 400 : /^Unknown |^Task is |^Session is |^Subtask |^No assignment|^No agent|cannot run sessions|^Project |^Workspace folder |^Import failed|^Not a directory/.test((e as Error).message) ? 400 : 500;
       send(code, 'application/json', JSON.stringify({ error: (e as Error).message }));
     }
   });

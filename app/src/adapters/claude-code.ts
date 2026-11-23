@@ -8,7 +8,7 @@ import { home } from '../store.ts';
 import { GUARD_MARK, guardFor } from '../worktrees.ts';
 import { forget, guardServer, guardToken } from '../guard.ts';
 import { agentInstructions } from '../prompt.ts';
-import { commandFile, minimalPrompt, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
+import { commandFile, minimalPrompt, onPath, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_TOOLS } from '../sessions.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
@@ -463,6 +463,7 @@ class ClaudeAgent implements AgentProcess {
 
 export const claudeSession: SessionAgent = {
   capabilities: { approvalTool: true, refusalText: true },
+  installed: () => onPath(process.env.CLAUDE_BIN ?? 'claude'),
   open: (session, root) => new ClaudeAgent(session, root),
   permissions: claudePermissions,
   catalog: claudeCatalog,

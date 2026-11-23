@@ -34,6 +34,8 @@ async function workRoot(s: Session): Promise<string> {
 }
 
 export const sessionAgents: Record<string, SessionAgent> = { 'claude-code': claudeSession, codex: codexSession };
+/** The registered agents whose program is on this computer, in registration order; empty when none is installed. */
+export const installedAgents = (agents = sessionAgents) => Object.keys(agents).filter((k) => agents[k]!.installed());
 
 export function sessionAgent(integration: string, agents = sessionAgents): SessionAgent {
   const agent = agents[integration];
@@ -45,6 +47,7 @@ export function sessionAgent(integration: string, agents = sessionAgents): Sessi
 // effort means the agent's own default.
 export function agentChoice(b: Record<string, unknown>, current: { integration: string; model?: string; effort?: string }) {
   const integration = b.integration === undefined ? current.integration : b.integration;
+  if (integration === '') throw new Error('No agent is set up: install one of ' + Object.keys(sessionAgents).join(', ') + ', then choose it in Settings → Agents');
   if (typeof integration !== 'string' || !sessionAgents[integration]) throw new Error(`Unknown agent: must be one of ${Object.keys(sessionAgents).join(', ')}`);
   const catalog = sessionAgents[integration]!.catalog();
   const pick = (v: unknown, keep: string | undefined) => (v === undefined ? keep : v === null || v === '' ? undefined : v);
