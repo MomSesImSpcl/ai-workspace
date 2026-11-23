@@ -45,3 +45,13 @@ test('without an installed agent the roles have none and starting is refused (on
     for (const [k, v] of Object.entries({ AI_WORKSPACE_HOME: saved.home, CLAUDE_BIN: saved.claude, CODEX_BIN: saved.codex, PATH: saved.path })) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });
+
+test('both adapters name the workspace tool an activity calls (agent-interface-008)', async () => {
+  const { sessionEvents } = await import('../src/adapters/claude-code.ts');
+  const { codexActivity } = await import('../src/adapters/codex.ts');
+  const line = (name: string) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'u1', name, input: {} }] } });
+  assert.equal((sessionEvents(line('mcp__aiws__request_setup'), '/').events[0] as { workspaceTool?: string }).workspaceTool, 'request_setup');
+  assert.equal((sessionEvents(line('Bash'), '/').events[0] as { workspaceTool?: string }).workspaceTool, undefined);
+  assert.equal(codexActivity({ type: 'mcpToolCall', id: 'i1', server: 'aiws', tool: 'request_setup' } as never)?.workspaceTool, 'request_setup');
+  assert.equal(codexActivity({ type: 'mcpToolCall', id: 'i1', server: 'other', tool: 'x' } as never)?.workspaceTool, undefined);
+});

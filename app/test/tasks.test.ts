@@ -86,14 +86,14 @@ test('the workspace ends a task turn after request_setup and continues it with t
   const t = task('change a file');
   let reason: unknown;
   const prompts: string[] = [];
-  // The agent keeps going after the call; the host interrupts it once the call has finished.
+  // The agent keeps going after the call; the host interrupts it when the call's finished event arrives.
   const agent = fake(({ emit: say, signal, prompt }) => new Promise((r) => {
     prompts.push(prompt);
     if (prompts.length > 1) { say({ type: 'text', text: 'edited' }); return r({}); }
-    say({ type: 'activity', id: 'a1', label: 'request_setup' });
+    signal.addEventListener('abort', () => { reason = signal.reason; r({}); });
+    say({ type: 'activity', id: 'a1', label: 'Using aiws request_setup', workspaceTool: 'request_setup' });
     requestSetup(t.id, ['tool:Edit'], 'needs to edit');
     say({ type: 'activity-done', id: 'a1' });
-    signal.addEventListener('abort', () => { reason = signal.reason; r({}); });
   }));
   await runTurn(t.id, agent);
   assert.equal(reason, 'interrupt'); // the process is kept, not killed

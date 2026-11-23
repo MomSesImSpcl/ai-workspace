@@ -81,13 +81,13 @@ const usageOf = (b: Breakdown): Usage => ({ inputTokens: b.inputTokens, outputTo
 const minus = (a: Usage, b: Usage): Usage => ({ inputTokens: a.inputTokens - b.inputTokens, outputTokens: a.outputTokens - b.outputTokens, cachedInputTokens: (a.cachedInputTokens ?? 0) - (b.cachedInputTokens ?? 0), cacheWriteTokens: (a.cacheWriteTokens ?? 0) - (b.cacheWriteTokens ?? 0) });
 
 // A tool call as an activity row with its fingerprint (runtime-004), or null for items that are not tool calls.
-export function codexActivity(item: Item): { label: string; fp: string } | null {
+export function codexActivity(item: Item): { label: string; fp: string; workspaceTool?: string } | null {
   if (item.type === 'commandExecution') return { label: `Running \`${item.command ?? ''}\``, fp: fingerprint('commandExecution', item.command ?? '') };
   if (item.type === 'fileChange') {
     const paths = (item.changes ?? []).map((c) => c.path);
     return { label: `Editing ${paths.map((p) => `\`${p}\``).join(', ')}`, fp: fingerprint('fileChange', paths) };
   }
-  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'start_task' ? 'Starting task' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}) };
+  if (item.type === 'mcpToolCall') return { label: item.server === 'aiws' && item.tool === 'start_task' ? 'Starting task' : `Using ${item.server} ${item.tool}`, fp: fingerprint(`mcp ${item.server} ${item.tool}`, item.arguments ?? {}), ...(item.server === 'aiws' ? { workspaceTool: item.tool } : {}) };
   return null;
 }
 

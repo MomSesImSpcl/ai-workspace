@@ -89,9 +89,21 @@ export const pending = (id: string) => {
 async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: boolean }> {
   const ts = turns(readEvents(id), true);
   const cur = ts.at(-1)!;
-  const say = (body: Body) => emit(id, cur.n, body);
   const session = loadSession(id);
   const task = session.task;
+  // A task that called request_setup is continued in a new process with the items (orchestrator-005): its turn ends
+  // here when that call finishes, instead of the agent being told to end it (agent-interface-008).
+  let forSetup = false;
+  const setupCalls = new Set<string>();
+  const say = (body: Body) => {
+    emit(id, cur.n, body);
+    if (!task) return;
+    if (body.type === 'activity' && body.workspaceTool === 'request_setup') setupCalls.add(body.id);
+    else if (body.type === 'activity-done' && setupCalls.has(body.id) && !forSetup && loadSession(id).task?.setupAdded?.length) {
+      forSetup = true;
+      halt(false);
+    }
+  };
   const stop = new AbortController();
   let stopped: string | undefined;
   const halt = (kill: boolean, reason?: string) => {
@@ -107,15 +119,8 @@ async function oneTurn(id: string, proc: AgentProcess): Promise<{ staleHint?: bo
     if (Date.now() - shownAt > 2000) { shownAt = Date.now(); say({ type: 'live-usage', usage: u }); }
     if (budget !== undefined && committed + used(u) >= budget) halt(true, `token budget ${budget.toLocaleString('en')} reached`);
   };
-  // A task that called request_setup is continued in a new process with the items (orchestrator-005): its turn ends
-  // here once that call has finished, instead of the agent being told to end it (agent-interface-008).
-  let forSetup = false;
   const watch = setInterval(() => {
     if (stopRequested(id)) halt(!!task && !!loadSession(id).task?.cancelled, task && !loadSession(id).task?.cancelled ? 'paused' : undefined);
-    else if (task && !forSetup && loadSession(id).task?.setupAdded?.length && turns(readEvents(id), true).at(-1)!.activity.every((a) => a.done)) {
-      forSetup = true;
-      halt(false);
-    }
     if (!task) startPendingTasks(id); // tasks its agent started with start_task
   }, 300);
   try {

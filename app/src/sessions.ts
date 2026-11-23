@@ -111,7 +111,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'queued'; text: string } // a reply that arrived while the task worked; sent with its next message
   | { type: 'relay'; taskId: string; text: string } // the user wrote to a task of this chat directly; the agent hears it with the next message
   | { type: 'switch'; from: string; to: string; model?: string } // the session moved to another agent (sessions-015) // a message from the agent or its plugins, e.g. a hook that dropped the prompt
-  | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string }
+  | { type: 'activity'; id: string; label: string; outside?: boolean; fp?: string; workspaceTool?: string } // workspaceTool: the workspace tool it calls, named neutrally by the adapter
   | { type: 'activity-done'; id: string; error?: boolean }
   | { type: 'approval'; id: string; tool: string; detail: string; repeat?: string }
   | { type: 'approval-answer'; id: string; allow: boolean }

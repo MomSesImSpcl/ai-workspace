@@ -106,7 +106,7 @@ export function sessionEvents(line: string, root: string): { events: Body[]; ses
   if (e.type === 'stream_event' && e.event?.type === 'content_block_delta' && e.event.delta?.type === 'text_delta') return { events: [{ type: 'text', text: e.event.delta.text ?? '' }] };
   if (e.type === 'assistant') {
     const events = (e.message?.content ?? []).filter((b) => b.type === 'tool_use' && b.id)
-      .map((b) => ({ type: 'activity' as const, id: b.id!, ...activityLabel(b.name ?? '', b.input ?? {}, root), fp: fingerprint(b.name ?? '', b.input ?? {}) }));
+      .map((b) => ({ type: 'activity' as const, id: b.id!, ...activityLabel(b.name ?? '', b.input ?? {}, root), fp: fingerprint(b.name ?? '', b.input ?? {}), ...(b.name?.startsWith('mcp__aiws__') ? { workspaceTool: b.name.slice('mcp__aiws__'.length) } : {}) }));
     return { events, usage: e.message?.id && e.message.usage ? { id: e.message.id, usage: tokens(e.message.usage) } : undefined };
   }
   if (e.type === 'user') {
