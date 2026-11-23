@@ -157,6 +157,20 @@ export function ghBlockArgs(worktree: boolean): string[] {
   return ['-c', `shell_environment_policy.set.GH_CONFIG_DIR=${JSON.stringify(dir)}`];
 }
 
+/**
+ * The environment of an agent in a worktree session without GitHub or git credentials (selfdev-004): no gh login or
+ * token, no git credential helper and no password prompt, so it cannot push, open or merge pull requests itself and
+ * request_merge, which the app runs with the user's credentials, is the only way to publish. shortcut: a remote reached
+ * over SSH keeps the user's keys; block those too if a project publishes that way.
+ */
+export function noPublishEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = Object.fromEntries(Object.entries(env).filter(([k]) => !/^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/.test(k)));
+  const dir = join(home(), 'gh-none');
+  mkdirSync(dir, { recursive: true });
+  // An empty credential.helper resets git's helper list, so no stored credential is used.
+  return { ...out, GH_CONFIG_DIR: dir, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'credential.helper', GIT_CONFIG_VALUE_0: '', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+}
+
 /** Whether a shell command merges a pull request with gh (`gh pr merge`, or the merge endpoint through `gh api`). */
 export function mergeCommand(command: string): boolean {
   return /\bgh(\.exe)?["']?\s+pr\s+merge\b/i.test(command) || /\bgh(\.exe)?["']?\s+api\b[^;&|\n]*\/pulls\/\d+\/merge\b/i.test(command);

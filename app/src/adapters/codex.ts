@@ -277,7 +277,8 @@ export class CodexProcess implements AgentProcess {
       }
       workspaceRules = setup.workspaceRules;
     }
-    params.developerInstructions = agentInstructions(this.session, { effort: this.effort, workspaceRules });
+    const instructions = agentInstructions(this.session, { workspaceRules });
+    if (instructions) params.developerInstructions = instructions;
     if (this.session.worktree && !params.sandbox) {
       const { config } = await this.request('config/read', { cwd: this.root }) as { config?: { sandbox_mode?: string } };
       if (config?.sandbox_mode === 'danger-full-access') params.sandbox = 'danger-full-access';

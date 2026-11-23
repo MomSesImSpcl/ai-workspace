@@ -11,6 +11,7 @@ import { agentInstructions } from '../prompt.ts';
 import { commandFile, minimalPrompt, onPath, runSetup, saveInventory, setupApplies, type SetupItem } from '../setup.ts';
 import { addUsage, fingerprint, type AgentProcess, type Body, type Catalog, type Session, type SessionAgent, type TurnEnd, type TurnInput, type Usage, ORCHESTRATION, ORCHESTRATOR_TOOLS } from '../sessions.ts';
 import { agentText } from '../registry.ts';
+import { noPublishEnv } from '../merge.ts';
 
 // Claude Code with its own tools, settings and permission rules (ADR 0004). Its "ask" prompts go to the
 // workspace server, which shows them as approval cards (sessions-019).
@@ -307,14 +308,15 @@ export class ClaudeProcess implements AgentProcess {
     if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
     // The agent is told its level, so rules that depend on it (for example an effort check) can read it.
     if (this.effort) args.push('--effort', this.effort);
-    args.push('--append-system-prompt', agentInstructions(session, { effort: this.effort, workspaceRules: setup?.workspaceRules }));
+    const instructions = agentInstructions(session, { workspaceRules: setup?.workspaceRules });
+    if (instructions) args.push('--append-system-prompt', instructions);
     if (resume) args.push('--resume', resume);
     this.fresh = !resume;
     this.sessionId = resume;
     this.err = '';
     const [cmd, pre] = claudeCommand();
     // Approvals wait for the user without a time limit (runtime-002): the longest timeout Node allows.
-    const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...agentEnv(process.env), MCP_TOOL_TIMEOUT: '2147483647' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(cmd, [...pre, ...args], { cwd: this.root, env: { ...(this.session.worktree ? noPublishEnv(agentEnv(process.env)) : agentEnv(process.env)), MCP_TOOL_TIMEOUT: '2147483647' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let pending = '';
     child.stdout.on('data', (d) => {
       pending += d;

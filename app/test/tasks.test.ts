@@ -273,7 +273,7 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   addMessage(orch2.id, 'args');
   await runTurn(orch2.id);
   const args2 = JSON.parse(last(orch2.id).text) as string[];
-  assert.match(args2[args2.indexOf('--append-system-prompt') + 1]!, /user's own instructions .*Keep goals under 50 words\./);
+  assert.match(args2[args2.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator[\s\S]*\n\nKeep goals under 50 words\.$/); // the user's own text, as written, after the note
   const t = task('args');
   await runTurn(t.id);
   const targs = JSON.parse(last(t.id).text) as string[];
@@ -674,13 +674,16 @@ test('both agents receive the same instructions in every role (ADR 0023)', async
     const s = role === 'Implementation' ? createTask({ projectId: 'P', goal: 'args', role, agent }) : createSession('P', role, { integration: agent });
     if (!s.task) addMessage(s.id, 'args');
     await runTurn(s.id);
-    if (agent === 'codex') return (JSON.parse(last(s.id).text) as { developerInstructions: string }).developerInstructions;
+    if (agent === 'codex') return (JSON.parse(last(s.id).text) as { developerInstructions?: string }).developerInstructions;
     const args = JSON.parse(last(s.id).text) as string[];
-    return args[args.indexOf('--append-system-prompt') + 1];
+    return args.includes('--append-system-prompt') ? args[args.indexOf('--append-system-prompt') + 1] : undefined;
   };
-  for (const role of ['Chat', 'Orchestration', 'Implementation']) {
+  // A plain chat has no fixed note: without instructions of the user's own, no system text at all.
+  assert.equal(await sent('claude-code', 'Chat'), undefined);
+  assert.equal(await sent('codex', 'Chat'), undefined);
+  for (const [role, start] of [['Orchestration', /^You are the workspace orchestrator\./], ['Implementation', /^This is a background task:/]] as const) {
     const claude = await sent('claude-code', role);
-    assert.match(claude!, /^AI Workspace: effort level/, role);
+    assert.match(claude!, start, role);
     assert.equal(await sent('codex', role), claude, role);
   }
 });

@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardDecision } from '../src/guard.ts';
-import { ghBlockArgs, mergeCommand, requestMerge } from '../src/merge.ts';
+import { ghBlockArgs, mergeCommand, noPublishEnv, requestMerge } from '../src/merge.ts';
 import type { AgentText } from '../src/registry.ts';
 
 let dir = '';
@@ -168,4 +168,11 @@ test('request_merge shows the card at once while the checks run; Allow waits for
   } finally {
     delete process.env.AI_WORKSPACE_FAKE_NPM_FAIL;
   }
+});
+
+test('a worktree session gets no GitHub or git credentials, so request_merge is the only way to publish', () => {
+  const env = noPublishEnv({ PATH: 'x', GH_TOKEN: 't', GITHUB_TOKEN: 't', HOME: 'h' });
+  assert.deepEqual([env.GH_TOKEN, env.GITHUB_TOKEN, env.PATH, env.HOME], [undefined, undefined, 'x', 'h']);
+  assert.ok(env.GH_CONFIG_DIR?.endsWith('gh-none'));
+  assert.deepEqual([env.GIT_CONFIG_KEY_0, env.GIT_CONFIG_VALUE_0, env.GIT_TERMINAL_PROMPT], ['credential.helper', '', '0']);
 });

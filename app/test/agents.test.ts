@@ -21,7 +21,7 @@ test('an instruction that needs a capability goes only to agents that report it'
   const by = (id: string) => withCapabilities(agents).find((e) => e.id === id)!;
   assert.deepEqual(by('tool.approve').applies.Chat, ['claude-code']);
   assert.deepEqual(by('refusal.guard').applies.Chat, ['codex']);
-  assert.deepEqual(by('note.chat').applies.Chat, ['claude-code', 'codex']); // needs nothing: every agent
+  assert.deepEqual(by('note.task').applies.Implementer, ['claude-code', 'codex']); // needs nothing: every agent
   for (const e of CATALOG.filter((x) => x.needs)) for (const list of Object.values(e.applies)) assert.deepEqual(list, ['claude-code', 'codex'], `${e.id}: written for every agent`);
 });
 
