@@ -132,7 +132,7 @@ if (!task) {
   );
   server.registerTool(
     'list_agents',
-    { description: "Current role assignments (agent, model, effort), each agent's catalog, decidable setup items and setupStatus (alwaysOn ids, requiresBuiltInTool). Use the configured Implementation agent and model unless the user explicitly overrides them. Setup lists are switches, not complete capability catalogs; a missing tool:* id is not a reason to switch agents.", inputSchema: {} },
+    { description: "Current role assignments (agent, model, effort), each agent's catalog, decidable setup items and setupStatus (alwaysOn ids, requiresBuiltInTool, builtInTools). Use the configured Implementation agent and model unless the user explicitly overrides them. Setup lists are switches, not complete capability catalogs; a missing built-in tool id is not a reason to switch agents.", inputSchema: {} },
     tool(() => JSON.stringify({ roles: getRoles(), agents: Object.fromEntries(Object.entries(sessionAgents).map(([k, a]) => [k, a.catalog().models])), setup: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, decidable(k)])), setupStatus: Object.fromEntries(Object.keys(sessionAgents).map((k) => [k, setupStatus(k)])) })),
   );
 }

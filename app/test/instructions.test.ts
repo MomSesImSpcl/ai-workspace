@@ -62,3 +62,9 @@ test('the tab is available only when the app runs from a checkout', () => {
   assert.equal(instructionsAvailable(''), false);
   assert.equal(instructionsAvailable('/some/checkout'), true);
 });
+
+test('no workspace-authored text names an agent (agent-interface-003)', () => {
+  // Agent ids filled into a placeholder are data; the fixed text must fit every agent.
+  const names = /claude|codex|anthropic|openai/i;
+  for (const e of CATALOG) for (const t of [...texts(e), ...(e.params ?? []).map((p) => p.text)]) assert.doesNotMatch(t, names, `${e.id} names an agent`);
+});

@@ -43,7 +43,7 @@ export function createTask(f: NewTask): Session {
   const agent = sessionAgent(integration);
   if (f.permissionMode && !agent.catalog().modes?.some((m) => m.id === f.permissionMode)) throw new Error(`Unknown permission mode for ${integration}: ${f.permissionMode}`);
   // A chat's task without a built-in tool could only talk: the orchestrator must pick them (orchestrator-005).
-  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(`No built-in tool picked for this ${integration} task: pass in setup the tools the goal needs (tool:… ids from list_agents)`);
+  if (f.sessionId && toolsFor(integration, setupRole({ task: {}, role: f.role }), f.setup)?.length === 0) throw new Error(`No built-in tool picked for this task: pass in setup the tools the goal needs (ids from setupStatus.builtInTools in list_agents)`);
   const s = createSession(f.projectId, f.role, { integration, model });
   s.effort = effort;
   // A chat's tasks and their subtasks work on the chat's branch, so one change is reviewed and merged once (selfdev-001).

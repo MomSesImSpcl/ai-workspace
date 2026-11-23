@@ -263,8 +263,9 @@ test('list_agents distinguishes setup switches from capabilities; implementation
     assert.equal(catalog.roles.Implementation.integration, 'codex');
     assert.ok(catalog.setup['claude-code'].some((i: { id: string }) => i.id === 'tool:Bash'));
     assert.ok(!catalog.setup.codex.some((i: { id: string }) => i.id.startsWith('tool:')));
-    assert.deepEqual(catalog.setupStatus.codex, { requiresBuiltInTool: false, alwaysOn: ['feature:shell_tool'] });
+    assert.deepEqual(catalog.setupStatus.codex, { requiresBuiltInTool: false, builtInTools: [], alwaysOn: ['feature:shell_tool'] });
     assert.equal(catalog.setupStatus['claude-code'].requiresBuiltInTool, true);
+    assert.ok(catalog.setupStatus['claude-code'].builtInTools.includes('tool:Bash'));
     // Only prompt is picked: the Codex shell is already enabled, no invented tool:* id is necessary.
     const started = await client.callTool({ name: 'start_task', arguments: { goal: 'args', setup: ['prompt'], effort: 'medium' } });
     assert.ok(!started.isError);
@@ -295,7 +296,7 @@ test('orchestrator instructions bind implementation to the configured role and m
   assert.match(ORCHESTRATOR_NOTE, /omit agent and model in start_task to inherit them unless the user explicitly overrides them/);
   assert.match(ORCHESTRATOR_NOTE, /Never switch integration because another agent exposes more setup items or tools/);
   assert.match(ORCHESTRATOR_NOTE, /When requiresBuiltInTool is true/);
-  assert.match(ORCHESTRATOR_NOTE, /Codex has no tool:\* setup ids; its shell is feature:shell_tool/);
+  assert.match(ORCHESTRATOR_NOTE, /one of the agent's builtInTools is enabled/);
   assert.match(ORCHESTRATOR_NOTE, /request_setup and continue on the same agent/);
   assert.match(ORCHESTRATOR_NOTE, /report a blocker rather than switch agents or bypass permissions/);
 });

@@ -89,11 +89,13 @@ export function decidable(agent: string, role = 'Implementation'): { id: string;
 }
 
 /** Setup constraints and already enabled items for list_agents; a decidable-only list hides default-on capabilities. */
-export function setupStatus(agent: string, role = 'Implementation'): { requiresBuiltInTool: boolean; alwaysOn: string[] } {
+export function setupStatus(agent: string, role = 'Implementation'): { requiresBuiltInTool: boolean; builtInTools: string[]; alwaysOn: string[] } {
   const setup = getAgentSetup();
   const items = setup.inventory?.[agent] ?? [];
+  const builtInTools = items.filter((i) => i.kind === 'tool').map((i) => i.id);
   return {
-    requiresBuiltInTool: items.some((i) => i.kind === 'tool'),
+    requiresBuiltInTool: builtInTools.length > 0,
+    builtInTools,
     alwaysOn: items.filter((i) => stateOf(setup, role, agent, i.id) === 'on').map((i) => i.id),
   };
 }
