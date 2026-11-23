@@ -86,7 +86,7 @@ const pendingOf = (s: Session) => [s, ...childrenOf(s.id)].flatMap((t) => {
 function taskCard(s: Session) {
   const pending = pendingOf(s);
   // The task's own conversation after its goal: the user's replies and each answer, oldest first.
-  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i && !t.resume ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
+  const thread = turns(readEvents(s.id), turnRunning(s.id)).map((t, i) => ({ user: i && !t.resume && !isSetupContinue(t.user) ? t.user : undefined, text: t.text, working: t.state === 'working', notices: t.notices }));
   return { ...taskView(s), pending, thread };
 }
 
