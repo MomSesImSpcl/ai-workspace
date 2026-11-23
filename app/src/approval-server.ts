@@ -123,7 +123,7 @@ if (!task) {
     tool(() => JSON.stringify(startedIn(sessionId).map((t) => {
       const ts = turns(readEvents(t.id), true);
       const last = ts.at(-1);
-      return { id: t.id, goal: ts[0]?.user, status: taskStatus(t, ts), agent: t.integration, model: t.model, effort: t.effort, tokenBudget: t.task!.tokenBudget, used: taskUsed(t), stoppedAt: last?.marker, lastReply: last?.text.slice(-2000) };
+      return { id: t.id, goal: ts[0]?.user, status: taskStatus(t, ts), agent: t.integration, model: t.model, effort: t.effort, tokenBudget: t.task!.tokenBudget, used: taskUsed(t), stoppedAt: last?.marker, error: last?.error, lastReply: last?.text.slice(-2000) };
     }))),
   );
   server.registerTool(

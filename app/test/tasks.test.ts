@@ -104,6 +104,22 @@ test('the workspace ends a task turn after request_setup and continues it with t
   assert.equal(status(t.id), 'completed');
 });
 
+test('a failed task says why it failed in its card, its details and task_status', async () => {
+  const t = task('fail at once');
+  await runTurn(t.id, fake(async () => ({ error: 'Failed to authenticate: OAuth session expired' })));
+  const server = serve(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const card = (await (await fetch(`${base}/api/tasks`)).json()).find((x: { id: string }) => x.id === t.id);
+    assert.match(card.reason, /^Failed before the first step — Failed to authenticate/);
+    const details = await (await fetch(`${base}/api/tasks/${t.id}`)).json();
+    assert.match(JSON.stringify(details.runs), /"error":"Failed to authenticate: OAuth session expired"/);
+  } finally {
+    server.close();
+  }
+});
+
 test('cancel ends a working Claude Code task at once, not after the interrupt grace period', async () => {
   const t = task('slow work');
   const run = runTurn(t.id);

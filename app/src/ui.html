@@ -1014,7 +1014,7 @@ function runHtml(t, r, i, count, open, permissions) {
   const line = `${i ? `Reuse ${i}` : 'Start'} · <span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span> · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} · ${r.used.toLocaleString()} tokens · ${when}${r.paused ? ` · paused ${r.paused}×` : ''}`;
   return `<details class="card run" data-run="${r.n}" data-task="${esc(t.id)}" ${open ? 'open' : ''}><summary class="meta"><span>${line}</span></summary>
     <dl>
-      <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}</dd>
+      <dt>Status</dt><dd><span class="status s-${esc(st)}"><span class="dot"></span> ${esc(LABELS[st] ?? st)}</span>${r.marker ? ` — ${esc(r.marker)}` : ''}${r.error ? ` — ${esc(r.error)}` : ''}</dd>
       ${t.session ? `<dt>Started in</dt><dd><button class="btn small" data-session="${esc(t.session.id)}">${esc(t.session.title)}</button></dd>` : ''}
       <dt>Agent</dt><dd>${[t.integration, r.model ?? t.model, t.effort && (EFFORT_LABELS[t.effort] ?? t.effort)].filter(Boolean).map(esc).join(' · ')}${t.task.overridden ? ' <span class="meta">(changed by you)</span>' : ''}</dd>
       <dt>Progress</dt><dd>${stepsHtml(t, r)}</dd>
