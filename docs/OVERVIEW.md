@@ -36,6 +36,7 @@ Each link opens `features/<feature>/SUMMARY.md`; its folder also contains `SPEC.
 - [Project history and selective progress retrieval](features/project-history/SUMMARY.md)
 - [Configurable orchestration, agent roles and context delegation](features/ai-orchestrator/SUMMARY.md) — in progress
 - [Agent instructions browser](features/agent-instructions/SUMMARY.md) — in progress
+- [One agent interface](features/agent-interface/SUMMARY.md) — in progress
 - [Automatic long-term memory and project knowledge](features/memory/SUMMARY.md)
 - [Hermes Agent and Hindsight evaluation and integration](features/hermes-hindsight/SUMMARY.md)
 - [Technology discovery and build-versus-buy research](features/technology-catalog/SUMMARY.md)

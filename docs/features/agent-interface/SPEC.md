@@ -1,0 +1,30 @@
+# One agent interface
+
+[Summary](SUMMARY.md). Decision: [ADR 0023](../../architecture/decisions/0023-one-agent-interface.md); principles [11–12](../../PRINCIPLES.md#product-invariants).
+
+The workspace, not the agent, owns what agents are told (user, 2026-11-23). Instructions are defined per role (Chat, Orchestrator, Implementer) and are the same for every agent, so any agent with an adapter can run with the existing setup. Adapters only deliver them and report what their agent can do. This spec is iteration one of ADR 0023: the shared interface and the instruction builder.
+
+## Requirements
+
+- **agent-interface-001 — One adapter interface (built 2026-10-23):** Every agent integration implements `SessionAgent` and `AgentProcess` (`app/src/sessions.ts`): open a session, run turns, report permissions, its model catalog, its setup inventory and its `Capabilities`. Shared code MUST NOT branch on an agent's name; a difference between agents is a capability the adapter reports ([custom-integrations](../custom-integrations/SPEC.md#requirements)). The list of agents shown anywhere (catalog, Settings, pickers) MUST come from the registered adapters, not a hand-written list.
+- **agent-interface-002 — One instruction builder (built 2026-10-23):** The role notes every agent starts with are built once by `agentInstructions` (`app/src/prompt.ts`) from the session's role, task, worktree, effort, the user's own instructions for that role and the workspace folder's rules. For the same session and run, every adapter MUST deliver byte-identical text. Adapters add no rule text of their own.
+- **agent-interface-003 — No agent named in instruction text (not started):** No text the workspace sends an agent (role notes, messages, workspace tool descriptions, tool replies, refusals) may name an agent or address one agent. Workspace tools are named neutrally ("the workspace start_task tool"); where an agent sees a tool under another name (for example with a server prefix), the adapter maps it. Facts that differ per agent come from data, not text: for example the orchestrator note's "Claude Code uses tool:Read … Codex has no tool:* setup ids" is replaced by `list_agents` reporting each agent's built-in tool items, and the note saying only to enable one of them. The same applies to setup-item descriptions the workspace writes.
+- **agent-interface-004 — Instruction delivery as a capability (not started):** Each adapter delivers the instructions in the strongest place its agent offers and reports which one in `Capabilities`: a lasting system or developer slot that survives compaction and resumption, or only a message at the start of the conversation. An adapter MUST NOT drop or shorten the text. An agent that has only the message form gets the instructions again whenever the workspace resumes or restarts it, and Settings shows that as a capability gap (agent-instructions-003). Claude Code (`--append-system-prompt`) and Codex (`developerInstructions`) both report the lasting slot ([integration matrix](../../INTEGRATIONS.md) row "Deliver the workspace instructions").
+- **agent-interface-005 — Settings shows roles, not agents (not started for the change below):** The Agent instructions tab lists workspace-authored entries per role only, with no agent filter or agent column. An agent is named only in a gap: an entry that needs a capability the agent does not report (agent-instructions-003, built 2026-10-23 for `approvalTool` and `refusalText`), or an agent that cannot take the lasting slot (004). Outside sources that belong to one agent (its own rule files, system prompt, memories) stay labelled by agent, since the agent, not the workspace, loads them.
+- **agent-interface-006 — Checked with real agents (not started):** Before iteration one counts as done, a Claude Code and a Codex chat in a test instance of the branch each start a task, and a Claude Code and a Codex orchestrator each route a change to a task, as before the builder.
+
+## Non-goals
+
+- Giving every agent the same capabilities (the workspace providing approvals and refusal text itself): iteration two.
+- Turning rules into tool schemas, parameters, defaults and validation: iteration three.
+- Editing instructions in Settings: iteration four, owned by [agent-instructions](../agent-instructions/SPEC.md).
+- A manifest for agents without a code adapter ([custom-integrations](../custom-integrations/SPEC.md)).
+
+## Acceptance evidence
+
+- Built: `app/test/tasks.test.ts` (a chat, an orchestrator chat and a task get byte-identical instructions from the fake Claude Code and fake Codex); `app/test/agents.test.ts` (every agent implements the interface and reports every capability).
+- 001: a test that the catalog's and Settings' agent lists equal the registered adapters.
+- 003: a test that scans every workspace-authored entry of the catalog (agent-instructions-002) for agent names and fails on a match; `list_agents` returns each agent's built-in tool items.
+- 004: the conformance test also checks the delivery capability; a fake agent with only the message form gets the instructions on its first turn and again after a resume, and the tab shows its gap.
+- 005: browser check of the tab: no agent filter or column; gaps name the missing capability.
+- 006: the real runs above, recorded in history.
