@@ -1,15 +1,42 @@
-// Merging an app-project branch into main through the workspace (selfdev-004, ADR 0017): the agent reports its
-// checks and calls the workspace tool request_merge; the user approves one card; the app runs `gh pr merge` itself,
+// Merging an app-project branch into main through the workspace (selfdev-004, ADR 0017): the agent calls the workspace
+// tool request_merge; the app runs typecheck and tests in the worktree, the user approves one card, and the app runs `gh pr merge` itself,
 // outside any agent sandbox. Agents cannot merge on their own: the write guard blocks `gh pr merge`, and Codex's
 // shells in a worktree get no gh login (`ghBlockArgs`).
-import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { agentText } from './registry.ts';
 import { home } from './store.ts';
+import { npmCommand } from './worktrees.ts';
 
-/** What the agent passes to request_merge: its check results, and a title and body if the pull request is new. */
-export interface MergeArgs { checks: string; title?: string; body?: string }
+/** What the agent passes to request_merge: a title and body if the pull request is new. */
+export interface MergeArgs { title?: string; body?: string }
+
+/** The checks request_merge runs before the card (selfdev-003): `npm run <script>` in the worktree's app folder. */
+const CHECKS = [['typecheck', ['run', 'typecheck']], ['npm test', ['test']]] as const;
+
+/** Runs the checks in `cwd` one after another; the first failure stops them. `summary` is what the card shows. */
+export async function runChecks(cwd: string): Promise<{ ok: true; summary: string } | { ok: false; check: string; output: string }> {
+  const dir = existsSync(join(cwd, 'app', 'package.json')) ? join(cwd, 'app') : cwd;
+  const done: string[] = [];
+  for (const [name, args] of CHECKS) {
+    const [cmd, argv, shell] = npmCommand([...args]);
+    const { code, output } = await new Promise<{ code: number | null; output: string }>((end) => {
+      let output = '';
+      const child = spawn(cmd, argv, { cwd: dir, shell, windowsHide: true });
+      child.stdout.on('data', (d) => (output += d));
+      child.stderr.on('data', (d) => (output += d));
+      child.on('error', (e) => end({ code: -1, output: e.message }));
+      child.on('close', (c) => end({ code: c, output }));
+    });
+    const lines = output.trim().split(/\r?\n/);
+    if (code !== 0) return { ok: false, check: name, output: lines.slice(-30).join('\n') };
+    // node --test ends with counts ("ℹ pass 123"); other runners show their last line.
+    const counts = lines.filter((l) => /^\S*\s*(tests|pass|fail) \d+$/.test(l.trim())).map((l) => l.replace(/^\S*\s*/, '').trim());
+    done.push(`${name}: ${counts.length ? counts.join(', ') : 'passed'}`);
+  }
+  return { ok: true, summary: done.join('; ') };
+}
 
 /** A pull request of the branch, as gh reports it; `headRefOid` is the commit it was last updated with. */
 interface Pr { number: number; url: string; title: string; state: string; headRefOid?: string }
@@ -45,7 +72,8 @@ export function mergedPr(branch: string, cwd: string, prs = branchPrs(branch, cw
 const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { number: pr.number, branch, url: pr.url });
 
 /**
- * Merges the worktree branch `branch` into main after the user's approval. `ask` shows the card and returns the
+ * Merges the worktree branch `branch` into main after the user's approval. Before the card it refuses uncommitted work and runs
+ * typecheck and tests in the worktree (`verify`, selfdev-003); a failure goes back to the agent with the output. `ask` shows the card and returns the
  * answer (null when the turn was stopped); nothing happens before it. On Allow the app, outside any agent sandbox
  * and with the user's credentials, merges main into the branch (the ruleset merges only up-to-date branches), pushes
  * it (Codex cannot from its Windows sandbox), opens the pull request
@@ -55,7 +83,7 @@ const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { nu
  * merges into the checked-out branch, since the card may wait a long time (#62). A merged pull request is refused at
  * both points too. Returns what the agent is told; throws when the request cannot go to the user.
  */
-export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => string | undefined = () => undefined): Promise<string> {
+export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => string | undefined = () => undefined, verify = runChecks): Promise<string> {
   const problem = check();
   if (problem) throw new Error(problem);
   const prs = branchPrs(branch, cwd) ?? [];
@@ -63,8 +91,13 @@ export async function requestMerge(branch: string, cwd: string, args: MergeArgs,
   if (merged) throw new Error(mergedText(merged, branch));
   const open = prs.find((p) => p.state === 'OPEN');
   if (!open && !args.title) throw new Error(agentText('reply.request_merge', { branch }, 'noTitle'));
+  // The workspace checks what it would publish (agent-interface-008): committed work only, typecheck and tests passing.
+  const dirty = git(['status', '--porcelain'], cwd).out.split('\n').filter(Boolean);
+  if (dirty.length) return agentText('reply.request_merge', { files: dirty.slice(0, 10).map((l) => l.trim().replace(/^\S+\s+/, '')).join(', ') + (dirty.length > 10 ? ` and ${dirty.length - 10} more` : '') }, 'uncommitted');
+  const checks = await verify(cwd);
+  if (!checks.ok) return agentText('reply.request_merge', { check: checks.check, output: checks.output }, 'checksFailed');
   const what = open ? `pull request #${open.number} "${open.title}"` : `a new pull request "${args.title}"`;
-  const allow = await ask(`Push branch ${branch} and squash-merge ${what} into main once the required checks pass. Checks the agent reports: ${args.checks}`.slice(0, 1000));
+  const allow = await ask(`Push branch ${branch} and squash-merge ${what} into main once the required checks pass. Checks the workspace ran in the worktree: ${checks.summary}`.slice(0, 1000));
   if (allow === null) return agentText('reply.request_merge', {}, 'stopped');
   if (!allow) return agentText('reply.request_merge', {}, 'denied');
   const stale = check();

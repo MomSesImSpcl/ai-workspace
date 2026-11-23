@@ -1,6 +1,7 @@
 // Merging through the workspace (selfdev-004): the merge detection, the guard, request_merge with a fake gh, and
 // the empty gh folder for Codex.
 import { test, beforeEach } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -29,7 +30,7 @@ test('the guard denies gh merges in app-project sessions only, with the way to m
 });
 
 /** A fake gh and git that keep pull requests and every call (in order) in a JSON file. */
-function fakeTools(prs: Record<string, object>, fail: { push?: boolean; merge?: boolean; update?: boolean; notAncestor?: boolean } = {}) {
+function fakeTools(prs: Record<string, object>, fail: { push?: boolean; merge?: boolean; update?: boolean; notAncestor?: boolean; dirty?: boolean } = {}) {
   const state = join(dir, 'tools-state.json');
   writeFileSync(state, JSON.stringify({ prs, calls: [] }));
   const head = `import { readFileSync, writeFileSync } from 'node:fs';
@@ -47,11 +48,13 @@ save(); process.exit(2);`);
   writeFileSync(git, `${head}
 s.calls.push('git ' + a.join(' ')); save();
 if (a[0] === 'merge-base' && ${!!fail.notAncestor}) process.exit(1);
+if (a[0] === 'status' && ${!!fail.dirty}) console.log(' M app/src/a.ts');
 if (a[0] === 'merge' && a[1] === '--no-edit' && ${!!fail.update}) { console.error('CONFLICT (content): Merge conflict in a.ts'); process.exit(1); }
 if (a[0] === 'push' && ${!!fail.push}) { console.error('fatal: could not read Username'); process.exit(128); }`);
   process.env.AI_WORKSPACE_GH = gh;
+  process.env.AI_WORKSPACE_NPM = fileURLToPath(new URL('./fake-npm.mjs', import.meta.url));
   process.env.AI_WORKSPACE_GIT = git;
-  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls.filter((c) => !c.startsWith('gh pr list') && !c.startsWith('git merge-base'));
+  return () => (JSON.parse(readFileSync(state, 'utf8')) as { calls: string[] }).calls.filter((c) => !c.startsWith('gh pr list') && !c.startsWith('git merge-base') && !c.startsWith('git status'));
 }
 
 test('request_merge asks first; on Allow the app merges main in, pushes, opens the pull request if needed and turns on auto-merge', async () => {
@@ -59,26 +62,26 @@ test('request_merge asks first; on Allow the app merges main in, pushes, opens t
     const asked: string[] = [];
     const ask = (answer: boolean | null) => async (detail: string) => { asked.push(detail); return answer; };
     let calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } });
-    assert.match(await requestMerge('fix', dir, { checks: 'typecheck clean; npm test 75/75' }, ask(false)), /did not approve the merge; nothing was pushed or merged/);
-    assert.match(await requestMerge('fix', dir, { checks: 'x' }, ask(null)), /stopped/);
+    assert.match(await requestMerge('fix', dir, {}, ask(false)), /did not approve the merge; nothing was pushed or merged/);
+    assert.match(await requestMerge('fix', dir, {}, ask(null)), /stopped/);
     assert.deepEqual(calls(), [], 'Deny or a stop runs nothing');
-    assert.match(asked[0]!, /Push branch fix and squash-merge pull request #4 "Fix it".*typecheck clean; npm test 75\/75/);
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /auto-merge is on for #4/);
+    assert.match(asked[0]!, /Push branch fix and squash-merge pull request #4 "Fix it".*Checks the workspace ran in the worktree: typecheck: passed; npm test: tests 5, pass 5, fail 0/);
+    assert.match(await requestMerge('fix', dir, {}, ask(true)), /auto-merge is on for #4/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin fix', 'gh pr merge 4 --squash --auto']);
     calls = fakeTools({});
-    await assert.rejects(requestMerge('new', dir, { checks: 'ok' }, ask(true)), /no open pull request.*title/);
-    assert.match(await requestMerge('new', dir, { checks: 'ok', title: 'New thing', body: 'Why' }, ask(true)), /auto-merge is on for #9/);
+    await assert.rejects(requestMerge('new', dir, {}, ask(true)), /no open pull request.*title/);
+    assert.match(await requestMerge('new', dir, { title: 'New thing', body: 'Why' }, ask(true)), /auto-merge is on for #9/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin new', 'gh pr create --base main --head new --title New thing --body Why', 'gh pr merge 9 --squash --auto'], 'main merged in, then the push, then the pull request');
     calls = fakeTools({}, { push: true });
-    assert.match(await requestMerge('new', dir, { checks: 'ok', title: 'T' }, ask(true)), /Pushing branch new failed; nothing was merged: fatal/);
+    assert.match(await requestMerge('new', dir, { title: 'T' }, ask(true)), /Pushing branch new failed; nothing was merged: fatal/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin new'], 'no pull request after a failed push');
     calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } }, { update: true });
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /up to date with main failed[\s\S]*resolve the conflicts[\s\S]*CONFLICT/);
+    assert.match(await requestMerge('fix', dir, {}, ask(true)), /up to date with main failed[\s\S]*resolve the conflicts[\s\S]*CONFLICT/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git merge --abort'], 'a conflict is aborted; nothing pushed');
     fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } }, { merge: true });
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /auto-merge for #4 failed: auto-merge is not allowed/);
+    assert.match(await requestMerge('fix', dir, {}, ask(true)), /auto-merge for #4 failed: auto-merge is not allowed/);
     fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'MERGED', headRefOid: 'a'.repeat(40) } });
-    await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, ask(true)), /#4 of branch fix is already merged[\s\S]*Do not switch this worktree[\s\S]*Continue in a new chat/);
+    await assert.rejects(requestMerge('fix', dir, {}, ask(true)), /#4 of branch fix is already merged[\s\S]*Do not switch this worktree[\s\S]*Continue in a new chat/);
   } finally {
     delete process.env.AI_WORKSPACE_GH;
     delete process.env.AI_WORKSPACE_GIT;
@@ -92,14 +95,14 @@ test('request_merge checks the binding before the card and again after Allow; a 
     const allow = async () => { asked++; return true; };
     // A stale binding is refused before anything is asked or run.
     let calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
-    await assert.rejects(requestMerge('fix', dir, { checks: 'ok' }, allow, () => 'The worktree has branch other checked out.'), /branch other checked out/);
+    await assert.rejects(requestMerge('fix', dir, {}, allow, () => 'The worktree has branch other checked out.'), /branch other checked out/);
     assert.equal(asked, 0);
     assert.deepEqual(calls(), []);
     // The binding goes stale while the card waits: nothing is fetched, merged or pushed.
     let stale = false;
     calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN' } });
     const flip = async () => { stale = true; return true; };
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, flip, () => (stale ? 'The worktree has a detached HEAD checked out.' : undefined)), /^Nothing was pushed or merged: the binding changed while the card waited\. The worktree has a detached HEAD/);
+    assert.match(await requestMerge('fix', dir, {}, flip, () => (stale ? 'The worktree has a detached HEAD checked out.' : undefined)), /^Nothing was pushed or merged: the binding changed while the card waited\. The worktree has a detached HEAD/);
     assert.deepEqual(calls(), []);
     // The pull request merges while the card waits.
     calls = fakeTools({ fix: { number: 4, url: 'u', title: 't', state: 'OPEN', headRefOid: 'b'.repeat(40) } });
@@ -110,11 +113,11 @@ test('request_merge checks the binding before the card and again after Allow; a 
       writeFileSync(file, JSON.stringify(st));
       return true;
     };
-    assert.match(await requestMerge('fix', dir, { checks: 'ok' }, mergeMeanwhile), /^Nothing was pushed or merged\. Pull request #4 of branch fix is already merged/);
+    assert.match(await requestMerge('fix', dir, {}, mergeMeanwhile), /^Nothing was pushed or merged\. Pull request #4 of branch fix is already merged/);
     assert.deepEqual(calls(), []);
     // A merged pull request of an earlier branch with the same name (made again from main) is not this branch's: a new one opens.
     calls = fakeTools({ fix: merged }, { notAncestor: true });
-    assert.match(await requestMerge('fix', dir, { checks: 'ok', title: 'Next' }, allow), /auto-merge is on for #9/);
+    assert.match(await requestMerge('fix', dir, { title: 'Next' }, allow), /auto-merge is on for #9/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin fix', 'gh pr create --base main --head fix --title Next --body ', 'gh pr merge 9 --squash --auto']);
   } finally {
     delete process.env.AI_WORKSPACE_GH;
@@ -128,4 +131,22 @@ test('Codex worktree sessions get an empty gh folder for their shells; others no
   const value = JSON.parse(args[1]!.split('GH_CONFIG_DIR=')[1]!) as string;
   assert.ok(existsSync(value) && value.startsWith(process.env.AI_WORKSPACE_HOME!));
   assert.deepEqual(ghBlockArgs(false), []);
+});
+
+test('request_merge refuses uncommitted work and failing checks before the card (agent-interface-008)', async () => {
+  try {
+    let asked = 0;
+    const ask = async () => { asked++; return true; };
+    let calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } }, { dirty: true });
+    assert.match(await requestMerge('fix', dir, {}, ask), /uncommitted changes \(app\/src\/a\.ts\); nothing was checked, pushed or merged/);
+    calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } });
+    process.env.AI_WORKSPACE_FAKE_NPM_FAIL = 'test';
+    assert.match(await requestMerge('fix', dir, {}, ask), /^npm test failed in the worktree; nothing was pushed or merged[\s\S]*error in test: src\/a\.ts/);
+    process.env.AI_WORKSPACE_FAKE_NPM_FAIL = 'typecheck';
+    assert.match(await requestMerge('fix', dir, {}, ask), /^typecheck failed in the worktree/);
+    assert.equal(asked, 0, 'no card while the work is not ready');
+    assert.deepEqual(calls(), [], 'nothing pushed or merged');
+  } finally {
+    delete process.env.AI_WORKSPACE_FAKE_NPM_FAIL;
+  }
 });

@@ -3,6 +3,7 @@
 // explanation; a confirmed continuation carries the conversation to a new binding; cleanup, restore and active
 // sessions keep their rules. Real git with a local bare "origin"; gh is a fake that keeps pull requests in a file.
 import { test, beforeEach } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -36,6 +37,7 @@ const gh = () => JSON.parse(readFileSync(ghState, 'utf8')) as { prs: Record<stri
 const setPrs = (branch: string, prs: object[]) => { const s = gh(); s.prs[branch] = prs; writeFileSync(ghState, JSON.stringify(s)); };
 
 beforeEach(() => {
+  process.env.AI_WORKSPACE_NPM = fileURLToPath(new URL('./fake-npm.mjs', import.meta.url));
   dir = mkdtempSync(join(tmpdir(), 'ws-binding-'));
   process.env.AI_WORKSPACE_HOME = join(dir, 'home');
   process.env.AI_WORKSPACE_SESSION_IDLE_MS = '300';
@@ -105,7 +107,7 @@ test('merged pull request: the chat stops before work and publication; a confirm
   assert.match(blocked.error!, /Continue in a new chat/);
   let asked = 0;
   const allow = async () => { asked++; return true; };
-  await assert.rejects(requestMerge(wtA.branch, wtA.path, { checks: 'ok', title: 'Feature B' }, allow, checkOf(a.id)), /#61 of branch feature-a is already merged/);
+  await assert.rejects(requestMerge(wtA.branch, wtA.path, { title: 'Feature B' }, allow, checkOf(a.id)), /#61 of branch feature-a is already merged/);
   assert.equal(asked, 0, 'no card for the stale chat');
 
   const b = continueSession(a.id, { name: 'feature-b' });
@@ -130,14 +132,14 @@ test('merged pull request: the chat stops before work and publication; a confirm
   assert.ok(readEvents(b.id).some((e) => e.type === 'notice' && /from .*\(freshly fetched origin\/main\)/.test(e.text)));
 
   commit(wtB.path, 'feature-b.txt');
-  const text = await requestMerge(wtB.branch, wtB.path, { checks: 'typecheck clean; tests pass', title: 'Feature B' }, allow, checkOf(b.id));
+  const text = await requestMerge(wtB.branch, wtB.path, { title: 'Feature B' }, allow, checkOf(b.id));
   assert.match(text, /^Pushed feature-b; auto-merge is on for #70/);
   assert.equal(asked, 1);
   assert.ok(gh().calls.includes('pr create --base main --head feature-b --title Feature B --body '));
   assert.ok(gh().calls.includes('pr merge 70 --squash --auto'));
   assert.equal(gh().calls.filter((c) => c.startsWith('pr create')).length, 1, 'only the intended pull request was opened');
   assert.match(git(root, 'ls-remote', '--heads', 'origin'), /refs\/heads\/feature-b/);
-  await assert.rejects(requestMerge(wtA.branch, wtA.path, { checks: 'ok' }, allow, checkOf(a.id)), /already merged/, 'the stale chat still cannot publish');
+  await assert.rejects(requestMerge(wtA.branch, wtA.path, {}, allow, checkOf(a.id)), /already merged/, 'the stale chat still cannot publish');
   assert.equal(asked, 1);
   assert.equal(bindingProblem(loadSession(b.id)), undefined, 'the continued chat stays valid with its open pull request');
 });
@@ -153,7 +155,7 @@ test('another branch checked out in the worktree blocks the chat, its tasks and 
   assert.equal(runs.length, 1);
   assert.match(lastTurn(a.id).error!, new RegExp(`has branch configured-implementer checked out \\(HEAD ${head.slice(0, 7)}\\), not the bound branch merge-conflict-test`));
   assert.match(lastTurn(a.id).error!, /0 uncommitted files and 1 commit on no remote branch/);
-  await assert.rejects(requestMerge(wt.branch, wt.path, { checks: 'ok', title: 'Fix' }, async () => true, checkOf(a.id)), /configured-implementer checked out/);
+  await assert.rejects(requestMerge(wt.branch, wt.path, { title: 'Fix' }, async () => true, checkOf(a.id)), /configured-implementer checked out/);
   assert.doesNotMatch(git(root, 'ls-remote', '--heads', 'origin'), /merge-conflict-test|configured-implementer/, 'nothing was pushed');
   assert.deepEqual(gh().calls, [], 'gh was not even asked');
 

@@ -1,6 +1,6 @@
 # ADR 0017 — Agents merge into main only through the workspace's request_merge, after the user's approval
 
-Status: accepted (2026-10-20, chosen by the user), implemented 2026-10-20 for selfdev-003/004. Builds on [ADR 0015](0015-write-guard.md) (write guard) and [ADR 0016](0016-main-ruleset.md) (`main` only through checked pull requests).
+Status: accepted (2026-10-20, chosen by the user), implemented 2026-10-20 for selfdev-003/004. Amended 2026-11-23: request_merge runs typecheck and tests in the worktree itself and refuses uncommitted work, instead of taking results the agent reports ([agent-interface-008](../../features/agent-interface/SPEC.md#requirements)). Builds on [ADR 0015](0015-write-guard.md) (write guard) and [ADR 0016](0016-main-ruleset.md) (`main` only through checked pull requests).
 
 ## Context
 

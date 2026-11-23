@@ -147,7 +147,6 @@ if (wt && session.role !== ORCHESTRATION && !task?.parentId) {
     {
       description: agentText('tool.request_merge'),
       inputSchema: {
-        checks: z.string().describe(toolParam('tool.request_merge', 'checks')),
         title: z.string().optional().describe(toolParam('tool.request_merge', 'title')),
         body: z.string().optional().describe(toolParam('tool.request_merge', 'body')),
       },
