@@ -1338,12 +1338,6 @@ for (const id of ['agent', 'model', 'effort']) $(`#${id}`).onchange = () => pick
 $('#role').onchange = () => { state.draft = roleDraft($('#role').value); renderPickers(null, true); };
 // Agent instructions in Settings (agent-instructions-001–005): a read-only catalog of what the workspace tells agents,
 // loaded the first time the tab opens. Placeholders are marked as such, so no runtime value is implied.
-const INSTR_INSPECT = {
-  shown: 'Shown in full: the workspace holds this text.',
-  file: 'A file on this computer; the agent reads it itself. Open it to read it.',
-  hidden: 'Not inspectable: part of the agent itself. The workspace cannot read it, and this list does not contain it.',
-  unknown: 'Not listed: the workspace does not read these, so it cannot say what they contain.',
-};
 const instr = { data: null, loading: false, error: '', selected: null };
 // Roles only: every agent gets the same instructions (ADR 0023). Where one still misses an entry, that gap is named.
 const appliesText = (applies) => Object.keys(applies).join(' · ') || '—';
@@ -1377,10 +1371,9 @@ function renderInstructions() {
     const list = d.entries.filter((e) => e.group === g && instrMatches(e)).sort((a, b) => a.title.localeCompare(b.title));
     return list.length ? `<h4 class="instr-group">${esc(g)}</h4>${list.map((e) => item(e.id, e.title, e.description)).join('')}` : '';
   }).join('');
-  const external = d.external.filter(instrMatches).sort((a, b) => a.title.localeCompare(b.title));
-  $('#instr-items').innerHTML = (groups + (external.length ? `<h4 class="instr-group">Outside sources (not written by the workspace)</h4>${external.map((s) => item(s.id, s.title, s.purpose)).join('')}` : '')) || '<p class="meta">No matching instructions.</p>';
-  const e = d.entries.find((x) => x.id === instr.selected), s = !e && d.external.find((x) => x.id === instr.selected);
-  $('#instr-detail').innerHTML = e ? instructionDetail(e) : s ? sourceDetail(s) : '<p class="meta">Select an instruction to read it, with where and why it is used. Nothing here can be edited yet.</p>';
+  $('#instr-items').innerHTML = groups || '<p class="meta">No match.</p>';
+  const e = d.entries.find((x) => x.id === instr.selected);
+  $('#instr-detail').innerHTML = e ? instructionDetail(e) : '<p class="meta">Select an instruction to read it, with where and why it is used. Nothing here can be edited yet.</p>';
 }
 function instructionDetail(e) {
   const ph = Object.entries(e.placeholders ?? {});
@@ -1394,16 +1387,8 @@ function instructionDetail(e) {
     ${e.variants?.length ? `<div style="display:grid;gap:8px"><b>Other forms</b>${e.variants.map((v) => `<div><span class="meta">${esc(v.label)}</span><pre>${withPlaceholders(v.text)}</pre></div>`).join('')}</div>` : ''}
     ${ph.length ? `<div><b>Placeholders</b> <span class="meta">Filled in when the text is sent; these are descriptions, not actual values.</span><dl>${ph.map(([k, v]) => `<dt><span class="ph">{${esc(k)}}</span></dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` : ''}`;
 }
-function sourceDetail(s) {
-  const path = s.path ? `<dt>File</dt><dd>${window.desktop && s.exists ? `<button class="loc" type="button" data-open="${esc(s.path)}" title="Show ${esc(s.path)}">${esc(s.path)}${FOLDER_ICON}</button>` : `<code>${esc(s.path)}</code>`}${s.exists ? '' : ' <span class="meta">(not on this computer)</span>'}</dd>` : '';
-  return `<h3>${esc(s.title)}</h3><p style="margin:0">${esc(s.purpose)}</p><p style="margin:0"><span class="instr-badge">${esc(INSTR_INSPECT[s.inspectable])}</span></p>
-    <dl><dt>Used by</dt><dd>${esc(appliesText(s.applies))}</dd><dt>When included</dt><dd>${esc(s.when)}</dd>${path}</dl>
-    ${s.inspectable === 'shown' ? `<div><b>Text</b>${s.text ? `<pre>${esc(s.text)}</pre>` : '<p class="meta" style="margin:0">Empty: nothing is added.</p>'}</div>` : ''}`;
-}
 $('#instr-search').oninput = $('#instr-role').onchange = () => renderInstructions();
 $('#spanel-instructions').onclick = (ev) => {
-  const open = ev.target.closest('[data-open]');
-  if (open) return void window.desktop?.showPath(open.dataset.open);
   const b = ev.target.closest('[data-instr-id]');
   if (!b) return;
   instr.selected = b.dataset.instrId;

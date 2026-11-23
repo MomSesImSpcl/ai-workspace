@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable } from '../src/instructions.ts';
+import { CATALOG, CATALOG_AGENTS, CATALOG_ROLES, GROUPS, instructionsAvailable } from '../src/instructions.ts';
 import { agentText, isAgentText, REGISTRY } from '../src/registry.ts';
 import { sessionAgents } from '../src/turn.ts';
 
@@ -70,15 +70,6 @@ test('every placeholder is explained, ids are unique, groups and roles are known
     }
     for (const t of texts(e)) for (const [, name] of t.matchAll(/\{(\w+)\}/g)) assert.ok(e.placeholders?.[name!], `${e.id}: {${name}} is not explained`);
   }
-});
-
-test('outside sources say what can be inspected and never carry provider text', () => {
-  const list = externalSources();
-  for (const s of list) {
-    assert.ok(['shown', 'file', 'hidden', 'unknown'].includes(s.inspectable), s.id);
-    if (s.text !== undefined) assert.equal(s.inspectable, 'shown', `${s.id}: only text the workspace holds is shown`);
-  }
-  assert.ok(list.some((s) => s.id === 'claude.system-prompt' && s.inspectable === 'hidden' && s.text === undefined));
 });
 
 test('the tab is available only when the app runs from a checkout', () => {

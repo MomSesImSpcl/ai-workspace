@@ -17,7 +17,7 @@ import { projectWeb } from './remote.ts';
 import { applyUpdate, checkForUpdate, lastGood, localState } from './restart.ts';
 import { appProject, branchInfo, folderSize, removeBranch, replanBranch } from './branches.ts';
 import { continueSession } from './binding.ts';
-import { CATALOG_AGENTS, CATALOG_ROLES, externalSources, GROUPS, instructionsAvailable, withCapabilities } from './instructions.ts';
+import { CATALOG_AGENTS, CATALOG_ROLES, GROUPS, instructionsAvailable, withCapabilities } from './instructions.ts';
 import { installed, startTestInstance, testBranch } from './test-instance.ts';
 
 
@@ -284,7 +284,7 @@ async function route(req: IncomingMessage, url: URL): Promise<unknown> {
   // The Agent Instructions tab (agent-instructions-001–005): read only, in a development environment only (ADR 0022).
   if (req.method === 'GET' && kind === 'instructions') {
     if (!instructionsAvailable()) throw new HttpError(404, 'Agent instructions are shown only when the app runs from a checkout.');
-    return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: withCapabilities(), external: externalSources(), capabilities: CAPABILITIES };
+    return { groups: GROUPS, roles: CATALOG_ROLES, agents: CATALOG_AGENTS, entries: withCapabilities(), capabilities: CAPABILITIES };
   }
   if (req.method === 'GET' && kind === 'agents') return Object.fromEntries(installedAgents().map((k) => [k, sessionAgents[k]!.catalog()]));
   if (req.method === 'GET' && kind === 'prefs') return readJson<Record<string, string>>(prefsPath(), {});

@@ -3,15 +3,11 @@
 // the instruction registry (app/src/registry.ts, agent-interface-007), the only place such text is defined; this file
 // adds who gets each entry and where the code sends it, found by searching app/src for the entry's id. It lists what
 // can be sent and when, not what a particular session received.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claudeHome, fileOr } from './adapters/claude-code.ts';
-import { userCodexHome } from './adapters/codex.ts';
-import { getSettings, type Capabilities, type SessionAgent } from './sessions.ts';
+import { type Capabilities, type SessionAgent } from './sessions.ts';
 import { sessionAgents } from './turn.ts';
-import { getAgentSetup, RULE_ROLES } from './setup.ts';
-import { getWorkspaceRoot } from './store.ts';
 import { appRepo } from './worktrees.ts';
 import { GROUPS, REGISTRY, ROLES, type Entry } from './registry.ts';
 
@@ -72,11 +68,6 @@ export const CATALOG: InstructionEntry[] = (() => {
     sources: sites.get(id) ?? [], placeholders: e.placeholders, needs: e.needs,
   }));
 })();
-// Outside sources: some belong to one agent, which loads them itself.
-const BOTH: Agent[] = CATALOG_AGENTS;
-const ALL: Applies = { Chat: BOTH, Orchestrator: BOTH, Implementer: BOTH };
-const CLAUDE: Agent[] = ['claude-code'];
-const CODEX: Agent[] = ['codex'];
 
 /** The catalog as the agents set up now get it: an entry that needs a capability goes only to agents that report it. */
 export function withCapabilities(agents: Record<string, Pick<SessionAgent, 'capabilities'>> = sessionAgents): InstructionEntry[] {
@@ -86,62 +77,6 @@ export function withCapabilities(agents: Record<string, Pick<SessionAgent, 'capa
     const applies = Object.fromEntries(Object.entries(e.applies).map(([role, list]) => [role, list!.filter((a) => agents[a]?.capabilities[needs])]));
     return { ...e, applies };
   });
-}
-
-/** How much of an outside source the workspace can show. */
-export type Inspectable = 'shown' | 'file' | 'hidden' | 'unknown';
-
-/** An instruction source the workspace does not write: the user's own text, rule files, the agents' own prompts. */
-export interface ExternalSource {
-  id: string;
-  title: string;
-  purpose: string;
-  inspectable: Inspectable;
-  applies: Applies;
-  when: string;
-  path?: string; // a file or folder on this computer, when known
-  exists?: boolean;
-  text?: string; // only for text the workspace holds itself (the Instructions fields)
-}
-
-/**
- * The sources agents also load, read now on this computer: paths, whether they exist and the Instructions fields. It
- * names what can load; it does not know what a running session loaded (each run records the rule files its agent
- * reported, `init.ruleFiles` in the session log).
- */
-export function externalSources(): ExternalSource[] {
-  const settings = getSettings();
-  const globalRules = getAgentSetup().globalRules ?? {};
-  const ws = getWorkspaceRoot();
-  const file = (path?: string) => (path ? { path, exists: existsSync(path) } : {});
-  const own = (key: 'chatInstructions' | 'orchestratorInstructions' | 'implementationInstructions', role: string, applies: Applies) => ({
-    id: `own.${key}`, title: `Your instructions: ${role}`, purpose: "Text you wrote in Settings → Agents. The workspace adds it with the wrapper for the user's own instructions.", inspectable: 'shown' as const, applies,
-    when: 'From the next agent start, while the field is not empty.', text: settings[key]?.trim() || '',
-  });
-  const rulesSwitch = RULE_ROLES.map((r) => `${r === 'Implementation' ? 'Implementer' : 'Orchestrator'} ${globalRules[r] ? 'on' : 'off'}`).join(', ');
-  return [
-    own('chatInstructions', 'Chat', { Chat: BOTH }),
-    own('orchestratorInstructions', 'Orchestrator', { Orchestrator: BOTH }),
-    own('implementationInstructions', 'Implementer', { Implementer: BOTH }),
-    { id: 'workspace.agents-md', title: "Workspace folder's AGENTS.md", purpose: 'Rules for every project in the workspace folder. The workspace adds the file after its heading (see "The workspace folder\'s AGENTS.md").', inspectable: 'file',
-      applies: { Orchestrator: BOTH, Implementer: BOTH }, when: 'Orchestrator chats and tasks of a project inside the workspace folder; not plain chats.', ...file(ws ? join(ws, 'AGENTS.md') : undefined) },
-    { id: 'project.rules', title: 'Project rule files', purpose: "The project's own AGENTS.md, CLAUDE.md and rules folders. The agent finds and loads them itself.", inspectable: 'file', applies: ALL,
-      when: 'Every run in a project, as the agent loads them anywhere else. Each run records the files the agent reported loading in the session log; the chat does not show them yet (sessions-016).' },
-    { id: 'claude.global-rules', title: 'Claude Code global rules', purpose: 'Your global CLAUDE.md and rules folder, loaded in every project.', inspectable: 'file', applies: { Chat: CLAUDE, Orchestrator: CLAUDE, Implementer: CLAUDE },
-      when: `Plain chats always; orchestrator chats and tasks only while their role's global rules switch is on (Settings → Agent setup; now: ${rulesSwitch}).`, ...file(fileOr(claudeHome(), 'CLAUDE.md')) },
-    { id: 'codex.global-agents', title: 'Codex global AGENTS.md', purpose: 'Your global Codex rules, loaded in every project.', inspectable: 'file', applies: { Chat: CODEX, Orchestrator: CODEX, Implementer: CODEX },
-      when: 'Every Codex run; Codex has no switch for one run, so the global rules switch does not apply.', ...file(join(userCodexHome(), 'AGENTS.md')) },
-    { id: 'claude.system-prompt', title: "Claude Code's own system prompt", purpose: 'How Claude Code works with its tools, git and the environment, plus its built-in tool descriptions. Written by Anthropic and part of Claude Code.', inspectable: 'hidden', applies: { Chat: CLAUDE, Orchestrator: CLAUDE, Implementer: CLAUDE },
-      when: 'Plain chats always; other runs unless their "own instructions" setup item is off, when the short workspace prompt replaces it.' },
-    { id: 'codex.base-instructions', title: "Codex's own base instructions", purpose: 'Coding conventions, editing and sandbox guidance and answer format, plus its tool descriptions. Written by OpenAI and part of Codex.', inspectable: 'hidden', applies: { Chat: CODEX, Orchestrator: CODEX, Implementer: CODEX },
-      when: 'Plain chats always; other runs unless their "own instructions" setup item is off, when the short workspace prompt replaces it.' },
-    { id: 'codex.memories', title: 'Codex memories', purpose: 'What Codex remembers across sessions (about 3.8k tokens per call).', inspectable: 'hidden', applies: { Chat: CODEX, Orchestrator: CODEX, Implementer: CODEX },
-      when: 'While its Memories setup item is on for the run, and in plain chats when Codex has it on.' },
-    { id: 'claude.other', title: 'Claude Code memory, output style and managed settings', purpose: 'Claude Code can also load auto memory, an output style and managed settings. The workspace does not list or read them.', inspectable: 'unknown', applies: { Chat: CLAUDE, Orchestrator: CLAUDE, Implementer: CLAUDE },
-      when: 'As Claude Code loads them; which ones apply to a run is not known here.' },
-    { id: 'agent.extensions', title: 'Plugins, skills, MCP servers and hooks', purpose: 'Their own instructions, skill texts, server instructions and hook output. They are listed and switched in Settings → Agent setup; their text is not shown here.', inspectable: 'unknown', applies: ALL,
-      when: 'Plain chats load your whole setup; orchestrator chats and tasks load the items switched on for the run.' },
-  ];
 }
 
 /**
