@@ -51,9 +51,9 @@ export const REGISTRY = {
     textBecause: "It counters rules of the user's own that wait for an answer (an effort check), which only text reaches.",
     text: 'This is a background task: nobody answers until it ends, and its effort level is set by the workspace. Do not stop to suggest an effort level or ask to confirm one; do the work.',
     variants: { rules: RULES }, roles: ['Implementer'], placeholders: NOTE_PLACEHOLDERS },
-  'minimal-prompt': { group: 'Role notes', title: "Short system prompt instead of the agent's own", description: "A short system prompt that replaces the agent's own when that setup item is off for an orchestrator chat or a task, about 3k to 4k tokens less per call.", textBecause: "The agent needs its folder, system and date; these are facts only text delivers.",
-    text: 'You are a coding agent working in {root} on {platform}. Today is {date}.', roles: ['Orchestrator', 'Implementer'],
-    placeholders: { root: 'the folder the agent runs in', platform: 'the operating system (win32, darwin, linux)', date: "today's date, YYYY-MM-DD" } },
+  'minimal-prompt': { group: 'Role notes', title: "Short system prompt instead of the agent's own", description: "A short system prompt that replaces the agent's own when that setup item is off for an orchestrator chat or a task, about 3k to 4k tokens less per call.", textBecause: "The agent needs its folder and the date (its operating system shows in the path); these are facts only text delivers.",
+    text: 'Project folder: {root}. Today is {date}.', roles: ['Orchestrator', 'Implementer'],
+    placeholders: { root: 'the folder the agent runs in', date: "today's date, YYYY-MM-DD" } },
 
   // --- Messages: the fixed parts of what the agent receives as a message.
   'message.task-start': { group: 'Messages', title: 'Task start', description: "The message a task starts with: the goal the chat's agent wrote, and the earlier task's goal and last reply when it was started with basedOn.", textBecause: 'The goal is what the task is for; the earlier context is content it cannot see otherwise.',

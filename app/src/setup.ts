@@ -127,4 +127,4 @@ export function checkRequest(agent: string, role: string, ids: string[]): SetupI
 }
 
 // A short system prompt for a run without the agent's own (the `prompt` item off).
-export const minimalPrompt = (root: string) => agentText('minimal-prompt', { root, platform: process.platform, date: new Date().toISOString().slice(0, 10) });
+export const minimalPrompt = (root: string) => agentText('minimal-prompt', { root, date: new Date().toISOString().slice(0, 10) });

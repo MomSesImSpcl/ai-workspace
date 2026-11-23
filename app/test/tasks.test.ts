@@ -397,7 +397,7 @@ test('orchestrator chats and tasks load only the chosen setup items, switched fo
   args = await argsOf(plain.id);
   assert.match(flag(args, '--disallowedTools')!, /mcp__claude_ai_github/);
   assert.equal(flag(args, '--tools'), 'Read'); // only the picked built-in tool
-  assert.match(flag(args, '--system-prompt')!, /^You are a coding agent/); // its own system prompt is an item too
+  assert.match(flag(args, '--system-prompt')!, /^Project folder: /); // its own system prompt is an item too
   assert.equal(JSON.parse(flag(args, '--settings')!).enabledPlugins, undefined);
   assert.equal(flag(args, '--setting-sources'), undefined);
   assert.ok(!args.includes('--disable-slash-commands')); // the plugin of this run keeps its skills
