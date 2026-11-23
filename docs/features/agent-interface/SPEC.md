@@ -15,9 +15,13 @@ The workspace, not the agent, owns what agents are told (user, 2026-11-23). Inst
 - **agent-interface-008 — API first, instructions only when needed (partly built 2026-11-23: reasons and proposals recorded; first batch converted: the workspace ends a task's turn after request_setup; user, 2026-11-23):** Communication between the workspace and agents and between agents (starting, replying to and checking tasks, setup requests, approvals, merge requests, results and status) MUST go through fixed workspace tools with typed parameters and structured results, not through instruction text. A new instruction is added only for judgment code cannot make (principle 12); each registry entry states why it cannot be code (`textBecause`) and, where part of it could be, what (`toCode`); the Agent instructions tab shows both. Review of a new entry checks this reason. The proposals are converted one small batch at a time, each with tests and a real-agent check, removing the text they replace.
 - **agent-interface-006 — Checked with real agents (not started):** Before iteration one counts as done, a Claude Code and a Codex chat in a test instance of the branch each start a task, and a Claude Code and a Codex orchestrator each route a change to a task, as before the builder.
 
+### Iteration two: capability parity
+
+- **agent-interface-009 — Neutral built-in tool items (specified 2026-11-23, user; not started):** The orchestrator (`list_agents`, `start_task`, `request_setup`) and Settings → Agent setup offer every agent the same built-in tool items under neutral names: **Read files**, **Edit files** and **Run commands**. Each adapter maps them to its own tools (for example Claude Code: Read/Glob/Grep, Edit/Write, Bash; Codex: its shell and its patch tool). Where an agent cannot switch an item on its own, the adapter reports the smallest set that contains it (for example Codex: Read files comes with Run commands), the task gets that set, and Settings shows the gap in one line. Agent-specific ids such as `tool:Read` or `feature:shell_tool` no longer appear to the orchestrator; a request for a neutral item is valid for every agent. Agent features that are not built-in tools (Codex memories, image generation, plugins, MCP servers) stay listed by their own names.
+
 ## Non-goals
 
-- Giving every agent the same capabilities (the workspace providing approvals and refusal text itself): iteration two.
+- The rest of iteration two: the workspace providing approvals and refusal text itself for agents without them.
 - Turning rules into tool schemas, parameters, defaults and validation: iteration three.
 - Editing instructions in Settings: iteration four, owned by [agent-instructions](../agent-instructions/SPEC.md).
 - A manifest for agents without a code adapter ([custom-integrations](../custom-integrations/SPEC.md)).
