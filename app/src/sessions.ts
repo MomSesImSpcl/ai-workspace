@@ -115,6 +115,7 @@ export type SessionEvent = { at: string; turn: number } & (
   | { type: 'activity-done'; id: string; error?: boolean }
   | { type: 'approval'; id: string; tool: string; detail: string; repeat?: string }
   | { type: 'approval-answer'; id: string; allow: boolean }
+  | { type: 'approval-status'; id: string; text: string; closed?: boolean } // progress on an open card; closed: the workspace withdrew it
   | { type: 'task'; id: string } // the agent started this task from the chat (sessions-002)
   | { type: 'usage'; usage: Usage }
   | { type: 'live-usage'; usage: Usage } // the running turn's usage so far, replaced by its 'usage' when it ends
@@ -407,8 +408,10 @@ export async function endIdleHost(id: string, ms = 10_000): Promise<boolean> {
 // The user's answer to an approval card; null when the turn was stopped first. No time limit (runtime-002).
 export async function awaitAnswer(id: string, approvalId: string): Promise<boolean | null> {
   for (;;) {
-    const a = readEvents(id).find((e) => e.type === 'approval-answer' && e.id === approvalId);
+    const events = readEvents(id);
+    const a = events.find((e) => e.type === 'approval-answer' && e.id === approvalId);
     if (a?.type === 'approval-answer') return a.allow;
+    if (events.some((e) => e.type === 'approval-status' && e.id === approvalId && e.closed)) return false; // withdrawn: nothing to wait for
     if (stopRequested(id)) return null;
     await new Promise((r) => setTimeout(r, 400));
   }
@@ -422,7 +425,7 @@ export interface Turn {
   resume?: boolean; // continues the paused turn before it
   text: string;
   activity: { id: string; label: string; done: boolean; error?: boolean; outside?: boolean; fp?: string }[];
-  approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean }[];
+  approvals: { id: string; tool: string; detail: string; repeat?: string; allow?: boolean; status?: string; closed?: boolean }[];
   notices: { text: string; blocked?: boolean }[];
   tasks: string[]; // tasks the agent started in this turn
   relays: { taskId: string; text: string }[]; // what the user wrote to those tasks directly after this turn
@@ -469,6 +472,7 @@ export function turns(events: SessionEvent[], running: boolean): Turn[] {
     else if (e.type === 'activity-done') Object.assign(t.activity.find((a) => a.id === e.id) ?? {}, { done: true, error: e.error });
     else if (e.type === 'approval') t.approvals.push({ id: e.id, tool: e.tool, detail: e.detail, repeat: e.repeat });
     else if (e.type === 'approval-answer') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { allow: e.allow });
+    else if (e.type === 'approval-status') Object.assign(t.approvals.find((a) => a.id === e.id) ?? {}, { status: e.text }, e.closed ? { allow: false, closed: true } : {});
     else if (e.type === 'task') t.tasks.push(e.id);
     else if (e.type === 'relay') t.relays.push({ taskId: e.taskId, text: e.text });
     else if (e.type === 'usage') t.usage = addUsage(t.usage, e.usage);

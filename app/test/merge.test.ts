@@ -65,7 +65,7 @@ test('request_merge asks first; on Allow the app merges main in, pushes, opens t
     assert.match(await requestMerge('fix', dir, {}, ask(false)), /did not approve the merge; nothing was pushed or merged/);
     assert.match(await requestMerge('fix', dir, {}, ask(null)), /stopped/);
     assert.deepEqual(calls(), [], 'Deny or a stop runs nothing');
-    assert.match(asked[0]!, /Push branch fix and squash-merge pull request #4 "Fix it".*Checks the workspace ran in the worktree: typecheck: passed; npm test: tests 5, pass 5, fail 0/);
+    assert.match(asked[0]!, /Push branch fix and squash-merge pull request #4 "Fix it" into main once typecheck and tests pass/);
     assert.match(await requestMerge('fix', dir, {}, ask(true)), /auto-merge is on for #4/);
     assert.deepEqual(calls(), ['git fetch origin main', 'git merge --no-edit origin/main', 'git push -u origin fix', 'gh pr merge 4 --squash --auto']);
     calls = fakeTools({});
@@ -133,19 +133,37 @@ test('Codex worktree sessions get an empty gh folder for their shells; others no
   assert.deepEqual(ghBlockArgs(false), []);
 });
 
-test('request_merge refuses uncommitted work and failing checks before the card (agent-interface-008)', async () => {
+test('request_merge shows the card at once while the checks run; Allow waits for them, a failure withdraws the card (agent-interface-008)', async () => {
+  const open = { fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } };
+  const never = () => new Promise<boolean | null>(() => {}); // the user has not answered yet
   try {
     let asked = 0;
-    const ask = async () => { asked++; return true; };
-    let calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } }, { dirty: true });
-    assert.match(await requestMerge('fix', dir, {}, ask), /uncommitted changes \(app\/src\/a\.ts\); nothing was checked, pushed or merged/);
-    calls = fakeTools({ fix: { number: 4, url: 'https://x/pull/4', title: 'Fix it', state: 'OPEN' } });
+    let calls = fakeTools(open, { dirty: true });
+    assert.match(await requestMerge('fix', dir, {}, async () => { asked++; return true; }), /uncommitted changes \(app\/src\/a\.ts\); nothing was checked, pushed or merged/);
+    assert.equal(asked, 0, 'no card for uncommitted work');
+    // Checks fail while the card is open: the card is withdrawn, the agent gets the output.
+    calls = fakeTools(open);
     process.env.AI_WORKSPACE_FAKE_NPM_FAIL = 'test';
-    assert.match(await requestMerge('fix', dir, {}, ask), /^npm test failed in the worktree; nothing was pushed or merged[\s\S]*error in test: src\/a\.ts/);
+    let statuses: [string, boolean | undefined][] = [];
+    const status = (t: string, closed?: boolean) => statuses.push([t, closed]);
+    assert.match(await requestMerge('fix', dir, {}, async () => { asked++; return never(); }, undefined, undefined, status), /^npm test failed in the worktree; nothing was pushed or merged[\s\S]*error in test: src\/a\.ts/);
+    assert.equal(asked, 1, 'the card went up at once');
+    assert.deepEqual(statuses, [['Typecheck and tests are running in the worktree…', undefined], ['npm test failed in the worktree; nothing will be merged.', true]]);
+    // Allowed before a failing typecheck: nothing is merged.
     process.env.AI_WORKSPACE_FAKE_NPM_FAIL = 'typecheck';
-    assert.match(await requestMerge('fix', dir, {}, ask), /^typecheck failed in the worktree/);
-    assert.equal(asked, 0, 'no card while the work is not ready');
+    statuses = [];
+    assert.match(await requestMerge('fix', dir, {}, async () => true, undefined, undefined, status), /^typecheck failed in the worktree/);
+    assert.deepEqual(statuses.map(([t]) => t), ['Typecheck and tests are running in the worktree…', 'Allowed: merging once typecheck and tests pass in the worktree…', 'typecheck failed in the worktree; nothing was merged.']);
     assert.deepEqual(calls(), [], 'nothing pushed or merged');
+    // Checks pass before the answer: the card says so, then Allow merges.
+    delete process.env.AI_WORKSPACE_FAKE_NPM_FAIL;
+    statuses = [];
+    let allow!: (v: boolean) => void;
+    const reply = requestMerge('fix', dir, {}, () => new Promise<boolean>((r) => (allow = r)), undefined, undefined, status);
+    while (statuses.length < 2) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(statuses[1]![0], 'Checks passed in the worktree: typecheck: passed; npm test: tests 5, pass 5, fail 0');
+    allow(true);
+    assert.match(await reply, /auto-merge is on for #4/);
   } finally {
     delete process.env.AI_WORKSPACE_FAKE_NPM_FAIL;
   }

@@ -653,3 +653,17 @@ test('both agents receive the same instructions in every role (ADR 0023)', async
     assert.equal(await sent('codex', role), claude, role);
   }
 });
+
+test('a card the workspace withdraws ends the wait and is no longer pending (agent-interface-008)', async () => {
+  const { awaitAnswer } = await import('../src/sessions.ts');
+  const s = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(s.id, 'merge it');
+  emit(s.id, 1, { type: 'approval', id: 'c1', tool: 'Merge pull request', detail: 'Push branch fix' });
+  emit(s.id, 1, { type: 'approval-status', id: 'c1', text: 'Typecheck and tests are running in the worktree…' });
+  assert.equal(last(s.id).approvals[0]!.status, 'Typecheck and tests are running in the worktree…');
+  assert.equal(last(s.id).approvals[0]!.allow, undefined); // still open
+  const waiting = awaitAnswer(s.id, 'c1');
+  emit(s.id, 1, { type: 'approval-status', id: 'c1', text: 'npm test failed in the worktree; nothing will be merged.', closed: true });
+  assert.equal(await waiting, false);
+  assert.deepEqual([last(s.id).approvals[0]!.allow, last(s.id).approvals[0]!.closed], [false, true]);
+});

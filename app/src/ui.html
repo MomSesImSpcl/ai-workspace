@@ -811,12 +811,12 @@ function renderSessions() {
 
 function activityList(t) {
   const items = t.activity.map((a) => `<li class="${a.error ? 'err' : a.done ? '' : 'run'}" title="${esc(a.label)}">${code(a.label)}${a.outside ? ' <span class="flag">⚠ outside the project folder</span>' : ''}</li>`).join('');
-  const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
+  const answered = t.approvals.filter((a) => a.allow !== undefined).map((a) => `<li>${a.closed ? `Withdrawn (${esc(a.status ?? '')})` : a.allow ? 'Allowed' : 'Denied'}: ${esc(a.tool)} <code>${esc(a.detail)}</code></li>`).join('');
   return `<ol>${items}${answered}</ol>`;
 }
 
 // taskId: the card belongs to a task (or subtask) shown in this chat, not to the chat's own agent.
-const approvalCard = (a, taskId, who = '') => `<div class="approval"><b>${who}${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>${a.repeat ? `<span class="flag">⚠ Possible repeat: ${code(a.repeat)} already ran before the interruption</span>` : ''}
+const approvalCard = (a, taskId, who = '') => `<div class="approval"><b>${who}${esc(a.tool)} wants to run</b><code>${esc(a.detail)}</code>${a.repeat ? `<span class="flag">⚠ Possible repeat: ${code(a.repeat)} already ran before the interruption</span>` : ''}${a.status ? `<span class="meta" role="status">${esc(a.status)}</span>` : ''}
     <div class="row"><button class="btn primary small" data-approve="${esc(a.id)}" data-allow="true" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Allow</button><button class="btn small" data-approve="${esc(a.id)}" data-allow="false" ${taskId ? `data-task="${esc(taskId)}"` : ''}>Deny</button></div></div>`;
 const pendingCards = (t) => t.pending.map((a) => approvalCard(a, a.taskId, a.taskId === t.id ? '' : 'Subtask: ')).join('');
 

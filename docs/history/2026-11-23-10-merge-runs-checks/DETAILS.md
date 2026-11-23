@@ -9,6 +9,8 @@
 
 **Checks:** `npm run typecheck` clean; `npm test` 124/124 on Windows. Tests use a fake npm (`app/test/fake-npm.mjs`); new test in `app/test/merge.test.ts`: uncommitted work and a failing typecheck or test return their reply with no card and nothing pushed. Real run of `runChecks` on this worktree: "typecheck: passed; npm test: tests 124, pass 124, fail 0" in 35 s. Found on the way: the status line's first letter was lost by `run`'s trim; parsing now drops the status column by pattern.
 
+**No wait before the card (user, same day):** a first version ran the checks before the card, about 35 s. Now the card goes up at once and the checks run alongside (`Promise.race` in `requestMerge`): passing checks update the card ("Checks passed in the worktree: …"), a failure withdraws it; an Allow given earlier waits for them ("Allowed: merging once typecheck and tests pass…", shown as a chat notice). New event `approval-status` (`app/src/sessions.ts`) carries a card's progress line, and `closed` withdraws it: the card leaves the pending list, `awaitAnswer` returns, and the activity list shows "Withdrawn (…)". Tests 125/125 (`app/test/merge.test.ts`, `app/test/tasks.test.ts`); browser check of an open card with its progress line and of a withdrawn one. Shortcut: after Deny or a stop the checks run to their end.
+
 **Not verified:** a real request_merge from an agent in a test instance (the card text and the wait while tests run).
 
 **Branch:** `agent-instructions` (this worktree), committed locally, not pushed.

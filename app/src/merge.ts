@@ -83,7 +83,7 @@ const mergedText = (pr: Pr, branch: string) => agentText('reply.merged-pr', { nu
  * merges into the checked-out branch, since the card may wait a long time (#62). A merged pull request is refused at
  * both points too. Returns what the agent is told; throws when the request cannot go to the user.
  */
-export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => string | undefined = () => undefined, verify = runChecks): Promise<string> {
+export async function requestMerge(branch: string, cwd: string, args: MergeArgs, ask: (detail: string) => Promise<boolean | null>, check: () => string | undefined = () => undefined, verify = runChecks, status: (text: string, closed?: boolean) => void = () => {}): Promise<string> {
   const problem = check();
   if (problem) throw new Error(problem);
   const prs = branchPrs(branch, cwd) ?? [];
@@ -94,10 +94,29 @@ export async function requestMerge(branch: string, cwd: string, args: MergeArgs,
   // The workspace checks what it would publish (agent-interface-008): committed work only, typecheck and tests passing.
   const dirty = git(['status', '--porcelain'], cwd).out.split('\n').filter(Boolean);
   if (dirty.length) return agentText('reply.request_merge', { files: dirty.slice(0, 10).map((l) => l.trim().replace(/^\S+\s+/, '')).join(', ') + (dirty.length > 10 ? ` and ${dirty.length - 10} more` : '') }, 'uncommitted');
-  const checks = await verify(cwd);
-  if (!checks.ok) return agentText('reply.request_merge', { check: checks.check, output: checks.output }, 'checksFailed');
+  // The card goes up at once and the checks run alongside it, so the user reads it while they run; Allow takes
+  // effect only once they pass, and a failure withdraws the card.
+  const checking = verify(cwd);
   const what = open ? `pull request #${open.number} "${open.title}"` : `a new pull request "${args.title}"`;
-  const allow = await ask(`Push branch ${branch} and squash-merge ${what} into main once the required checks pass. Checks the workspace ran in the worktree: ${checks.summary}`.slice(0, 1000));
+  const answer = ask(`Push branch ${branch} and squash-merge ${what} into main once typecheck and tests pass in the worktree and the required checks pass on GitHub.`.slice(0, 1000));
+  status('Typecheck and tests are running in the worktree…');
+  const failed = (c: { check: string; output: string }) => agentText('reply.request_merge', { check: c.check, output: c.output }, 'checksFailed');
+  const first = await Promise.race([checking.then((c) => ({ c })), answer.then((a) => ({ a }))]);
+  let allow: boolean | null;
+  if ('c' in first) {
+    if (!first.c.ok) { status(`${first.c.check} failed in the worktree; nothing will be merged.`, true); return failed(first.c); }
+    status(`Checks passed in the worktree: ${first.c.summary}`);
+    allow = await answer;
+  } else {
+    // shortcut: after Deny or a stop the checks still run to their end; stop them if they get long.
+    allow = first.a;
+    if (allow) {
+      status('Allowed: merging once typecheck and tests pass in the worktree…');
+      const c = await checking;
+      if (!c.ok) { status(`${c.check} failed in the worktree; nothing was merged.`); return failed(c); }
+      status(`Checks passed in the worktree: ${c.summary}`);
+    }
+  }
   if (allow === null) return agentText('reply.request_merge', {}, 'stopped');
   if (!allow) return agentText('reply.request_merge', {}, 'denied');
   const stale = check();
