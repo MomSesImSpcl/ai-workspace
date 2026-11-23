@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { awaitAnswer, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
+import { awaitAnswer, searchHistory, emit, fingerprint, loadSession, ORCHESTRATION, readEvents, repeatsFor, turns } from './sessions.ts';
 import { assignmentFor } from './roles.ts';
 import { decidable, getAgentSetup, setupStatus } from './setup.ts';
 import { requestSetup, renameTask, replyFromSession, startedIn, startFromSession, taskStatus, taskUsed } from './tasks.ts';
@@ -52,10 +52,14 @@ server.registerTool(
   {
     description: agentText('tool.read_repo'),
     inputSchema: {
-      action: z.enum(['log', 'show', 'branches', 'status', 'prs', 'pr', 'issues', 'issue']),
+      action: z.enum(['log', 'show', 'branches', 'status', 'prs', 'pr', 'issues', 'issue']).describe(toolParam('tool.read_repo', 'action')),
       project: z.string().optional().describe(toolParam('tool.read_repo', 'project')),
-      ref: z.string().optional(), path: z.string().optional(), limit: z.number().int().optional(), number: z.number().int().optional(),
-      state: z.enum(['open', 'closed', 'merged', 'all']).optional(), logs: z.boolean().optional(),
+      ref: z.string().optional().describe(toolParam('tool.read_repo', 'ref')),
+      path: z.string().optional().describe(toolParam('tool.read_repo', 'path')),
+      limit: z.number().int().optional().describe(toolParam('tool.read_repo', 'limit')),
+      number: z.number().int().optional().describe(toolParam('tool.read_repo', 'number')),
+      state: z.enum(['open', 'closed', 'merged', 'all']).optional().describe(toolParam('tool.read_repo', 'state')),
+      logs: z.boolean().optional().describe(toolParam('tool.read_repo', 'logs')),
     },
   },
   async (a) => {
@@ -138,6 +142,26 @@ if (!task) {
       const catalog = sessionAgent(role.integration).catalog();
       return JSON.stringify({ implementer: { agent: role.integration, model: role.model, effort: role.effort, models: catalog.models, modes: catalog.modes }, setup: decidable(role.integration), setupStatus: setupStatus(role.integration) });
     }),
+  );
+}
+
+// Earlier chats and tasks, for the orchestrator's questions about past work (agent-interface-008): a search instead of
+// a note on where storage is and how it is laid out.
+if (!task && session.role === ORCHESTRATION) {
+  server.registerTool(
+    'search_history',
+    {
+      description: agentText('tool.search_history'),
+      inputSchema: {
+        query: z.string().describe(toolParam('tool.search_history', 'query')),
+        project: z.string().optional().describe(toolParam('tool.search_history', 'project')),
+        all: z.boolean().optional().describe(toolParam('tool.search_history', 'all')),
+      },
+    },
+    async (a) => {
+      try { return { content: [{ type: 'text' as const, text: JSON.stringify(searchHistory(a.query, a.all ? undefined : a.project ?? session.projectId)) }] }; }
+      catch (e) { return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true }; }
+    },
   );
 }
 

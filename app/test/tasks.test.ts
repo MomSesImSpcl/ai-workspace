@@ -241,6 +241,21 @@ test('the workspace MCP server offers start_task to a chat session, request_setu
   };
   assert.deepEqual(await tools(chat.id), ['approve', 'list_agents', 'read_repo', 'rename_task', 'reply_task', 'start_task', 'task_status']);
   assert.deepEqual(await tools(task('t').id), ['approve', 'read_repo', 'request_setup']); // no delegate: tasks do not start tasks (ADR 0024)
+  assert.ok((await tools(createSession('P', ORCHESTRATION, { integration: 'claude-code' }).id)).includes('search_history')); // the orchestrator only
+});
+
+test('search_history finds earlier messages in this project, newest first, or in every project (agent-interface-008)', async () => {
+  const { searchHistory } = await import('../src/sessions.ts');
+  const a = createSession('P', 'Chat', { integration: 'claude-code' });
+  addMessage(a.id, 'Please fix the Login button colour');
+  emit(a.id, 1, { type: 'text', text: 'The login button now uses the accent colour.' });
+  emit(a.id, 1, { type: 'done' });
+  const hits = searchHistory('LOGIN BUTTON', 'P');
+  assert.deepEqual(hits.map((h) => [h.session, h.turn, h.who]).sort(), [[a.id, 1, 'agent'], [a.id, 1, 'user']]);
+  assert.match(hits[0]!.excerpt, /login button/i);
+  assert.deepEqual(searchHistory('login button', 'Other'), []);
+  assert.equal(searchHistory('login button').length, 2); // every project
+  assert.throws(() => searchHistory('  '), /query/);
 });
 
 test('the orchestrator role cannot edit or run commands with either agent; a task of the same agent can', async () => {
@@ -249,7 +264,7 @@ test('the orchestrator role cannot edit or run commands with either agent; a tas
   await runTurn(orch.id);
   const args = JSON.parse(last(orch.id).text) as string[];
   assert.match(args[args.indexOf('--disallowedTools') + 1]!, /Bash,Edit,Write/);
-  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator[\s\S]*Workspace storage/);
+  assert.match(args[args.indexOf('--append-system-prompt') + 1]!, /workspace orchestrator[\s\S]*search_history for earlier chats and tasks/);
   assert.equal(args[args.indexOf('--add-dir') + 1], home()); // reads storage without a card
   const { setSettings } = await import('../src/sessions.ts');
   setSettings({ orchestratorInstructions: 'Keep goals under 50 words.' });

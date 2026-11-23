@@ -46,7 +46,7 @@ export const TASK_NOTE = agentText('task.note');
 // A session of the orchestrator role (orchestrator-006, ADR 0011). The workspace also blocks its edit tools,
 // whatever agent the role uses, so this rule is not the only guard.
 export const ORCHESTRATION = 'Orchestration';
-export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task', 'read_repo']; // its workspace tools, run without a card
+export const ORCHESTRATOR_TOOLS = ['start_task', 'reply_task', 'task_status', 'list_agents', 'rename_task', 'read_repo', 'search_history']; // its workspace tools, run without a card
 export const ORCHESTRATOR_NOTE = agentText('orchestrator.note');
 
 // The user's own instructions per role (Settings, optional): chat for plain chats, orchestrator for orchestrator
@@ -60,8 +60,7 @@ export function ownInstructions(key: (typeof INSTRUCTIONS)[number]): string {
   const own = getSettings()[key]?.trim();
   return own ? ` ${agentText('own-instructions', { instructions: own })}` : '';
 }
-// Where it finds past work itself instead of starting a task for it (user, 2026-10-22).
-export const orchestratorNote = () => `${ORCHESTRATOR_NOTE} ${agentText('orchestrator.storage', { storage: home() })}` + ownInstructions('orchestratorInstructions');
+export const orchestratorNote = () => ORCHESTRATOR_NOTE + ownInstructions('orchestratorInstructions');
 
 // Identifies a tool call by tool and input, so a repeat after an interruption is recognised (runtime-004).
 export const fingerprint = (tool: string, input: unknown) => createHash('sha256').update(`${tool}\n${JSON.stringify(input)}`).digest('hex').slice(0, 16);
@@ -545,4 +544,27 @@ export function turnPrompt(ts: Turn[]): string {
   const relays = prev?.relays.map((r) => agentText('turn.relay', { task: r.taskId, text: r.text })).join('\n') ?? '';
   const head = [prev?.marker ? agentText('turn.unfinished', { marker: prev.marker }) : '', relays].filter(Boolean).join('\n');
   return head ? `${head}\n\n${cur.user}` : cur.user;
+}
+
+/**
+ * Messages in chat and task histories that contain `query` (any case), newest first, for the orchestrator's
+ * search_history: in `projectId`'s sessions, or in every session with `projectId` undefined. Each hit is one user
+ * message or agent reply with an excerpt around the first match. shortcut: reads every history on each call; index
+ * them if storage grows large (large-storage).
+ */
+export function searchHistory(query: string, projectId?: string, limit = 20) {
+  const q = query.trim().toLowerCase();
+  if (!q) throw new Error('Unknown query: text is required');
+  const hits: { session: string; title: string; task: boolean; turn: number; who: 'user' | 'agent'; at?: string; excerpt: string }[] = [];
+  for (const s of allSessions().filter((x) => projectId === undefined || x.projectId === projectId)) {
+    for (const t of turns(readEvents(s.id), false)) {
+      for (const [who, text] of [['user', t.user], ['agent', t.text]] as const) {
+        const i = text.toLowerCase().indexOf(q);
+        if (i < 0) continue;
+        const excerpt = `${i > 150 ? '…' : ''}${text.slice(Math.max(0, i - 150), i + q.length + 150)}${i + q.length + 150 < text.length ? '…' : ''}`;
+        hits.push({ session: s.id, title: s.title, task: !!s.task, turn: t.n, who, at: t.startedAt, excerpt });
+      }
+    }
+  }
+  return hits.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, limit);
 }
